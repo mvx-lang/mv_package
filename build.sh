@@ -1,5 +1,5 @@
 #!/bin/sh
-# mv-package — build the MVX account: compile + catalog the MVPKG client.
+# mv_package — build the MVX account: compile + catalog the MVPKG client.
 # Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 #
 #   MVX_HOME=/path/to/mvx-lang ./build.sh
@@ -23,5 +23,5 @@ export MVX_DRIVERS="$MVX_HOME/build/lib"
 for it in MVPKGOS MVPKG; do
   MVXPRIV=developer "$MVX" -a "$HERE" -c "CATALOG BP $it"
 done
-echo "mv-package built.  run (installing needs the unrestricted tier for untar):"
+echo "mv_package built.  run (installing needs the unrestricted tier for untar):"
 echo "  MVXPRIV=unrestricted '$MVX' -a '$HERE' -c 'MVPKG install ev_eb ./ev_eb'"

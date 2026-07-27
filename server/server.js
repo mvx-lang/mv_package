@@ -1,4 +1,4 @@
-// mv-package registry — the packagist/npm-registry equivalent for MultiValue.
+// mv_package registry — the packagist/npm-registry equivalent for MultiValue.
 // Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see ../LICENSE).
 //
 // A dependency-free HTTP registry.  Packages live under registry/<name>/ as a
@@ -89,5 +89,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`mv-package registry on http://127.0.0.1:${PORT}  (registry: ${REGDIR})`);
+  console.log(`mv_package registry on http://127.0.0.1:${PORT}  (registry: ${REGDIR})`);
 });

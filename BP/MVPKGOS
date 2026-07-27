@@ -1,4 +1,4 @@
-* mv-package — the per-platform OS seam.
+* mv_package — the per-platform OS seam.
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
 * MVPKGOS(OP, P1, P2, RESULT) — the one call the portable client makes for

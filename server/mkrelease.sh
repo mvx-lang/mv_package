@@ -1,5 +1,5 @@
 #!/bin/sh
-# mv-package — build a release tar from an account and register it.
+# mv_package — build a release tar from an account and register it.
 # Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see ../LICENSE).
 #
 #   mkrelease.sh <account-dir> <name> <version> [description]

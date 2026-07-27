@@ -1,4 +1,4 @@
-# mv-package
+# mv_package
 
 A package manager for MultiValue — Composer/npm for the PICK world. A **pure
 MultiValue BASIC client** (`MVPKG`) talks to a small **Node.js registry** over

@@ -1,5 +1,5 @@
 #!/bin/sh
-# mv-package — end-to-end install-loop test.
+# mv_package — end-to-end install-loop test.
 # Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see ../LICENSE).
 #
 #   MVX_HOME=/path/to/mvx-lang ./test/run.sh
@@ -54,4 +54,4 @@ MVXPRIV=unrestricted "$MVX" -a "$ROOT" -c "MVPKG install nosuch $MISS" >"$WORK/m
 grep -q "not found in registry" "$WORK/miss.out" || { echo "FAIL: missing pkg not reported"; fail=1; }
 [ -d "$MISS" ] && { echo "FAIL: missing pkg created a dest dir"; fail=1; }
 
-if [ "$fail" = 0 ]; then echo "PASS: mv-package end-to-end install loop"; else exit 1; fi
+if [ "$fail" = 0 ]; then echo "PASS: mv_package end-to-end install loop"; else exit 1; fi

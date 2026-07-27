@@ -1,4 +1,4 @@
-* mv-package — MVPKG, the MultiValue package manager client.
+* mv_package — MVPKG, the MultiValue package manager client.
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
 * A Composer/npm for MultiValue: it talks to a registry over HTTP, resolves a
