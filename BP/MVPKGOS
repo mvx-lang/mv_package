@@ -1,0 +1,26 @@
+* mv-package — the per-platform OS seam.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKGOS(OP, P1, P2, RESULT) — the one call the portable client makes for
+* operations that are not pure MultiValue: making a directory and unpacking a
+* release tar archive.  Every MV system ships its own MVPKGOS (this one is the
+* MVX port); the client MVPKG never shells out directly, so it stays portable.
+*
+*   OP = "MKDIR"  P1 = path                 -> create P1 (and parents)
+*   OP = "UNTAR"  P1 = tarball  P2 = destdir -> extract P1 into P2
+*
+* RESULT is returned "" on success or an error message.  On MVX these run
+* through EXECUTE "!...", so the caller needs the unrestricted privilege tier
+* (installing software is inherently privileged); other ports may differ.
+   SUBROUTINE MVPKGOS(OP, P1, P2, RESULT)
+   RESULT = ""
+   OP = OCONV(OP, "MCU")
+   BEGIN CASE
+      CASE OP = "MKDIR"
+         EXECUTE '!mkdir -p "':P1:'"'
+      CASE OP = "UNTAR"
+         EXECUTE '!mkdir -p "':P2:'" && tar -xzf "':P1:'" -C "':P2:'"'
+      CASE 1
+         RESULT = "MVPKGOS: unknown op ":OP
+   END CASE
+   RETURN

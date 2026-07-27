@@ -1,0 +1,18 @@
+# Derived MVX artifacts — the repo IS an mvx-git account; build.sh rebuilds
+# these from the tracked VOC/, BP/, *.DICT/%FILE%, .mvx.
+mvxdata.lmdb/
+CATALOG/
+LIB/
+LIB.DICT/
+BP.O/
+BP.O.DICT/
+*.dSYM/
+*.o
+*.dylib
+*.so
+
+# Node registry
+server/node_modules/
+
+# Generated release tarballs (registry meta.json stays tracked if seeded)
+server/registry/**/*.tar.gz

@@ -1,0 +1,151 @@
+* mv-package — MVPKG, the MultiValue package manager client.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* A Composer/npm for MultiValue: it talks to a registry over HTTP, resolves a
+* package, downloads its release tar archive and installs it into an account.
+* The client only ever downloads and unpacks the archive whole — it never
+* inspects, compiles, or otherwise depends on its contents.  A release may be
+* binary-only (pre-built CATALOG executables + LIB libraries with no BP source
+* at all), and installs exactly the same way as one that ships source.
+* Portable BASIC: the only non-MV operations (untar, mkdir) go through
+* MVPKGOS, so the same source runs on any MV system with an MVPKGOS.
+*
+* Commands (case-insensitive — MV devs work with Caps Lock on):
+*   MVPKG install <name> [<dest>]  download the release tar, install into <dest>
+*                                  (<dest> defaults to a directory named <name>)
+*   MVPKG info <name>              show a package's registry metadata
+*   MVPKG search <term>            list packages whose name/description matches
+*   MVPKG setup <url>              set (and persist) the registry base URL
+*   MVPKG config                   show the current registry URL
+*
+* The registry URL is taken from $MVPKG_REGISTRY, then a persisted config
+* record, then the built-in default.
+   S = SENTENCE()
+   CMD = OCONV(FIELD(S, " ", 2), "MCL")
+   A1 = FIELD(S, " ", 3)
+   A2 = FIELD(S, " ", 4)
+
+   DEFURL = "http://127.0.0.1:8080"
+   CONF = ENV("MVXACCOUNT")
+   IF CONF = "" THEN CONF = "."
+   CONF = CONF : "/mvpkg.conf"
+
+   GOSUB GETREG
+   BEGIN CASE
+      CASE CMD = "install" ; GOSUB INSTALL
+      CASE CMD = "info"    ; GOSUB INFO
+      CASE CMD = "search"  ; GOSUB SEARCH
+      CASE CMD = "setup"   ; GOSUB SETUP
+      CASE CMD = "config"  ; PRINT "registry: ":REG
+      CASE 1               ; GOSUB USAGE
+   END CASE
+   STOP
+
+* --- resolve the registry base URL -------------------------------------
+GETREG:
+   REG = ENV("MVPKG_REGISTRY")
+   IF REG = "" THEN
+      REG = OSREAD(CONF)
+      IF STATUS() # 0 THEN REG = ""
+      REG = TRIM(REG, CHAR(10), "T")
+   END
+   IF REG = "" THEN REG = DEFURL
+   RETURN
+
+* --- MVPKG setup <url> -------------------------------------------------
+SETUP:
+   IF A1 = "" THEN
+      PRINT "usage: MVPKG setup <registry-url>"
+      RETURN
+   END
+   X = OSWRITE(A1, CONF)
+   IF X THEN
+      PRINT "cannot write config ":CONF
+   END ELSE
+      PRINT "registry set to ":A1
+   END
+   RETURN
+
+* --- fetch + decode a package's metadata into META --------------------
+* META<1>=name <2>=version <3>=tarball path <4>=description; "" on miss.
+FETCHMETA:
+   SPEC = ""
+   SPEC<-1> = MAPFIELD("name", 1)
+   SPEC<-1> = MAPFIELD("version", 2)
+   SPEC<-1> = MAPFIELD("tarball", 3)
+   SPEC<-1> = MAPFIELD("description", 4)
+   BODY = HTTPGET(REG : "/package/" : A1)
+   IF BODY = "" THEN
+      META = ""
+   END ELSE
+      META = JSONDECODE(BODY, SPEC)
+   END
+   RETURN
+
+* --- MVPKG info <name> -------------------------------------------------
+INFO:
+   IF A1 = "" THEN PRINT "usage: MVPKG info <name>" ; RETURN
+   GOSUB FETCHMETA
+   IF META = "" THEN
+      PRINT A1:": not found in registry ":REG
+      RETURN
+   END
+   PRINT "name:        ":META<1>
+   PRINT "version:     ":META<2>
+   PRINT "description: ":META<4>
+   PRINT "tarball:     ":REG:META<3>
+   RETURN
+
+* --- MVPKG search <term> ----------------------------------------------
+SEARCH:
+   SPEC = ""
+   SPEC<-1> = MAPFIELD("name", 1, "", "TEXT", "packages")
+   SPEC<-1> = MAPFIELD("version", 2, "", "TEXT", "packages")
+   SPEC<-1> = MAPFIELD("description", 3, "", "TEXT", "packages")
+   BODY = HTTPGET(REG : "/search?q=" : A1)
+   IF BODY = "" THEN
+      PRINT "no packages match """:A1:""""
+      RETURN
+   END
+   R = JSONDECODE(BODY, SPEC)
+   N = DCOUNT(R<1>, @VM)
+   IF N = 0 OR R<1> = "" THEN
+      PRINT "no packages match """:A1:""""
+      RETURN
+   END
+   FOR I = 1 TO N
+      PRINT R<1,I> "L#16" : R<2,I> "L#10" : R<3,I>
+   NEXT I
+   RETURN
+
+* --- MVPKG install <name> [<dest>] ------------------------------------
+INSTALL:
+   IF A1 = "" THEN PRINT "usage: MVPKG install <name> [<dest>]" ; RETURN
+   GOSUB FETCHMETA
+   IF META = "" THEN
+      PRINT A1:": not found in registry ":REG
+      RETURN
+   END
+   DEST = A2
+   IF DEST = "" THEN DEST = A1
+   TMP = "/tmp/mvpkg_" : A1 : ".tar.gz"
+   PRINT "fetching ":META<1>:" ":META<2>:" ..."
+   ST = HTTPGETFILE(REG : META<3>, TMP)
+   IF ST < 200 OR ST >= 300 THEN
+      PRINT "download failed (status ":ST:")"
+      RETURN
+   END
+   CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
+   IF ERR # "" THEN PRINT ERR ; RETURN
+   X = OSDELETE(TMP)
+   PRINT "installed ":META<1>:" ":META<2>:" into ":DEST
+   RETURN
+
+USAGE:
+   PRINT "usage:"
+   PRINT "  MVPKG install <name> [<dest>]"
+   PRINT "  MVPKG info <name>"
+   PRINT "  MVPKG search <term>"
+   PRINT "  MVPKG setup <registry-url>"
+   PRINT "  MVPKG config"
+   RETURN
