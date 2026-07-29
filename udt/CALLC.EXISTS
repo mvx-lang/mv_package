@@ -1,0 +1,35 @@
+FUNCTION CALLC.EXISTS(FNAME)
+* mv_package — core capability probe for UniData.  GPL-2.0-only.
+*
+* CALLC.EXISTS(name) — 1 if the CallC function `name` is registered with
+* this UniData, else 0, WITHOUT invoking it.  A CallC to an unregistered
+* function aborts the whole program (no trappable error), so a live probe
+* is impossible; this reads the canonical CallC definition the package
+* manager maintains ($UDTHOME/bin/work/cfuncdef).
+*
+* This is the answer to "is an optional native add-on installed?" that does
+* NOT require the add-on — or even a specific package — to be present.  The
+* package manager catalogs it GLOBALLY (udt/setup.sh), so every account can
+* ask before using a capability and run either way:
+*
+*    DEFFUN CALLC.EXISTS(A)
+*    IF CALLC.EXISTS("CURSINIT") THEN
+*       GOSUB FULL.SCREEN.UI        ;* udt_curses is installed — use it
+*    END ELSE
+*       GOSUB PLAIN.UI             ;* runs on a bare account too
+*    END
+*
+* The program compiles and runs whether or not the capability is installed:
+* only CALLC.EXISTS itself must be present, and it always is.
+   FOUND = 0
+   UDT = GETENV("UDTHOME")
+   IF UDT # "" THEN
+      OSREAD DEF FROM UDT : "/bin/work/cfuncdef" ELSE DEF = ""
+      NL = DCOUNT(DEF, CHAR(10))
+      I = 1
+      LOOP WHILE I <= NL AND FOUND = 0 DO
+         IF FIELD(FIELD(DEF, CHAR(10), I), ":", 1) = FNAME THEN FOUND = 1
+         I = I + 1
+      REPEAT
+   END
+   RETURN FOUND

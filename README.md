@@ -99,9 +99,38 @@ by [`udt/MVPKGOS`](udt/MVPKGOS). On MVX these ops are no-ops: native code is
 an ordinary compiled subroutine library that installs as-is, with nothing to
 aggregate.
 
-Packages needing to know at runtime whether an optional native capability is
-present use `CALLC.EXISTS(name)` — see mv_package issues #2 and #3 and the
-reference add-on [udt_curses](https://github.com/mvx-lang/udt_curses).
+### Checking a capability without installing it
+
+A program that uses an optional native add-on when present must be able to
+ask *before* using it — and that check must work on an account where the
+add-on was never installed. A CallC to an unregistered function aborts the
+whole program (no trappable error), so the probe cannot itself be a CallC.
+[`udt/CALLC.EXISTS`](udt/CALLC.EXISTS) is pure BASIC: it reads the canonical
+CallC definition and returns 1/0, never invoking anything.
+
+The UniData setup ([`udt/setup.sh`](udt/setup.sh)) catalogs it **globally**,
+so it is present on every account regardless of what is installed. A program
+guards on it and runs either way:
+
+```basic
+   DEFFUN CALLC.EXISTS(A)
+   IF CALLC.EXISTS("CURSINIT") THEN
+      GOSUB FULL.SCREEN.UI        ;* udt_curses is installed — use it
+   END ELSE
+      GOSUB PLAIN.UI             ;* runs on a bare account too
+   END
+```
+
+Only `CALLC.EXISTS` itself must exist, and the setup guarantees it does. Set
+up a UniData host once with:
+
+```sh
+UDTHOME=/usr/ud83 ./udt/setup.sh /path/to/an/account
+```
+
+which installs the aggregator and catalogs the probe. See the reference
+add-on [udt_curses](https://github.com/mvx-lang/udt_curses) (mv_package
+issues #2, #3).
 
 ## Build and test
 
