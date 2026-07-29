@@ -8,6 +8,12 @@
 *
 *   OP = "MKDIR"  P1 = path                 -> create P1 (and parents)
 *   OP = "UNTAR"  P1 = tarball  P2 = destdir -> extract P1 into P2
+*   OP = "CALLC"  P1 = pkgdir   P2 = name    -> integrate a package's native
+*                   contribution.  No-op on MVX: native code is a compiled
+*                   subroutine library that installs as-is, not something
+*                   aggregated into a shared library.  The UniData port
+*                   rebuilds libu2callc.so here (see udt/MVPKGOS).
+*   OP = "REBUILD"                           -> no-op on MVX (see above)
 *
 * RESULT is returned "" on success or an error message.  On MVX these run
 * through EXECUTE "!...", so the caller needs the unrestricted privilege tier
@@ -20,6 +26,10 @@
          EXECUTE '!mkdir -p "':P1:'"'
       CASE OP = "UNTAR"
          EXECUTE '!mkdir -p "':P2:'" && tar -xzf "':P1:'" -C "':P2:'"'
+      CASE OP = "CALLC"
+         * MVX has no shared CallC library to aggregate — nothing to do.
+      CASE OP = "REBUILD"
+         * see CALLC
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE

@@ -1,0 +1,42 @@
+* mv_package — the per-platform OS seam, UniData port.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKGOS(OP, P1, P2, RESULT) — the one call the portable MVPKG client makes
+* for operations that are not pure MultiValue.  This is the Rocket UniData
+* port; it matches the MVX MVPKGOS (MKDIR / UNTAR) and adds the two ops that
+* let the package manager maintain UniData's shared CallC library:
+*
+*   OP = "MKDIR"    P1 = path                 -> create P1 (and parents)
+*   OP = "UNTAR"    P1 = tarball  P2 = destdir -> extract P1 into P2
+*   OP = "CALLC"    P1 = pkgdir   P2 = name    -> stage the package's native
+*                     CallC contribution (P1/udt-callc) and rebuild the
+*                     shared libu2callc.so from every contribution installed;
+*                     a package without a udt-callc/ is a silent no-op
+*   OP = "REBUILD"                             -> rebuild the shared library
+*                     from the currently-staged contributions (no install)
+*
+* UniData loads exactly one libu2callc.so, so native add-ons cannot each own
+* it — they are aggregated.  The heavy lifting (compile, merge cfuncdef,
+* gencdef/genefs/genfunc, relink, install) lives in the udt-callc-build
+* helper, installed at $UDTHOME/bin/udt-callc-build by the mv_package
+* UniData setup; MVPKGOS just drives it.  RESULT is "" on success or an
+* error message.  These shell out through EXECUTE "!...", so the caller
+* needs the unrestricted privilege tier — installing software is privileged.
+   SUBROUTINE MVPKGOS(OP, P1, P2, RESULT)
+   RESULT = ""
+   OP = OCONV(OP, "MCU")
+   UDT = GETENV("UDTHOME")
+   BUILDER = UDT : "/bin/udt-callc-build"
+   BEGIN CASE
+      CASE OP = "MKDIR"
+         EXECUTE '!mkdir -p "':P1:'"'
+      CASE OP = "UNTAR"
+         EXECUTE '!mkdir -p "':P2:'" && tar -xzf "':P1:'" -C "':P2:'"'
+      CASE OP = "CALLC"
+         EXECUTE '!"':BUILDER:'" add "':P1:'" "':P2:'"'
+      CASE OP = "REBUILD"
+         EXECUTE '!"':BUILDER:'"'
+      CASE 1
+         RESULT = "MVPKGOS: unknown op ":OP
+   END CASE
+   RETURN

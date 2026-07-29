@@ -13,6 +13,8 @@
 * Commands (case-insensitive — MV devs work with Caps Lock on):
 *   MVPKG install <name> [<dest>]  download the release tar, install into <dest>
 *                                  (<dest> defaults to a directory named <name>)
+*   MVPKG rebuild                  rebuild the host's shared native library
+*                                  from every installed contribution (UniData)
 *   MVPKG info <name>              show a package's registry metadata
 *   MVPKG search <term>            list packages whose name/description matches
 *   MVPKG setup <url>              set (and persist) the registry base URL
@@ -33,6 +35,7 @@
    GOSUB GETREG
    BEGIN CASE
       CASE CMD = "install" ; GOSUB INSTALL
+      CASE CMD = "rebuild" ; GOSUB REBUILD
       CASE CMD = "info"    ; GOSUB INFO
       CASE CMD = "search"  ; GOSUB SEARCH
       CASE CMD = "setup"   ; GOSUB SETUP
@@ -139,11 +142,28 @@ INSTALL:
    IF ERR # "" THEN PRINT ERR ; RETURN
    X = OSDELETE(TMP)
    PRINT "installed ":META<1>:" ":META<2>:" into ":DEST
+   * A package that reaches into the host through native CallC ships a
+   * udt-callc/ contribution; integrate it (on UniData this rebuilds the
+   * shared library from every native package installed).  A no-op for a
+   * package or platform without one.
+   CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
+   IF ERR # "" THEN PRINT ERR
+   RETURN
+
+* --- MVPKG rebuild -----------------------------------------------------
+* Rebuild the host's shared native (CallC) library from every installed
+* contribution — recovery, or after a manual add/remove.  No-op where the
+* platform has no such library (e.g. MVX).
+REBUILD:
+   CALL MVPKGOS("REBUILD", "", "", ERR)
+   IF ERR # "" THEN PRINT ERR ; RETURN
+   PRINT "rebuilt the native library from installed contributions"
    RETURN
 
 USAGE:
    PRINT "usage:"
    PRINT "  MVPKG install <name> [<dest>]"
+   PRINT "  MVPKG rebuild"
    PRINT "  MVPKG info <name>"
    PRINT "  MVPKG search <term>"
    PRINT "  MVPKG setup <registry-url>"

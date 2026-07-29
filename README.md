@@ -68,6 +68,41 @@ A package's registry metadata mirrors MVX's `PKG` fields (`name`, `version`,
 `description`, and — for resolution across platforms — a `systems` list). The
 release tar carries the account's own `.mvx` / `PKG`.
 
+## Native code on UniData — the shared CallC library
+
+Some packages reach into the host through native C: on UniData that means
+functions compiled into **CallC**, which UniData exposes to BASIC as `CALLC
+NAME(...)`. UniData loads exactly **one** `libu2callc.so`, so native add-ons
+cannot each own it — they must be **aggregated**. mv_package owns that
+library on UniData.
+
+A package that compiles into UniData ships a `udt-callc/` directory — its
+contribution:
+
+```
+udt-callc/
+  *.c      C sources compiled into the library (or *.o for a binary release)
+  funcs    cfuncdef declarations, one per line: name:rettype:nargs:argtypes
+  libs     optional: a line of extra linker flags for this package
+```
+
+`MVPKG install` unpacks the release and then calls `MVPKGOS("CALLC", …)`; the
+UniData port stages the contribution into `$UDTHOME/callc.d/<pkg>/` and
+rebuilds `libu2callc.so` from **every** contribution installed — so adding
+one package never disturbs another, and removing one and rebuilding drops it
+cleanly (the system base functions are re-injected automatically). `MVPKG
+rebuild` re-runs that aggregation on demand.
+
+The rebuild lives in [`udt/udt-callc-build.sh`](udt/udt-callc-build.sh),
+installed to `$UDTHOME/bin/udt-callc-build` by the UniData setup and driven
+by [`udt/MVPKGOS`](udt/MVPKGOS). On MVX these ops are no-ops: native code is
+an ordinary compiled subroutine library that installs as-is, with nothing to
+aggregate.
+
+Packages needing to know at runtime whether an optional native capability is
+present use `CALLC.EXISTS(name)` — see mv_package issues #2 and #3 and the
+reference add-on [udt_curses](https://github.com/mvx-lang/udt_curses).
+
 ## Build and test
 
 ```sh
