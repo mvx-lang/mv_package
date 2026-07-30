@@ -76,10 +76,12 @@ GETPLAT:
    CALL MVPKGOS("PLATFORM", "", "", PLAT)
    IF PLAT # "" AND INDEX(PLAT, ":", 1) THEN
       PSYS = FIELD(PLAT, ":", 1)
-      PARCH = FIELD(PLAT, ":", 2)
-      PEND = FIELD(PLAT, ":", 3)
+      POS = FIELD(PLAT, ":", 2)
+      PARCH = FIELD(PLAT, ":", 3)
+      PEND = FIELD(PLAT, ":", 4)
       IF PSYS # "" AND PARCH # "" THEN
          PLATQ = "?system=" : PSYS : "&arch=" : PARCH
+         IF POS # "" THEN PLATQ := "&os=" : POS
          IF PEND # "" THEN PLATQ := "&endian=" : PEND
       END
    END
