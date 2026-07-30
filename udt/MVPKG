@@ -166,7 +166,7 @@ DOINSTALL:
       CWD = TRIM(CWD, CHAR(10), "T")
       IF CWD # "" THEN DEST = CWD : "/" : DEST
    END
-   TMP = "/tmp/mvpkg_" : FM : ".tar.gz"
+   TMP = "/tmp/mvpkg_" : CHANGE(FM, "/", "_") : ".tar.gz"
    PRINT "fetching " : META<1> : " " : META<2> : " ..."
    ST = HTTPGETFILE(REG : META<3>, TMP)
    IF ST < 200 OR ST >= 300 THEN PRINT "download failed (status " : ST : ")" ; RETURN

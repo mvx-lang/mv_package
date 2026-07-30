@@ -38,7 +38,7 @@ LIB="$UDTHOME/bin/libu2callc.so"           # the shared library every session lo
 # --- optional staging: add/remove a package's contribution --------------
 case "$1" in
 add)
-	src="$2/udt-callc" ; pkg="$3"
+	src="$2/udt-callc" ; pkg=$(printf '%s' "$3" | tr '/' '_')   # scope slash -> _
 	: "${pkg:?add: need <pkgdir> <name>}"
 	if [ ! -d "$src" ]; then
 		echo "udt-callc: $2 ships no udt-callc/ contribution — nothing to build"

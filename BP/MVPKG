@@ -212,7 +212,7 @@ INSTALL:
 * --- install one package: FM = name, THISDEST = dest, META fetched ----
 DOINSTALL:
    DEST = THISDEST
-   TMP = "/tmp/mvpkg_" : FM : ".tar.gz"
+   TMP = "/tmp/mvpkg_" : CHANGE(FM, "/", "_") : ".tar.gz"
    PRINT "fetching ":META<1>:" ":META<2>:" ..."
    ST = HTTPGETFILE(REG : META<3>, TMP)
    IF ST < 200 OR ST >= 300 THEN
