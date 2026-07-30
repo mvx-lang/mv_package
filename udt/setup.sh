@@ -25,6 +25,11 @@ $SUDO cp "$HERE/udt-callc-build.sh" "$UDTHOME/bin/udt-callc-build"
 $SUDO chmod +x "$UDTHOME/bin/udt-callc-build"
 echo "mv_package: installed $UDTHOME/bin/udt-callc-build"
 
+# 1b) the deploy-block flattener, at the path udt/MVPKG drives (CATDEPLOY)
+$SUDO cp "$HERE/mvpkg-deploy" "$UDTHOME/bin/mvpkg-deploy"
+$SUDO chmod +x "$UDTHOME/bin/mvpkg-deploy"
+echo "mv_package: installed $UDTHOME/bin/mvpkg-deploy"
+
 # 2) the core capability probe, cataloged globally
 mkdir -p "$ACCT/BP"
 cp "$HERE/CALLC.EXISTS" "$ACCT/BP/CALLC.EXISTS"

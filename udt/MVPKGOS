@@ -18,6 +18,10 @@
 *                     P1/P2 in place and GLOBALLY catalog it (install)
 *   OP = "VERB"     P1 = verbname              -> deploy a per-account VOC
 *                     pointer to a globally cataloged verb (deploy)
+*   OP = "HAVE"     P1 = progname              -> RESULT "1"/"0": would CALL P1
+*                     resolve (local VOC "C" or global catalog)? — for fallback
+*   OP = "MKFILE"   P1 = name  P2 = type       -> create an account file if
+*                     absent ("dir" or "" = dynamic) — deploy.files
 *   OP = "PLATFORM"                            -> RESULT =
 *                     "<system>:<os>:<arch>:<endian>", the identity the client
 *                     sends the registry so it serves the matching prebuilt
@@ -111,6 +115,37 @@
          GOBJ = UDT : "/sys/CTLG/" : OCONV(P1[1,1], "MCL") : "/" : P1
          OPEN "VOC" TO VVF ELSE RESULT = "MVPKGOS VERB: cannot open VOC" ; RETURN
          WRITE ("C" : @FM : GOBJ : @FM : "mvpkg " : P1) ON VVF, P1
+      CASE OP = "HAVE"
+         * P1 = program name.  RESULT = "1" if CALL P1 would resolve (a local
+         * VOC "C" catalog pointer OR the global catalog file), else "0" — the
+         * MV catalog-lookup idiom, mirroring how CALL resolves.  Used to honor
+         * a package's "fallback" (bundle a copy only when the dep is absent).
+         RESULT = "0"
+         OPEN "VOC" TO HVF THEN
+            READ HR FROM HVF, P1 THEN
+               IF HR<1> = "C" THEN RESULT = "1"
+            END
+         END
+         IF RESULT = "0" THEN
+            GP = UDT : "/sys/CTLG/" : OCONV(P1[1,1], "MCL") : "/" : P1
+            OPENSEQ GP TO HSF THEN RESULT = "1" ; CLOSESEQ HSF
+         END
+      CASE OP = "MKFILE"
+         * P1 = file name, P2 = type ("dir" = a directory file — an OS
+         * directory + VOC DIR-pointer, like BP; anything else = a dynamic
+         * hashed file).  Create it in this account if absent (deploy.files);
+         * a no-op if it already opens.
+         OPEN P1 TO MFF THEN
+            RESULT = ""
+         END ELSE
+            IF OCONV(P2, "MCL") = "dir" THEN
+               EXECUTE '!mkdir -p "' : P1 : '" "D_' : P1 : '"'
+               OPEN "VOC" TO MFV ELSE RESULT = "MVPKGOS MKFILE: cannot open VOC" ; RETURN
+               WRITE ("DIR" : @FM : P1 : @FM : "D_" : P1) ON MFV, P1
+            END ELSE
+               EXECUTE "CREATE.FILE " : P1 : " 1"
+            END
+         END
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE

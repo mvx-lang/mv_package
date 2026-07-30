@@ -204,6 +204,53 @@ DOINSTALL:
    PRINT "installed " : META<1> : " " : META<2> : " into " : DEST
    CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
    IF ERR # "" THEN PRINT ERR
+   GOSUB CATDEPLOY
+   RETURN
+
+* --- globally catalog the package's code + deploy it into this account -----
+* Driven by the mvpkg.json "deploy" block (verbs / files / fallback).  The
+* nested block defeats the flat JSON seam, so the mvpkg-deploy helper (shipped
+* beside udt-callc-build in $UDTHOME/bin) flattens it to three lines: verbs,
+* files (name:type), fallback (dir:rep — rep is a program the dir provides, so
+* we can skip the dir when it is already cataloged).
+CATDEPLOY:
+   HELPER = GETENV("UDTHOME") : "/bin/mvpkg-deploy"
+   TMPB = "/tmp/mvpkg_dep_" : @USERNO
+   EXECUTE '!python3 "' : HELPER : '" "' : DEST : '" > "' : TMPB : '" 2>/dev/null'
+   OSREAD DEPRAW FROM TMPB ELSE DEPRAW = ""
+   EXECUTE '!rm -f "' : TMPB : '"'
+   DVERBS  = TRIM(FIELD(DEPRAW, CHAR(10), 1))
+   DFILES  = TRIM(FIELD(DEPRAW, CHAR(10), 2))
+   DFALL   = TRIM(FIELD(DEPRAW, CHAR(10), 3))
+   PRINT "cataloging " : META<1> : " ..."
+   CALL MVPKGOS("CATALOG", DEST, "BP", ERR) ; IF ERR # "" THEN PRINT ERR
+   * fallback dirs: catalog only when the dep is not already available
+   NF = DCOUNT(DFALL, " ")
+   FOR I = 1 TO NF
+      PR = FIELD(DFALL, " ", I)
+      IF PR # "" THEN
+         FBD = FIELD(PR, ":", 1) ; REP = FIELD(PR, ":", 2)
+         HAV = "0"
+         IF REP # "" THEN CALL MVPKGOS("HAVE", REP, "", HAV)
+         IF HAV = "0" THEN CALL MVPKGOS("CATALOG", DEST, FBD, ERR)
+      END
+   NEXT I
+   * deploy verbs (per-account VOC pointers)
+   NV = DCOUNT(DVERBS, " ")
+   FOR I = 1 TO NV
+      V = FIELD(DVERBS, " ", I)
+      IF V # "" THEN CALL MVPKGOS("VERB", V, "", ERR) ; IF ERR # "" THEN PRINT ERR
+   NEXT I
+   * deploy files
+   NFI = DCOUNT(DFILES, " ")
+   FOR I = 1 TO NFI
+      FT = FIELD(DFILES, " ", I)
+      IF FT # "" THEN
+         FNM = FIELD(FT, ":", 1) ; FTY = FIELD(FT, ":", 2)
+         CALL MVPKGOS("MKFILE", FNM, FTY, ERR)
+      END
+   NEXT I
+   PRINT "deployed " : META<1> : " into this account"
    RETURN
 
 USAGE:
