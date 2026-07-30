@@ -180,51 +180,71 @@ INSTALL:
    OSWRITE MTEXT ON MFILE
    RETURN
 
-* --- install one package: FM = name, THISDEST = dest, META fetched ----
+* --- install one package: FM = name, META fetched --------------------------
+* Two tiers.  GLOBAL (once per system): download the source into the store,
+* globally catalog its code, record it in the store manifest.  ACCOUNT (every
+* run): deploy the verbs + files into the current account.  So `MVPKG install`
+* rerun in another account downloads nothing — it just links the package up.
 DOINSTALL:
-   DEST = THISDEST
-   IF DEST[1, 1] # "/" THEN
-      EXECUTE '!pwd > /tmp/mvpkg_pwd.tmp'
-      OSREAD CWD FROM "/tmp/mvpkg_pwd.tmp" ELSE CWD = ""
-      CWD = TRIM(CWD, CHAR(10), "T")
-      IF CWD # "" THEN DEST = CWD : "/" : DEST
+   CALL MVPKGOS("STORE", "", "", STORE)
+   PKGKEY = CHANGE(META<1>, "/", "_")
+   DEST = STORE : "/" : PKGKEY
+   GMAN = STORE : "/installed"
+   GKEY = META<1> : " " : META<2>
+   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+   GINST = 0
+   NG = DCOUNT(GTEXT, CHAR(10))
+   FOR GI = 1 TO NG
+      IF TRIM(FIELD(GTEXT, CHAR(10), GI)) = GKEY THEN GINST = 1
+   NEXT GI
+   IF GINST = 0 THEN
+      TMP = "/tmp/mvpkg_" : PKGKEY : ".tar.gz"
+      PRINT "fetching " : META<1> : " " : META<2> : " ..."
+      * registry-hosted (relative) or an external http(s) URL (a binary-only
+      * package served from a vendor site or GitHub) — absolute is used as-is.
+      TURL = META<3>
+      IF TURL[1, 4] # "http" THEN TURL = REG : TURL
+      ST = HTTPGETFILE(TURL, TMP)
+      IF ST < 200 OR ST >= 300 THEN PRINT "download failed (status " : ST : ")" ; RETURN
+      EXECUTE '!rm -rf "' : DEST : '"'
+      CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
+      IF ERR # "" THEN PRINT ERR ; RETURN
+      EXECUTE '!rm -f ' : TMP
+      CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
+      IF ERR # "" THEN PRINT ERR
+      GOSUB PARSEDEPLOY
+      GOSUB CATGLOBAL
+      IF GTEXT # "" AND GTEXT[LEN(GTEXT), 1] # CHAR(10) THEN GTEXT := CHAR(10)
+      GTEXT := GKEY : CHAR(10)
+      OSWRITE GTEXT ON GMAN
+      PRINT "installed " : META<1> : " " : META<2> : " (globally cataloged)"
+   END ELSE
+      GOSUB PARSEDEPLOY
+      PRINT META<1> : " " : META<2> : " already installed — deploying here"
    END
-   TMP = "/tmp/mvpkg_" : CHANGE(FM, "/", "_") : ".tar.gz"
-   PRINT "fetching " : META<1> : " " : META<2> : " ..."
-   * the tarball may be registry-hosted (relative) or an external http(s) URL
-   * (a binary-only package served from a vendor site or GitHub) — use it as-is
-   * when absolute, else resolve against the registry base.
-   TURL = META<3>
-   IF TURL[1, 4] # "http" THEN TURL = REG : TURL
-   ST = HTTPGETFILE(TURL, TMP)
-   IF ST < 200 OR ST >= 300 THEN PRINT "download failed (status " : ST : ")" ; RETURN
-   CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
-   IF ERR # "" THEN PRINT ERR ; RETURN
-   EXECUTE '!rm -f ' : TMP
-   PRINT "installed " : META<1> : " " : META<2> : " into " : DEST
-   CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
-   IF ERR # "" THEN PRINT ERR
-   GOSUB CATDEPLOY
+   GOSUB DEPLOYACCT
    RETURN
 
-* --- globally catalog the package's code + deploy it into this account -----
-* Driven by the mvpkg.json "deploy" block (verbs / files / fallback).  The
-* nested block defeats the flat JSON seam, so the mvpkg-deploy helper (shipped
-* beside udt-callc-build in $UDTHOME/bin) flattens it to three lines: verbs,
-* files (name:type), fallback (dir:rep — rep is a program the dir provides, so
-* we can skip the dir when it is already cataloged).
-CATDEPLOY:
+* --- flatten the mvpkg.json "deploy" block (verbs / files / fallback) -------
+* The nested block defeats the flat JSON seam, so the mvpkg-deploy helper (in
+* $UDTHOME/bin) yields three lines: verbs, files (name:type), fallback (dir:rep
+* — rep is a program the dir provides, so a dir is skipped when it is already
+* cataloged).
+PARSEDEPLOY:
    HELPER = GETENV("UDTHOME") : "/bin/mvpkg-deploy"
    TMPB = "/tmp/mvpkg_dep_" : @USERNO
    EXECUTE '!python3 "' : HELPER : '" "' : DEST : '" > "' : TMPB : '" 2>/dev/null'
    OSREAD DEPRAW FROM TMPB ELSE DEPRAW = ""
    EXECUTE '!rm -f "' : TMPB : '"'
-   DVERBS  = TRIM(FIELD(DEPRAW, CHAR(10), 1))
-   DFILES  = TRIM(FIELD(DEPRAW, CHAR(10), 2))
-   DFALL   = TRIM(FIELD(DEPRAW, CHAR(10), 3))
+   DVERBS = TRIM(FIELD(DEPRAW, CHAR(10), 1))
+   DFILES = TRIM(FIELD(DEPRAW, CHAR(10), 2))
+   DFALL  = TRIM(FIELD(DEPRAW, CHAR(10), 3))
+   RETURN
+
+* --- GLOBAL: compile + globally catalog the code (once per system) ----------
+CATGLOBAL:
    PRINT "cataloging " : META<1> : " ..."
    CALL MVPKGOS("CATALOG", DEST, "BP", ERR) ; IF ERR # "" THEN PRINT ERR
-   * fallback dirs: catalog only when the dep is not already available
    NF = DCOUNT(DFALL, " ")
    FOR I = 1 TO NF
       PR = FIELD(DFALL, " ", I)
@@ -235,13 +255,15 @@ CATDEPLOY:
          IF HAV = "0" THEN CALL MVPKGOS("CATALOG", DEST, FBD, ERR)
       END
    NEXT I
-   * deploy verbs (per-account VOC pointers)
+   RETURN
+
+* --- ACCOUNT: deploy the verbs + files into the current account -------------
+DEPLOYACCT:
    NV = DCOUNT(DVERBS, " ")
    FOR I = 1 TO NV
       V = FIELD(DVERBS, " ", I)
       IF V # "" THEN CALL MVPKGOS("VERB", V, "", ERR) ; IF ERR # "" THEN PRINT ERR
    NEXT I
-   * deploy files
    NFI = DCOUNT(DFILES, " ")
    FOR I = 1 TO NFI
       FT = FIELD(DFILES, " ", I)

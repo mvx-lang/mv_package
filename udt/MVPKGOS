@@ -18,6 +18,8 @@
 *                     P1/P2 in place and GLOBALLY catalog it (install)
 *   OP = "VERB"     P1 = verbname              -> deploy a per-account VOC
 *                     pointer to a globally cataloged verb (deploy)
+*   OP = "STORE"                               -> RESULT = the global package
+*                     store dir (created); download-once lives here
 *   OP = "HAVE"     P1 = progname              -> RESULT "1"/"0": would CALL P1
 *                     resolve (local VOC "C" or global catalog)? — for fallback
 *   OP = "MKFILE"   P1 = name  P2 = type       -> create an account file if
@@ -115,6 +117,15 @@
          GOBJ = UDT : "/sys/CTLG/" : OCONV(P1[1,1], "MCL") : "/" : P1
          OPEN "VOC" TO VVF ELSE RESULT = "MVPKGOS VERB: cannot open VOC" ; RETURN
          WRITE ("C" : @FM : GOBJ : @FM : "mvpkg " : P1) ON VVF, P1
+      CASE OP = "STORE"
+         * RESULT = the global package store (created if absent) — where a
+         * downloaded package's source lives once per system so it can be
+         * globally cataloged and deployed to any account.  $MVPKG_STORE
+         * overrides the default $UDTHOME/mvpkg.
+         SP = GETENV("MVPKG_STORE")
+         IF SP = "" THEN SP = UDT : "/mvpkg"
+         EXECUTE '!mkdir -p "' : SP : '"'
+         RESULT = SP
       CASE OP = "HAVE"
          * P1 = program name.  RESULT = "1" if CALL P1 would resolve (a local
          * VOC "C" catalog pointer OR the global catalog file), else "0" — the
