@@ -1,0 +1,108 @@
+* mv_package — MVPKG, the MultiValue package manager client (UniData port).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* Same behaviour as the portable BP/MVPKG: resolve a package from the
+* registry, download its release tar and install it into an account.  The
+* portable client reaches HTTP and JSON as intrinsics (the MVX http/json
+* extensions); UniData has neither, so this port declares them as the
+* cataloged seam functions (udt/HTTPGET, HTTPGETFILE, JSONDECODE, MAPFIELD)
+* and uses UniData idioms (GETENV, OSREAD statements, @SENTENCE for args).
+*
+*   MVPKG install <name> [<dest>]   download the release tar, install it
+*   MVPKG info <name>               show a package's registry metadata
+*   MVPKG config                    show the current registry URL
+*
+* Installing shells out (curl, tar, the native rebuild), so it needs the
+* privilege to do so.  On UniData an installed package that carries a
+* udt-callc/ contribution triggers a rebuild of the shared CallC library
+* (via MVPKGOS "CALLC") — nothing else to run.
+   DEFFUN HTTPGET(A)
+   DEFFUN HTTPGETFILE(A, B)
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B)
+
+   S = @SENTENCE
+   CMD = OCONV(FIELD(S, " ", 2), "MCL")
+   A1 = FIELD(S, " ", 3)
+   A2 = FIELD(S, " ", 4)
+
+   DEFURL = "http://127.0.0.1:8080"
+   CONF = GETENV("HOME") : "/mvpkg.conf"
+
+   GOSUB GETREG
+   BEGIN CASE
+      CASE CMD = "install" ; GOSUB INSTALL
+      CASE CMD = "info"    ; GOSUB INFO
+      CASE CMD = "config"  ; PRINT "registry: " : REG
+      CASE 1               ; GOSUB USAGE
+   END CASE
+   STOP
+
+* --- resolve the registry base URL -------------------------------------
+GETREG:
+   REG = GETENV("MVPKG_REGISTRY")
+   IF REG = "" THEN
+      OSREAD REG FROM CONF ELSE REG = ""
+      REG = TRIM(REG, CHAR(10), "T")
+   END
+   IF REG = "" THEN REG = DEFURL
+   RETURN
+
+* --- fetch + decode a package's metadata into META --------------------
+* META<1>=name <2>=version <3>=tarball path <4>=description; "" on miss.
+FETCHMETA:
+   SPEC = ""
+   SPEC<-1> = MAPFIELD("name", 1)
+   SPEC<-1> = MAPFIELD("version", 2)
+   SPEC<-1> = MAPFIELD("tarball", 3)
+   SPEC<-1> = MAPFIELD("description", 4)
+   BODY = HTTPGET(REG : "/package/" : A1)
+   IF BODY = "" THEN META = "" ELSE META = JSONDECODE(BODY, SPEC)
+   RETURN
+
+* --- MVPKG info <name> -------------------------------------------------
+INFO:
+   IF A1 = "" THEN PRINT "usage: MVPKG info <name>" ; RETURN
+   GOSUB FETCHMETA
+   IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
+   PRINT "name:        " : META<1>
+   PRINT "version:     " : META<2>
+   PRINT "description: " : META<4>
+   PRINT "tarball:     " : REG : META<3>
+   RETURN
+
+* --- MVPKG install <name> [<dest>] ------------------------------------
+INSTALL:
+   IF A1 = "" THEN PRINT "usage: MVPKG install <name> [<dest>]" ; RETURN
+   GOSUB FETCHMETA
+   IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
+   DEST = A2
+   IF DEST = "" THEN DEST = A1
+   * the native rebuild needs an absolute package dir; resolve it
+   IF DEST[1, 1] # "/" THEN
+      EXECUTE '!pwd > /tmp/mvpkg_pwd.tmp'
+      OSREAD CWD FROM "/tmp/mvpkg_pwd.tmp" ELSE CWD = ""
+      CWD = TRIM(CWD, CHAR(10), "T")
+      IF CWD # "" THEN DEST = CWD : "/" : DEST
+   END
+   TMP = "/tmp/mvpkg_" : A1 : ".tar.gz"
+   PRINT "fetching " : META<1> : " " : META<2> : " ..."
+   ST = HTTPGETFILE(REG : META<3>, TMP)
+   IF ST < 200 OR ST >= 300 THEN PRINT "download failed (status " : ST : ")" ; RETURN
+   CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
+   IF ERR # "" THEN PRINT ERR ; RETURN
+   EXECUTE '!rm -f ' : TMP
+   PRINT "installed " : META<1> : " " : META<2> : " into " : DEST
+   * a package with native code ships a udt-callc/ contribution; integrate
+   * it — on UniData this rebuilds the shared CallC library from every
+   * native package installed.  A no-op for a package without one.
+   CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
+   IF ERR # "" THEN PRINT ERR
+   RETURN
+
+USAGE:
+   PRINT "usage:"
+   PRINT "  MVPKG install <name> [<dest>]"
+   PRINT "  MVPKG info <name>"
+   PRINT "  MVPKG config"
+   RETURN

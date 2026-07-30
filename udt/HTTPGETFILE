@@ -1,0 +1,9 @@
+FUNCTION HTTPGETFILE(URL, PATH)
+* mv_package UniData seam — download URL to PATH, return the HTTP status.
+* GPL-2.0-only.
+   CF = "/tmp/mvpkg_code.tmp"
+   EXECUTE '!curl -s -o "' : PATH : '" -w "%{http_code}" "' : URL : '" > ' : CF
+   CODE = ""
+   OSREAD CODE FROM CF ELSE CODE = "0"
+   EXECUTE '!rm -f ' : CF
+   RETURN CODE + 0

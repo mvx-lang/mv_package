@@ -43,6 +43,17 @@ itself is a language extension on MVX (the `http` package: `HTTPGET` /
 `HTTPGETFILE`); another MV system supplies its own equivalents. The rest of
 `MVPKG` is portable BASIC.
 
+**UniData port** (`udt/`). UniData has neither the HTTP nor the JSON
+intrinsics, so the port fills both seams — `udt/HTTPGET` and
+`udt/HTTPGETFILE` via `curl`, and `udt/JSONDECODE` + `udt/MAPFIELD` as a
+minimal flat-JSON decoder (enough for the registry's metadata) — and
+`udt/MVPKG` is the client in UniData idiom (`@SENTENCE`, `GETENV`, `OSREAD`
+statements) declaring those seams as cataloged functions. `MVPKG install`
+then runs on UniData: it fetches the release, unpacks it, and — for a
+package that ships a `udt-callc/` contribution — rebuilds the shared CallC
+library, all in one command (see below). `search` awaits a fuller JSON seam
+(issue #4).
+
 ## The registry — `server/`
 
 A dependency-free Node.js HTTP registry (the packagist/npm-registry

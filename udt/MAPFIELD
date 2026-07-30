@@ -1,0 +1,4 @@
+FUNCTION MAPFIELD(KEY, POS)
+* mv_package UniData seam — one JSON field spec: extract "KEY" into result
+* attribute POS.  Pairs with JSONDECODE.  GPL-2.0-only.
+   RETURN KEY : CHAR(253) : POS

@@ -1,0 +1,26 @@
+FUNCTION JSONDECODE(JSON, SPEC)
+* mv_package UniData seam — decode flat JSON string fields per a MAPFIELD
+* spec, returning an @AM array with each value at its mapped position.  Just
+* enough JSON for the registry's metadata (flat "key":"value" objects); the
+* MVX json extension does the general case.  GPL-2.0-only.
+   RESULT = ""
+   N = DCOUNT(SPEC, @AM)
+   FOR I = 1 TO N
+      ENT = SPEC<I>
+      KEY = FIELD(ENT, CHAR(253), 1)
+      POS = FIELD(ENT, CHAR(253), 2)
+      TAG = '"' : KEY : '"'
+      P = INDEX(JSON, TAG, 1)
+      VAL = ""
+      IF P > 0 THEN
+         AFTER = JSON[P + LEN(TAG), LEN(JSON)]
+         C = INDEX(AFTER, ":", 1)
+         AFTER = AFTER[C + 1, LEN(AFTER)]
+         OQ = INDEX(AFTER, '"', 1)
+         AFTER = AFTER[OQ + 1, LEN(AFTER)]
+         CQ = INDEX(AFTER, '"', 1)
+         VAL = AFTER[1, CQ - 1]
+      END
+      RESULT<POS> = VAL
+   NEXT I
+   RETURN RESULT
