@@ -26,13 +26,21 @@ account — there is nothing to import.
 Commands are case-insensitive (MV developers work with Caps Lock on):
 
 ```
-MVPKG install <name> [<dest>]   download the release tar, install into <dest>
+MVPKG install <name> [<dest>]   install a package and its dependencies
                                 (<dest> defaults to a directory named <name>)
 MVPKG info <name>               show a package's registry metadata
 MVPKG search <term>             list packages whose name/description matches
 MVPKG setup <url>               set (and persist) the registry base URL
 MVPKG config                    show the current registry URL
 ```
+
+`install` resolves the package's **dependencies** first: a package names the
+packages it needs in its registry metadata, and the client installs the
+whole transitive set, dependencies before dependents. Installed package
+names are recorded in `mvpkg.installed` in the account, so a dependency
+already present is not reinstalled. On UniData this means installing an app
+that depends on `curses` pulls the native bridge in and rebuilds the shared
+library — one command, nothing manual.
 
 The registry URL is taken from `$MVPKG_REGISTRY`, then a persisted `mvpkg.conf`,
 then the built-in default (`http://127.0.0.1:8080`).
@@ -76,8 +84,10 @@ server/mkrelease.sh /path/to/account <name> <version> "<description>"
 ## Manifest
 
 A package's registry metadata mirrors MVX's `PKG` fields (`name`, `version`,
-`description`, and — for resolution across platforms — a `systems` list). The
-release tar carries the account's own `.mvx` / `PKG`.
+`description`, a `dependencies` list — space-separated package names — and,
+for resolution across platforms, a `systems` list). `mkrelease.sh` takes the
+dependencies as its fifth argument. The release tar carries the account's own
+`.mvx` / `PKG`.
 
 ## Native code on UniData — the shared CallC library
 

@@ -18,7 +18,7 @@ command -v node >/dev/null 2>&1 || { echo "node not found; skipping" >&2; exit 0
 export MVX_DRIVERS="$MVX_HOME/build/lib"
 
 WORK="$(mktemp -d)"
-trap '{ kill "$REGPID" && wait "$REGPID"; } 2>/dev/null; rm -rf "$WORK" "$ROOT/server/registry/demo"' EXIT
+trap '{ kill "$REGPID" && wait "$REGPID"; } 2>/dev/null; rm -rf "$WORK" "$ROOT/server/registry/demo" "$ROOT/server/registry/depdemo" "$ROOT/mvpkg.installed"' EXIT
 
 # 1. build the client
 MVX_HOME="$MVX_HOME" "$ROOT/build.sh" >/dev/null
@@ -53,5 +53,25 @@ MISS="$WORK/miss"
 MVXPRIV=unrestricted "$MVX" -a "$ROOT" -c "MVPKG install nosuch $MISS" >"$WORK/miss.out" 2>&1
 grep -q "not found in registry" "$WORK/miss.out" || { echo "FAIL: missing pkg not reported"; fail=1; }
 [ -d "$MISS" ] && { echo "FAIL: missing pkg created a dest dir"; fail=1; }
+
+# 6. dependencies: a package that depends on another installs both, deps first
+FIX2="$WORK/fixture2"; mkdir -p "$FIX2/BP"
+printf 'depdemo-marker\n' > "$FIX2/MARKER"
+"$ROOT/server/mkrelease.sh" "$FIX2" depdemo 1.0 "depends on demo" "demo" >/dev/null
+rm -f "$ROOT/mvpkg.installed"          # fresh account: nothing installed yet
+D2="$WORK/inst2"
+( cd "$WORK" && MVXPRIV=unrestricted "$MVX" -a "$ROOT" -c "MVPKG install depdemo $D2" ) >"$WORK/dep.out" 2>&1
+cat "$WORK/dep.out"
+grep -q "installed demo 1.0" "$WORK/dep.out"    || { echo "FAIL: dependency demo not installed"; fail=1; }
+grep -q "installed depdemo 1.0" "$WORK/dep.out" || { echo "FAIL: depdemo not installed"; fail=1; }
+[ -f "$D2/MARKER" ]                              || { echo "FAIL: depdemo not installed to dest"; fail=1; }
+DL=$(grep -n "installed demo 1.0" "$WORK/dep.out" | head -1 | cut -d: -f1)
+PL=$(grep -n "installed depdemo 1.0" "$WORK/dep.out" | head -1 | cut -d: -f1)
+{ [ -n "$DL" ] && [ -n "$PL" ] && [ "$DL" -lt "$PL" ]; } || { echo "FAIL: dependency not installed before dependent"; fail=1; }
+{ grep -qx demo "$ROOT/mvpkg.installed" && grep -qx depdemo "$ROOT/mvpkg.installed"; } 2>/dev/null || { echo "FAIL: manifest missing entries"; fail=1; }
+
+# 7. idempotent: installing again with the manifest present is a no-op
+( cd "$WORK" && MVXPRIV=unrestricted "$MVX" -a "$ROOT" -c "MVPKG install depdemo $D2" ) >"$WORK/again.out" 2>&1
+grep -q "fetching" "$WORK/again.out" && { echo "FAIL: reinstalled an already-installed package"; fail=1; }
 
 if [ "$fail" = 0 ]; then echo "PASS: mv_package end-to-end install loop"; else exit 1; fi

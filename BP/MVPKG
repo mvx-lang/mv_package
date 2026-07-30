@@ -69,15 +69,17 @@ SETUP:
    END
    RETURN
 
-* --- fetch + decode a package's metadata into META --------------------
-* META<1>=name <2>=version <3>=tarball path <4>=description; "" on miss.
+* --- fetch + decode package FM's metadata into META -------------------
+* META<1>=name <2>=version <3>=tarball <4>=description <5>=deps (space-sep);
+* "" on miss.
 FETCHMETA:
    SPEC = ""
    SPEC<-1> = MAPFIELD("name", 1)
    SPEC<-1> = MAPFIELD("version", 2)
    SPEC<-1> = MAPFIELD("tarball", 3)
    SPEC<-1> = MAPFIELD("description", 4)
-   BODY = HTTPGET(REG : "/package/" : A1)
+   SPEC<-1> = MAPFIELD("dependencies", 5)
+   BODY = HTTPGET(REG : "/package/" : FM)
    IF BODY = "" THEN
       META = ""
    END ELSE
@@ -88,14 +90,15 @@ FETCHMETA:
 * --- MVPKG info <name> -------------------------------------------------
 INFO:
    IF A1 = "" THEN PRINT "usage: MVPKG info <name>" ; RETURN
-   GOSUB FETCHMETA
+   FM = A1 ; GOSUB FETCHMETA
    IF META = "" THEN
       PRINT A1:": not found in registry ":REG
       RETURN
    END
-   PRINT "name:        ":META<1>
-   PRINT "version:     ":META<2>
-   PRINT "description: ":META<4>
+   PRINT "name:         ":META<1>
+   PRINT "version:      ":META<2>
+   PRINT "description:  ":META<4>
+   PRINT "dependencies: ":META<5>
    PRINT "tarball:     ":REG:META<3>
    RETURN
 
@@ -122,16 +125,94 @@ SEARCH:
    RETURN
 
 * --- MVPKG install <name> [<dest>] ------------------------------------
+* Install a package and everything it depends on, dependencies first.  A
+* package declares its dependencies in the registry metadata (space-
+* separated names); installed names are recorded in mvpkg.installed in the
+* account so a dependency already present is not reinstalled.
 INSTALL:
-   IF A1 = "" THEN PRINT "usage: MVPKG install <name> [<dest>]" ; RETURN
-   GOSUB FETCHMETA
-   IF META = "" THEN
-      PRINT A1:": not found in registry ":REG
-      RETURN
-   END
-   DEST = A2
-   IF DEST = "" THEN DEST = A1
-   TMP = "/tmp/mvpkg_" : A1 : ".tar.gz"
+   IF A1 = "" THEN GOSUB USAGE ; RETURN
+   MFILE = ENV("MVXACCOUNT")
+   IF MFILE = "" THEN MFILE = "."
+   MFILE = MFILE : "/mvpkg.installed"
+   MTEXT = OSREAD(MFILE)
+   IF STATUS() # 0 THEN MTEXT = ""
+   INSTALLED = ""
+   FOR I = 1 TO DCOUNT(MTEXT, CHAR(10))
+      LN = TRIM(FIELD(MTEXT, CHAR(10), I))
+      IF LN # "" THEN INSTALLED<-1> = LN
+   NEXT I
+
+   * ---- phase 1: transitive closure; DEPSOF<i> parallels NEED<i> -------
+   NEED = A1
+   DEPSOF = ""
+   K = 1
+   LOOP WHILE K <= DCOUNT(NEED, @AM) DO
+      FM = NEED<K> ; GOSUB FETCHMETA
+      IF META = "" THEN PRINT NEED<K>:": not found in registry ":REG ; RETURN
+      DEPSOF<K> = META<5>
+      FOR J = 1 TO DCOUNT(META<5>, " ")
+         D = FIELD(META<5>, " ", J)
+         IF D # "" THEN
+            SEEN = 0
+            FOR X = 1 TO DCOUNT(NEED, @AM)
+               IF NEED<X> = D THEN SEEN = 1
+            NEXT X
+            IF SEEN = 0 THEN NEED<-1> = D
+         END
+      NEXT J
+      K = K + 1
+   REPEAT
+
+   * ---- phase 2: install deps-first (topological) ---------------------
+   NP = DCOUNT(NEED, @AM)
+   DONE = 0
+   LOOP UNTIL DONE DO
+      PROGRESS = 0 ; PENDING = 0
+      FOR I = 1 TO NP
+         P = NEED<I>
+         DONEP = 0
+         FOR X = 1 TO DCOUNT(INSTALLED, @AM)
+            IF INSTALLED<X> = P THEN DONEP = 1
+         NEXT X
+         IF DONEP = 0 THEN
+            PENDING = PENDING + 1
+            READY = 1
+            FOR J = 1 TO DCOUNT(DEPSOF<I>, " ")
+               D = FIELD(DEPSOF<I>, " ", J)
+               IF D # "" THEN
+                  HAVE = 0
+                  FOR X = 1 TO DCOUNT(INSTALLED, @AM)
+                     IF INSTALLED<X> = D THEN HAVE = 1
+                  NEXT X
+                  IF HAVE = 0 THEN READY = 0
+               END
+            NEXT J
+            IF READY THEN
+               IF P = A1 AND A2 # "" THEN THISDEST = A2 ELSE THISDEST = P
+               FM = P ; GOSUB FETCHMETA ; GOSUB DOINSTALL
+               INSTALLED<-1> = P
+               PROGRESS = 1
+            END
+         END
+      NEXT I
+      IF PENDING = 0 THEN DONE = 1
+      IF PROGRESS = 0 AND PENDING > 0 THEN
+         PRINT "mvpkg: cannot resolve dependencies (cycle or missing)"
+         DONE = 1
+      END
+   REPEAT
+
+   MTEXT = ""
+   FOR I = 1 TO DCOUNT(INSTALLED, @AM)
+      MTEXT = MTEXT : INSTALLED<I> : CHAR(10)
+   NEXT I
+   X = OSWRITE(MTEXT, MFILE)
+   RETURN
+
+* --- install one package: FM = name, THISDEST = dest, META fetched ----
+DOINSTALL:
+   DEST = THISDEST
+   TMP = "/tmp/mvpkg_" : FM : ".tar.gz"
    PRINT "fetching ":META<1>:" ":META<2>:" ..."
    ST = HTTPGETFILE(REG : META<3>, TMP)
    IF ST < 200 OR ST >= 300 THEN

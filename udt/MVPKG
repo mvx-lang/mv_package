@@ -2,20 +2,22 @@
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
 * Same behaviour as the portable BP/MVPKG: resolve a package from the
-* registry, download its release tar and install it into an account.  The
-* portable client reaches HTTP and JSON as intrinsics (the MVX http/json
-* extensions); UniData has neither, so this port declares them as the
-* cataloged seam functions (udt/HTTPGET, HTTPGETFILE, JSONDECODE, MAPFIELD)
-* and uses UniData idioms (GETENV, OSREAD statements, @SENTENCE for args).
+* registry, download its release tar and install it into an account —
+* pulling in its dependencies first.  The portable client reaches HTTP and
+* JSON as intrinsics (the MVX http/json extensions); UniData has neither, so
+* this port declares them as the cataloged seam functions (udt/HTTPGET,
+* HTTPGETFILE, JSONDECODE, MAPFIELD) and uses UniData idioms (GETENV, OSREAD/
+* OSWRITE statements, @SENTENCE for args).
 *
-*   MVPKG install <name> [<dest>]   download the release tar, install it
+*   MVPKG install <name> [<dest>]   install a package and its dependencies
 *   MVPKG info <name>               show a package's registry metadata
 *   MVPKG config                    show the current registry URL
 *
 * Installing shells out (curl, tar, the native rebuild), so it needs the
-* privilege to do so.  On UniData an installed package that carries a
-* udt-callc/ contribution triggers a rebuild of the shared CallC library
-* (via MVPKGOS "CALLC") — nothing else to run.
+* privilege to do so.  A package that carries a udt-callc/ contribution
+* rebuilds the shared CallC library (via MVPKGOS "CALLC") when installed.
+* Installed package names are recorded in mvpkg.installed in the account, so
+* a dependency already present is not reinstalled.
    DEFFUN HTTPGET(A)
    DEFFUN HTTPGETFILE(A, B)
    DEFFUN JSONDECODE(A, B)
@@ -28,6 +30,7 @@
 
    DEFURL = "http://127.0.0.1:8080"
    CONF = GETENV("HOME") : "/mvpkg.conf"
+   MFILE = "mvpkg.installed"
 
    GOSUB GETREG
    BEGIN CASE
@@ -48,44 +51,122 @@ GETREG:
    IF REG = "" THEN REG = DEFURL
    RETURN
 
-* --- fetch + decode a package's metadata into META --------------------
-* META<1>=name <2>=version <3>=tarball path <4>=description; "" on miss.
+* --- fetch + decode package NAME (in variable FM) into META -------------
+* META<1>=name <2>=version <3>=tarball <4>=description <5>=deps (space-sep).
 FETCHMETA:
    SPEC = ""
    SPEC<-1> = MAPFIELD("name", 1)
    SPEC<-1> = MAPFIELD("version", 2)
    SPEC<-1> = MAPFIELD("tarball", 3)
    SPEC<-1> = MAPFIELD("description", 4)
-   BODY = HTTPGET(REG : "/package/" : A1)
+   SPEC<-1> = MAPFIELD("dependencies", 5)
+   BODY = HTTPGET(REG : "/package/" : FM)
    IF BODY = "" THEN META = "" ELSE META = JSONDECODE(BODY, SPEC)
    RETURN
 
 * --- MVPKG info <name> -------------------------------------------------
 INFO:
    IF A1 = "" THEN PRINT "usage: MVPKG info <name>" ; RETURN
-   GOSUB FETCHMETA
+   FM = A1 ; GOSUB FETCHMETA
    IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
-   PRINT "name:        " : META<1>
-   PRINT "version:     " : META<2>
-   PRINT "description: " : META<4>
-   PRINT "tarball:     " : REG : META<3>
+   PRINT "name:         " : META<1>
+   PRINT "version:      " : META<2>
+   PRINT "description:  " : META<4>
+   PRINT "dependencies: " : META<5>
+   PRINT "tarball:      " : REG : META<3>
    RETURN
 
 * --- MVPKG install <name> [<dest>] ------------------------------------
 INSTALL:
-   IF A1 = "" THEN PRINT "usage: MVPKG install <name> [<dest>]" ; RETURN
-   GOSUB FETCHMETA
-   IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
-   DEST = A2
-   IF DEST = "" THEN DEST = A1
-   * the native rebuild needs an absolute package dir; resolve it
+   IF A1 = "" THEN GOSUB USAGE ; RETURN
+
+   * packages already installed in this account (skip re-installing deps)
+   OSREAD MTEXT FROM MFILE ELSE MTEXT = ""
+   INSTALLED = ""
+   FOR I = 1 TO DCOUNT(MTEXT, CHAR(10))
+      LN = TRIM(FIELD(MTEXT, CHAR(10), I))
+      IF LN # "" THEN INSTALLED<-1> = LN
+   NEXT I
+
+   * ---- phase 1: transitive closure; DEPSOF<i> parallels NEED<i> -------
+   NEED = A1
+   DEPSOF = ""
+   K = 1
+   LOOP WHILE K <= DCOUNT(NEED, @AM) DO
+      FM = NEED<K> ; GOSUB FETCHMETA
+      IF META = "" THEN PRINT NEED<K> : ": not found in registry " : REG ; RETURN
+      DEPSOF<K> = META<5>
+      FOR J = 1 TO DCOUNT(META<5>, " ")
+         D = FIELD(META<5>, " ", J)
+         IF D # "" THEN
+            SEEN = 0
+            FOR X = 1 TO DCOUNT(NEED, @AM)
+               IF NEED<X> = D THEN SEEN = 1
+            NEXT X
+            IF SEEN = 0 THEN NEED<-1> = D
+         END
+      NEXT J
+      K = K + 1
+   REPEAT
+
+   * ---- phase 2: install deps-first (topological) ---------------------
+   NP = DCOUNT(NEED, @AM)
+   DONE = 0
+   LOOP UNTIL DONE DO
+      PROGRESS = 0 ; PENDING = 0
+      FOR I = 1 TO NP
+         P = NEED<I>
+         DONEP = 0
+         FOR X = 1 TO DCOUNT(INSTALLED, @AM)
+            IF INSTALLED<X> = P THEN DONEP = 1
+         NEXT X
+         IF DONEP = 0 THEN
+            PENDING = PENDING + 1
+            READY = 1
+            FOR J = 1 TO DCOUNT(DEPSOF<I>, " ")
+               D = FIELD(DEPSOF<I>, " ", J)
+               IF D # "" THEN
+                  HAVE = 0
+                  FOR X = 1 TO DCOUNT(INSTALLED, @AM)
+                     IF INSTALLED<X> = D THEN HAVE = 1
+                  NEXT X
+                  IF HAVE = 0 THEN READY = 0
+               END
+            NEXT J
+            IF READY THEN
+               IF P = A1 AND A2 # "" THEN THISDEST = A2 ELSE THISDEST = P
+               FM = P ; GOSUB FETCHMETA
+               GOSUB DOINSTALL
+               INSTALLED<-1> = P
+               PROGRESS = 1
+            END
+         END
+      NEXT I
+      IF PENDING = 0 THEN DONE = 1
+      IF PROGRESS = 0 AND PENDING > 0 THEN
+         PRINT "mvpkg: cannot resolve dependencies (cycle or missing)"
+         DONE = 1
+      END
+   REPEAT
+
+   * persist the manifest
+   MTEXT = ""
+   FOR I = 1 TO DCOUNT(INSTALLED, @AM)
+      MTEXT := INSTALLED<I> : CHAR(10)
+   NEXT I
+   OSWRITE MTEXT ON MFILE
+   RETURN
+
+* --- install one package: FM = name, THISDEST = dest, META fetched ----
+DOINSTALL:
+   DEST = THISDEST
    IF DEST[1, 1] # "/" THEN
       EXECUTE '!pwd > /tmp/mvpkg_pwd.tmp'
       OSREAD CWD FROM "/tmp/mvpkg_pwd.tmp" ELSE CWD = ""
       CWD = TRIM(CWD, CHAR(10), "T")
       IF CWD # "" THEN DEST = CWD : "/" : DEST
    END
-   TMP = "/tmp/mvpkg_" : A1 : ".tar.gz"
+   TMP = "/tmp/mvpkg_" : FM : ".tar.gz"
    PRINT "fetching " : META<1> : " " : META<2> : " ..."
    ST = HTTPGETFILE(REG : META<3>, TMP)
    IF ST < 200 OR ST >= 300 THEN PRINT "download failed (status " : ST : ")" ; RETURN
@@ -93,9 +174,6 @@ INSTALL:
    IF ERR # "" THEN PRINT ERR ; RETURN
    EXECUTE '!rm -f ' : TMP
    PRINT "installed " : META<1> : " " : META<2> : " into " : DEST
-   * a package with native code ships a udt-callc/ contribution; integrate
-   * it — on UniData this rebuilds the shared CallC library from every
-   * native package installed.  A no-op for a package without one.
    CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
    IF ERR # "" THEN PRINT ERR
    RETURN
