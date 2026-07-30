@@ -170,8 +170,7 @@ INSTALL:
    NEED = A1
    DEPSOF = ""
    K = 1
-   LOOP
-   WHILE K <= DCOUNT(NEED, @AM) DO
+   LOOP WHILE K <= DCOUNT(NEED, @AM) DO
       FM = NEED<K> ; GOSUB FETCHMETA
       IF META = "" THEN PRINT NEED<K>:": not found in registry ":REG ; RETURN
       DEPSOF<K> = META<5>
@@ -191,8 +190,7 @@ INSTALL:
    * ---- phase 2: install deps-first (topological) ---------------------
    NP = DCOUNT(NEED, @AM)
    DONE = 0
-   LOOP
-   UNTIL DONE DO
+   LOOP UNTIL DONE DO
       PROGRESS = 0 ; PENDING = 0
       FOR I = 1 TO NP
          P = NEED<I>
