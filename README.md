@@ -64,22 +64,38 @@ library, all in one command (see below). `search` awaits a fuller JSON seam
 
 ## The registry — `server/`
 
-A dependency-free Node.js HTTP registry (the packagist/npm-registry
-equivalent). Packages live under `server/registry/<name>/` as a `meta.json`
-beside the release tar it points at. Routes:
+A dependency-free Node.js registry **and website** (the packagist/npm
+equivalent), live at **https://mv-package.heydon.io**. Packages live under
+`registry/<name>/` as a `meta.json` beside the release tar it points at.
+
+JSON API (the client speaks this):
 
 ```
-GET /package/<name>    that package's metadata
-GET /search?q=<term>   {"packages":[{name,version,description}, ...]}
-GET /tarball/<file>    the release tar bytes
+GET  /package/<name>   that package's metadata
+GET  /search?q=<term>  {"packages":[{name,version,description}, ...]}
+GET  /tarball/<n>/<f>  the release tar bytes
 ```
 
-Run it, and register a release built from any account:
+Website (browse):
+
+```
+GET  /                 home: search + package list
+GET  /p/<name>         package page (install command, dependencies, download)
+```
+
+Publish (push a release; token-gated when `MVPKG_PUBLISH_TOKEN` is set —
+metadata as `X-Pkg-*` headers, body = the tar):
 
 ```sh
-node server/server.js 8080
-server/mkrelease.sh /path/to/account <name> <version> "<description>"
+server/publish.sh https://mv-package.heydon.io curses-1.0.tar.gz curses 1.0 \
+  "ncurses for UniData" "" "udt"        # MVPKG_PUBLISH_TOKEN in the env
 ```
+
+Run it locally, or deploy the container (`server/docker-compose.yml`,
+persistent `data/` volume, publish token in `.env`). The public site runs on
+the hosting VM behind Traefik. Build a release with `server/mkrelease.sh
+/path/to/account <name> <version> "<description>" [deps]`, or produce a
+validated one in the [UniData builder](docker/).
 
 ## Manifest
 

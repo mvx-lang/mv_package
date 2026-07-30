@@ -28,7 +28,7 @@
    A1 = FIELD(S, " ", 3)
    A2 = FIELD(S, " ", 4)
 
-   DEFURL = "http://127.0.0.1:8080"
+   DEFURL = "https://mv-package.heydon.io"
    CONF = GETENV("HOME") : "/mvpkg.conf"
    MFILE = "mvpkg.installed"
 
