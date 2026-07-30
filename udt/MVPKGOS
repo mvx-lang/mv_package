@@ -14,6 +14,10 @@
 *                     a package without a udt-callc/ is a silent no-op
 *   OP = "REBUILD"                             -> rebuild the shared library
 *                     from the currently-staged contributions (no install)
+*   OP = "CATALOG"  P1 = pkgdir   P2 = subdir  -> compile every source item in
+*                     P1/P2 in place and GLOBALLY catalog it (install)
+*   OP = "VERB"     P1 = verbname              -> deploy a per-account VOC
+*                     pointer to a globally cataloged verb (deploy)
 *   OP = "PLATFORM"                            -> RESULT =
 *                     "<system>:<os>:<arch>:<endian>", the identity the client
 *                     sends the registry so it serves the matching prebuilt
@@ -71,6 +75,42 @@
          EXECUTE '!rm -f "':TMPF:'"'
          IF EW[1,4] = "0102" THEN ENDIAN = "be" ELSE ENDIAN = "le"
          RESULT = "udt:" : OSN : ":" : ARCH : ":" : ENDIAN
+      CASE OP = "CATALOG"
+         * P1 = package dir, P2 = source subdir (e.g. "BP").  Compile every
+         * source item in P1/P2 in place — via a temp VOC DIR-pointer, so
+         * nothing is copied — and GLOBALLY catalog it, so its subroutines are
+         * callable and its verbs cataloged for any account.  CATALOG FORCE
+         * overwrites, so re-installing a package updates the shared copy.
+         SDIR = P1 : "/" : P2
+         OPEN "VOC" TO CVF ELSE RESULT = "MVPKGOS CATALOG: cannot open VOC" ; RETURN
+         WRITE ("DIR" : @FM : SDIR : @FM : "D_BP") ON CVF, "MVPKG.SRC"
+         TMPF = "/tmp/mvpkg_items_" : @USERNO
+         EXECUTE '!ls "' : SDIR : '" > "' : TMPF : '" 2>/dev/null'
+         OSREAD RAW FROM TMPF ELSE RAW = ""
+         EXECUTE '!rm -f "' : TMPF : '"'
+         ITEMS = ""
+         NL = DCOUNT(RAW, CHAR(10))
+         FOR I = 1 TO NL
+            IT = TRIM(FIELD(RAW, CHAR(10), I))
+            IF IT # "" AND IT[1,1] # "_" AND IT[1,1] # "." THEN ITEMS<-1> = IT
+         NEXT I
+         NI = DCOUNT(ITEMS, @AM)
+         IF NI > 0 THEN
+            CLIST = ""
+            FOR I = 1 TO NI ; CLIST := ITEMS<I> : " " ; NEXT I
+            EXECUTE "BASIC MVPKG.SRC " : CLIST
+            FOR I = 1 TO NI
+               EXECUTE "CATALOG MVPKG.SRC " : ITEMS<I> : " FORCE"
+            NEXT I
+         END
+         DELETE CVF, "MVPKG.SRC"
+      CASE OP = "VERB"
+         * P1 = verb name.  Deploy a per-account VOC pointer to the globally
+         * cataloged object so the verb is typeable in THIS account (a global
+         * object alone is not a verb).  Subroutines need no such entry.
+         GOBJ = UDT : "/sys/CTLG/" : OCONV(P1[1,1], "MCL") : "/" : P1
+         OPEN "VOC" TO VVF ELSE RESULT = "MVPKGOS VERB: cannot open VOC" ; RETURN
+         WRITE ("C" : @FM : GOBJ : @FM : "mvpkg " : P1) ON VVF, P1
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE
