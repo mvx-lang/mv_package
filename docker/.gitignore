@@ -1,5 +1,0 @@
-# Licensed UniData binaries — captured locally, never committed.
-ud83.tar.gz
-# Build inputs/outputs staged at runtime.
-packages/
-releases/

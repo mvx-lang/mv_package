@@ -43,7 +43,7 @@ that depends on `curses` pulls the native bridge in and rebuilds the shared
 library — one command, nothing manual.
 
 The registry URL is taken from `$MVPKG_REGISTRY`, then a persisted `mvpkg.conf`,
-then the built-in default (`http://127.0.0.1:8080`).
+then the built-in default (`https://mv-package.heydon.io`).
 
 **Portability.** The only non-MultiValue operations — unpacking a tar, making a
 directory — go through the `MVPKGOS` subroutine, the one per-platform seam. HTTP
@@ -62,40 +62,14 @@ package that ships a `udt-callc/` contribution — rebuilds the shared CallC
 library, all in one command (see below). `search` awaits a fuller JSON seam
 (issue #4).
 
-## The registry — `server/`
+## The registry
 
-A dependency-free Node.js registry **and website** (the packagist/npm
-equivalent), live at **https://mv-package.heydon.io**. Packages live under
-`registry/<name>/` as a `meta.json` beside the release tar it points at.
-
-JSON API (the client speaks this):
-
-```
-GET  /package/<name>   that package's metadata
-GET  /search?q=<term>  {"packages":[{name,version,description}, ...]}
-GET  /tarball/<n>/<f>  the release tar bytes
-```
-
-Website (browse):
-
-```
-GET  /                 home: search + package list
-GET  /p/<name>         package page (install command, dependencies, download)
-```
-
-Publish (push a release; token-gated when `MVPKG_PUBLISH_TOKEN` is set —
-metadata as `X-Pkg-*` headers, body = the tar):
-
-```sh
-server/publish.sh https://mv-package.heydon.io curses-1.0.tar.gz curses 1.0 \
-  "ncurses for UniData" "" "udt"        # MVPKG_PUBLISH_TOKEN in the env
-```
-
-Run it locally, or deploy the container (`server/docker-compose.yml`,
-persistent `data/` volume, publish token in `.env`). The public site runs on
-the hosting VM behind Traefik. Build a release with `server/mkrelease.sh
-/path/to/account <name> <version> "<description>" [deps]`, or produce a
-validated one in the [UniData builder](docker/).
+The registry service, website, and release/build tooling live in their own
+repository — **[mv-package-registry](https://github.com/mvx-lang/mv-package-registry)**
+— so installing the client doesn't pull in the server. It is live at
+**https://mv-package.heydon.io**: browse packages there, or hit the JSON API
+the client speaks (`/package/<name>`, `/search`, `/tarball/…`). Publishing a
+release and hosting your own registry are documented in that repo.
 
 ## Manifest
 
@@ -173,13 +147,14 @@ issues #2, #3).
 
 ```sh
 MVX_HOME=/path/to/mvx-lang ./build.sh        # catalog MVPKG + MVPKGOS
-MVX_HOME=/path/to/mvx-lang ./test/run.sh     # end-to-end install-loop test
 ```
 
 `build.sh` needs an mvx-lang checkout with a built toolchain (the `http` and
 `json` extension packages are installed by default). Installing runs `tar`
 through `EXECUTE "!..."`, so it needs the unrestricted privilege tier
-(`MVXPRIV=unrestricted`) — installing software is inherently privileged.
+(`MVXPRIV=unrestricted`) — installing software is inherently privileged. The
+end-to-end install-loop test (client + registry) lives in the
+[registry repo](https://github.com/mvx-lang/mv-package-registry).
 
 ## License
 
