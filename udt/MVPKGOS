@@ -14,6 +14,10 @@
 *                     a package without a udt-callc/ is a silent no-op
 *   OP = "REBUILD"                             -> rebuild the shared library
 *                     from the currently-staged contributions (no install)
+*   OP = "PLATFORM"                            -> RESULT = "<system>:<arch>",
+*                     the identity the client sends the registry so it serves
+*                     the matching prebuilt binary (else source).  UniData is
+*                     system "udt"; arch is the host machine (uname -m).
 *
 * UniData loads exactly one libu2callc.so, so native add-ons cannot each own
 * it — they are aggregated.  The heavy lifting (compile, merge cfuncdef,
@@ -36,6 +40,16 @@
          EXECUTE '!"':BUILDER:'" add "':P1:'" "':P2:'"'
       CASE OP = "REBUILD"
          EXECUTE '!"':BUILDER:'"'
+      CASE OP = "PLATFORM"
+         * "!" shell escapes don't feed CAPTURING here, so route uname
+         * through a temp file and read it back.
+         TMPF = "/tmp/mvpkg_arch_" : @USERNO
+         EXECUTE '!uname -m > "':TMPF:'" 2>/dev/null'
+         OSREAD ARCH FROM TMPF ELSE ARCH = ""
+         EXECUTE '!rm -f "':TMPF:'"'
+         ARCH = TRIM(CONVERT(CHAR(10):CHAR(13), "  ", ARCH))
+         IF ARCH = "" THEN ARCH = "unknown"
+         RESULT = "udt:" : ARCH
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE

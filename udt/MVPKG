@@ -60,8 +60,27 @@ FETCHMETA:
    SPEC<-1> = MAPFIELD("tarball", 3)
    SPEC<-1> = MAPFIELD("description", 4)
    SPEC<-1> = MAPFIELD("dependencies", 5)
-   BODY = HTTPGET(REG : "/package/" : FM)
+   GOSUB GETPLAT
+   BODY = HTTPGET(REG : "/package/" : FM : PLATQ)
    IF BODY = "" THEN META = "" ELSE META = JSONDECODE(BODY, SPEC)
+   RETURN
+
+* --- this client's platform as a registry query string ----------------
+* PLATQ = "?system=<sys>&arch=<arch>" so the registry serves the matching
+* prebuilt binary artifact; "" if undeterminable (registry serves source).
+* Resolved once via the MVPKGOS seam and cached.
+GETPLAT:
+   IF PLATSET THEN RETURN
+   PLATSET = 1
+   PLATQ = ""
+   CALL MVPKGOS("PLATFORM", "", "", PLAT)
+   IF PLAT # "" AND INDEX(PLAT, ":", 1) THEN
+      PSYS = FIELD(PLAT, ":", 1)
+      PARCH = FIELD(PLAT, ":", 2)
+      IF PSYS # "" AND PARCH # "" THEN
+         PLATQ = "?system=" : PSYS : "&arch=" : PARCH
+      END
+   END
    RETURN
 
 * --- MVPKG info <name> -------------------------------------------------

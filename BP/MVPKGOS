@@ -14,6 +14,10 @@
 *                   aggregated into a shared library.  The UniData port
 *                   rebuilds libu2callc.so here (see udt/MVPKGOS).
 *   OP = "REBUILD"                           -> no-op on MVX (see above)
+*   OP = "PLATFORM"                          -> RESULT = "<system>:<arch>",
+*                   the identity the client sends the registry so it can serve
+*                   the matching prebuilt binary (else the source tar).  MVX
+*                   is system "mvx"; arch is the host machine (uname -m).
 *
 * RESULT is returned "" on success or an error message.  On MVX these run
 * through EXECUTE "!...", so the caller needs the unrestricted privilege tier
@@ -30,6 +34,11 @@
          * MVX has no shared CallC library to aggregate — nothing to do.
       CASE OP = "REBUILD"
          * see CALLC
+      CASE OP = "PLATFORM"
+         EXECUTE '!uname -m' CAPTURING ARCH
+         ARCH = TRIM(CONVERT(@AM:@FM:CHAR(10):CHAR(13), "    ", ARCH))
+         IF ARCH = "" THEN ARCH = "unknown"
+         RESULT = "mvx:" : ARCH
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE
