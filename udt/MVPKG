@@ -191,7 +191,12 @@ DOINSTALL:
    END
    TMP = "/tmp/mvpkg_" : CHANGE(FM, "/", "_") : ".tar.gz"
    PRINT "fetching " : META<1> : " " : META<2> : " ..."
-   ST = HTTPGETFILE(REG : META<3>, TMP)
+   * the tarball may be registry-hosted (relative) or an external http(s) URL
+   * (a binary-only package served from a vendor site or GitHub) — use it as-is
+   * when absolute, else resolve against the registry base.
+   TURL = META<3>
+   IF TURL[1, 4] # "http" THEN TURL = REG : TURL
+   ST = HTTPGETFILE(TURL, TMP)
    IF ST < 200 OR ST >= 300 THEN PRINT "download failed (status " : ST : ")" ; RETURN
    CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
    IF ERR # "" THEN PRINT ERR ; RETURN
