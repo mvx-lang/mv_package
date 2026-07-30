@@ -14,10 +14,12 @@
 *                   aggregated into a shared library.  The UniData port
 *                   rebuilds libu2callc.so here (see udt/MVPKGOS).
 *   OP = "REBUILD"                           -> no-op on MVX (see above)
-*   OP = "PLATFORM"                          -> RESULT = "<system>:<arch>",
+*   OP = "PLATFORM"                          -> RESULT = "<system>:<arch>:<end>",
 *                   the identity the client sends the registry so it can serve
 *                   the matching prebuilt binary (else the source tar).  MVX
-*                   is system "mvx"; arch is the host machine (uname -m).
+*                   is system "mvx"; arch is the host machine (uname -m); end
+*                   is "le"/"be" (endianness — the axis for BASIC objects and
+*                   data files, as arch is for native code).
 *
 * RESULT is returned "" on success or an error message.  On MVX these run
 * through EXECUTE "!...", so the caller needs the unrestricted privilege tier
@@ -35,10 +37,15 @@
       CASE OP = "REBUILD"
          * see CALLC
       CASE OP = "PLATFORM"
+         * arch = uname -m; endian from a two-byte dump (0201 = little,
+         * 0102 = big) — the axis for compiled BASIC objects + data files.
          EXECUTE '!uname -m' CAPTURING ARCH
          ARCH = TRIM(CONVERT(@AM:@FM:CHAR(10):CHAR(13), "    ", ARCH))
          IF ARCH = "" THEN ARCH = "unknown"
-         RESULT = "mvx:" : ARCH
+         EXECUTE "!printf '\1\2' | od -An -tx2 | tr -d ' '" CAPTURING EW
+         EW = CONVERT(@AM:@FM:CHAR(10):CHAR(13), "    ", EW)
+         IF INDEX(EW, "0102", 1) THEN ENDIAN = "be" ELSE ENDIAN = "le"
+         RESULT = "mvx:" : ARCH : ":" : ENDIAN
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE
