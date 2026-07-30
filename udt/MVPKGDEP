@@ -1,0 +1,122 @@
+* mv_package — parse the mvpkg.json "deploy" block in MultiValue BASIC, no
+* shell-out (so it runs where python does not, e.g. AIX).  The flat JSON seam
+* only reads flat "key":"value" strings; the deploy block is nested, so this
+* walks its known shapes directly:
+*   verbs     = ["v", ...]                       -> VERBS  "v v"
+*   files     = [{"name":n,"type":t}, ...]       -> FILES  "n:t n:t"
+*   fallback  = {"dep":["dir", ...], ...}        -> FBACK  "dep:dir dep:dir"
+* Space-separated so the caller splits with FIELD(...," ",i).  MV INDEX takes
+* an OCCURRENCE, not a start position, so searches consume tail substrings.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only.
+   SUBROUTINE MVPKGDEP(JSON, VERBS, FILES, FBACK)
+   VERBS = "" ; FILES = "" ; FBACK = ""
+   DQ = CHAR(34)
+   DP = INDEX(JSON, DQ : "deploy" : DQ, 1)
+   IF DP = 0 THEN RETURN
+   J = JSON[DP, LEN(JSON) - DP + 1]
+
+* --- verbs: the quoted strings inside the [ ... ] after "verbs" ---
+   KEY = "verbs" ; OCH = "[" ; CCH = "]" ; GOSUB SEG
+   SS = SEGV ; GOSUB QSTRS
+   FOR QI = 1 TO DCOUNT(QL, @AM) ; VERBS := QL<QI> : " " ; NEXT QI
+   VERBS = TRIM(VERBS)
+
+* --- files: name:type from each {"name":..,"type":..} object ---
+   KEY = "files" ; OCH = "[" ; CCH = "]" ; GOSUB SEG
+   WS = SEGV ; FDONE = 0
+   LOOP UNTIL FDONE DO
+      NP = INDEX(WS, DQ : "name" : DQ, 1)
+      IF NP = 0 THEN
+         FDONE = 1
+      END ELSE
+         SRC = WS ; P = NP ; GOSUB QVAL ; NM = QV
+         TREM = WS[NP, LEN(WS) - NP + 1]
+         TP = INDEX(TREM, DQ : "type" : DQ, 1)
+         TY = ""
+         IF TP > 0 THEN SRC = TREM ; P = TP ; GOSUB QVAL ; TY = QV
+         FILES := NM : ":" : TY : " "
+         WS = WS[NP + 6, LEN(WS) - NP - 5]
+      END
+   REPEAT
+   FILES = TRIM(FILES)
+
+* --- fallback: dep:dir for each "dep":[ "dir", ... ] ---
+   KEY = "fallback" ; OCH = "{" ; CCH = "}" ; GOSUB SEG
+   WS = SEGV ; BDONE = 0
+   LOOP UNTIL BDONE DO
+      KP = INDEX(WS, DQ, 1)
+      IF KP = 0 THEN
+         BDONE = 1
+      END ELSE
+         WS = WS[KP + 1, LEN(WS) - KP]
+         KE = INDEX(WS, DQ, 1)
+         IF KE = 0 THEN
+            BDONE = 1
+         END ELSE
+            DEPN = WS[1, KE - 1]
+            WS = WS[KE + 1, LEN(WS) - KE]
+            AB = INDEX(WS, "[", 1)
+            AE = INDEX(WS, "]", 1)
+            IF AB > 0 AND AE > AB THEN
+               SS = WS[AB, AE - AB + 1] ; GOSUB QSTRS
+               FOR QI = 1 TO DCOUNT(QL, @AM) ; FBACK := DEPN : ":" : QL<QI> : " " ; NEXT QI
+               WS = WS[AE + 1, LEN(WS) - AE]
+            END ELSE
+               BDONE = 1
+            END
+         END
+      END
+   REPEAT
+   FBACK = TRIM(FBACK)
+   RETURN
+
+* SEGV = the substring from the first OCH after "KEY" through the next CCH.
+* Valid for the deploy shapes, whose inner values never re-nest OCH/CCH.
+SEG:
+   SEGV = ""
+   SP = INDEX(J, DQ : KEY : DQ, 1)
+   IF SP = 0 THEN RETURN
+   TAIL = J[SP, LEN(J) - SP + 1]
+   OPS = INDEX(TAIL, OCH, 1)
+   IF OPS = 0 THEN RETURN
+   AFT = TAIL[OPS, LEN(TAIL) - OPS + 1]
+   CR = INDEX(AFT, CCH, 1)
+   IF CR = 0 THEN RETURN
+   SEGV = AFT[1, CR]
+   RETURN
+
+* QL = @AM list of every "quoted" string in SS.
+QSTRS:
+   QL = ""
+   WS2 = SS ; QDONE = 0
+   LOOP UNTIL QDONE DO
+      A = INDEX(WS2, DQ, 1)
+      IF A = 0 THEN
+         QDONE = 1
+      END ELSE
+         WS2 = WS2[A + 1, LEN(WS2) - A]
+         B = INDEX(WS2, DQ, 1)
+         IF B = 0 THEN
+            QDONE = 1
+         END ELSE
+            QL<-1> = WS2[1, B - 1]
+            WS2 = WS2[B + 1, LEN(WS2) - B]
+         END
+      END
+   REPEAT
+   RETURN
+
+* QV = the quoted value after position P (a key): skip to ':' then "...".
+QVAL:
+   QV = ""
+   TL = SRC[P, LEN(SRC) - P + 1]
+   CO = INDEX(TL, ":", 1)
+   IF CO = 0 THEN RETURN
+   TL = TL[CO + 1, LEN(TL) - CO]
+   A = INDEX(TL, DQ, 1)
+   IF A = 0 THEN RETURN
+   TL = TL[A + 1, LEN(TL) - A]
+   B = INDEX(TL, DQ, 1)
+   IF B = 0 THEN RETURN
+   QV = TL[1, B - 1]
+   RETURN

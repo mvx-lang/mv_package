@@ -16,6 +16,8 @@
 *                     from the currently-staged contributions (no install)
 *   OP = "CATALOG"  P1 = pkgdir   P2 = subdir  -> compile every source item in
 *                     P1/P2 in place and GLOBALLY catalog it (install)
+*   OP = "CATIFNEW" P1 = pkgdir   P2 = subdir  -> CATALOG P2 only when its
+*                     programs are not already cataloged (a package's fallback)
 *   OP = "VERB"     P1 = verbname              -> deploy a per-account VOC
 *                     pointer to a globally cataloged verb (deploy)
 *   OP = "STORE"                               -> RESULT = the global package
@@ -88,28 +90,17 @@
          * callable and its verbs cataloged for any account.  CATALOG FORCE
          * overwrites, so re-installing a package updates the shared copy.
          SDIR = P1 : "/" : P2
-         OPEN "VOC" TO CVF ELSE RESULT = "MVPKGOS CATALOG: cannot open VOC" ; RETURN
-         WRITE ("DIR" : @FM : SDIR : @FM : "D_BP") ON CVF, "MVPKG.SRC"
-         TMPF = "/tmp/mvpkg_items_" : @USERNO
-         EXECUTE '!ls "' : SDIR : '" > "' : TMPF : '" 2>/dev/null'
-         OSREAD RAW FROM TMPF ELSE RAW = ""
-         EXECUTE '!rm -f "' : TMPF : '"'
-         ITEMS = ""
-         NL = DCOUNT(RAW, CHAR(10))
-         FOR I = 1 TO NL
-            IT = TRIM(FIELD(RAW, CHAR(10), I))
-            IF IT # "" AND IT[1,1] # "_" AND IT[1,1] # "." THEN ITEMS<-1> = IT
-         NEXT I
-         NI = DCOUNT(ITEMS, @AM)
-         IF NI > 0 THEN
-            CLIST = ""
-            FOR I = 1 TO NI ; CLIST := ITEMS<I> : " " ; NEXT I
-            EXECUTE "BASIC MVPKG.SRC " : CLIST
-            FOR I = 1 TO NI
-               EXECUTE "CATALOG MVPKG.SRC " : ITEMS<I> : " FORCE"
-            NEXT I
-         END
-         DELETE CVF, "MVPKG.SRC"
+         GOSUB LISTSRC
+         GOSUB DOCAT
+      CASE OP = "CATIFNEW"
+         * P1 = package dir, P2 = subdir.  Catalog it only when its programs
+         * are NOT already cataloged — the fallback: a bundled copy (git's
+         * CMD.BP) is cataloged just when the real dependency is absent.
+         SDIR = P1 : "/" : P2
+         GOSUB LISTSRC
+         HAV = "0"
+         IF DCOUNT(ITEMS, @AM) > 0 THEN NCK = ITEMS<1> ; GOSUB HAVECHK
+         IF HAV = "0" THEN GOSUB DOCAT ELSE GOSUB DROPPTR
       CASE OP = "VERB"
          * P1 = verb name.  Deploy a per-account VOC pointer to the globally
          * cataloged object so the verb is typeable in THIS account (a global
@@ -131,16 +122,7 @@
          * VOC "C" catalog pointer OR the global catalog file), else "0" — the
          * MV catalog-lookup idiom, mirroring how CALL resolves.  Used to honor
          * a package's "fallback" (bundle a copy only when the dep is absent).
-         RESULT = "0"
-         OPEN "VOC" TO HVF THEN
-            READ HR FROM HVF, P1 THEN
-               IF HR<1> = "C" THEN RESULT = "1"
-            END
-         END
-         IF RESULT = "0" THEN
-            GP = UDT : "/sys/CTLG/" : OCONV(P1[1,1], "MCL") : "/" : P1
-            OPENSEQ GP TO HSF THEN RESULT = "1" ; CLOSESEQ HSF
-         END
+         NCK = P1 ; GOSUB HAVECHK ; RESULT = HAV
       CASE OP = "MKFILE"
          * P1 = file name, P2 = type ("dir" = a directory file — an OS
          * directory + VOC DIR-pointer, like BP; anything else = a dynamic
@@ -160,4 +142,52 @@
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE
+   RETURN
+
+* --- shared helpers (reached by GOSUB) --------------------------------------
+* SDIR set: make a temp VOC DIR-pointer to it and list its source items
+* (skipping compiled _objects and dotfiles) natively via SELECT — no shell.
+LISTSRC:
+   ITEMS = ""
+   OPEN "VOC" TO LVF ELSE RESULT = "MVPKGOS: cannot open VOC" ; RETURN
+   WRITE ("DIR" : @FM : SDIR : @FM : "D_BP") ON LVF, "MVPKG.SRC"
+   OPEN "MVPKG.SRC" TO LSF ELSE RESULT = "MVPKGOS: cannot open " : SDIR ; RETURN
+   SELECT LSF TO LLIST
+   RDONE = 0
+   LOOP UNTIL RDONE DO
+      READNEXT ID FROM LLIST THEN
+         IF ID[1,1] # "_" AND ID[1,1] # "." THEN ITEMS<-1> = ID
+      END ELSE RDONE = 1
+   REPEAT
+   RETURN
+
+* compile + globally catalog every listed item (via the pointer), then drop it.
+DOCAT:
+   NI = DCOUNT(ITEMS, @AM)
+   IF NI > 0 THEN
+      CLIST = ""
+      FOR CI = 1 TO NI ; CLIST := ITEMS<CI> : " " ; NEXT CI
+      EXECUTE "BASIC MVPKG.SRC " : CLIST
+      FOR CI = 1 TO NI ; EXECUTE "CATALOG MVPKG.SRC " : ITEMS<CI> : " FORCE" ; NEXT CI
+   END
+   GOSUB DROPPTR
+   RETURN
+
+DROPPTR:
+   DELETE LVF, "MVPKG.SRC"
+   RETURN
+
+* HAV = "1" if CALL NCK would resolve (a local VOC "C" pointer or the global
+* catalog file), else "0".
+HAVECHK:
+   HAV = "0"
+   OPEN "VOC" TO HVF THEN
+      READ HR FROM HVF, NCK THEN
+         IF HR<1> = "C" THEN HAV = "1"
+      END
+   END
+   IF HAV = "0" THEN
+      GP = UDT : "/sys/CTLG/" : OCONV(NCK[1,1], "MCL") : "/" : NCK
+      OPENSEQ GP TO HSF THEN HAV = "1" ; CLOSESEQ HSF
+   END
    RETURN

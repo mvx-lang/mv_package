@@ -225,35 +225,24 @@ DOINSTALL:
    GOSUB DEPLOYACCT
    RETURN
 
-* --- flatten the mvpkg.json "deploy" block (verbs / files / fallback) -------
-* The nested block defeats the flat JSON seam, so the mvpkg-deploy helper (in
-* $UDTHOME/bin) yields three lines: verbs, files (name:type), fallback (dir:rep
-* — rep is a program the dir provides, so a dir is skipped when it is already
-* cataloged).
+* --- flatten the mvpkg.json "deploy" block in BASIC (no shell/python) -------
+* MVPKGDEP walks the nested block (the flat JSON seam only reads flat strings),
+* yielding space-separated DVERBS, DFILES ("name:type"), DFALL ("dep:dir").
 PARSEDEPLOY:
-   HELPER = GETENV("UDTHOME") : "/bin/mvpkg-deploy"
-   TMPB = "/tmp/mvpkg_dep_" : @USERNO
-   EXECUTE '!python3 "' : HELPER : '" "' : DEST : '" > "' : TMPB : '" 2>/dev/null'
-   OSREAD DEPRAW FROM TMPB ELSE DEPRAW = ""
-   EXECUTE '!rm -f "' : TMPB : '"'
-   DVERBS = TRIM(FIELD(DEPRAW, CHAR(10), 1))
-   DFILES = TRIM(FIELD(DEPRAW, CHAR(10), 2))
-   DFALL  = TRIM(FIELD(DEPRAW, CHAR(10), 3))
+   OSREAD MJ FROM DEST : "/mvpkg.json" ELSE MJ = ""
+   CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL)
    RETURN
 
 * --- GLOBAL: compile + globally catalog the code (once per system) ----------
 CATGLOBAL:
    PRINT "cataloging " : META<1> : " ..."
    CALL MVPKGOS("CATALOG", DEST, "BP", ERR) ; IF ERR # "" THEN PRINT ERR
+   * fallback dirs: catalog each only when its programs aren't already there.
    NF = DCOUNT(DFALL, " ")
    FOR I = 1 TO NF
       PR = FIELD(DFALL, " ", I)
-      IF PR # "" THEN
-         FBD = FIELD(PR, ":", 1) ; REP = FIELD(PR, ":", 2)
-         HAV = "0"
-         IF REP # "" THEN CALL MVPKGOS("HAVE", REP, "", HAV)
-         IF HAV = "0" THEN CALL MVPKGOS("CATALOG", DEST, FBD, ERR)
-      END
+      FBD = FIELD(PR, ":", 2)
+      IF FBD # "" THEN CALL MVPKGOS("CATIFNEW", DEST, FBD, ERR)
    NEXT I
    RETURN
 
