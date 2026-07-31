@@ -17,8 +17,9 @@
 *   OP = "REBUILD"                           -> no-op on MVX (see above)
 *   OP = "STORE"                             -> RESULT = global package store
 *                   dir (created); download-once lives here
-*   OP = "BUILD"    P1 = pkgdir              -> build a source package (mkpkg:
-*                   BP -> CATALOG/LIB) — the MVX "globally catalog" step
+*   OP = "BUILD"    P1 = pkgdir              -> build a source package
+*                   (BP -> CATALOG/LIB): native BUILD-PKG verb, falling back
+*                   to mkpkg only for a C-extension package
 *   OP = "LINK"     P1 = pkgdir              -> deploy into this account
 *                   (LINK-PKG: its verbs + LIB + dependency closure)
 *   OP = "PLATFORM"                          -> RESULT =
@@ -59,10 +60,17 @@
          RESULT = SP
       CASE OP = "BUILD"
          * P1 = package dir.  Build it (compile BP -> CATALOG/ verbs + LIB/
-         * lib) so LINK-PKG has something to join — the MVX "globally catalog"
-         * step.  Only a source package (has BP/) needs it; a binary release
-         * ships CATALOG/LIB already, so mkpkg is skipped when there is no BP.
-         EXECUTE '!test -d "':P1:'/BP" && mkpkg "':P1:'" || true'
+         * libraries) so LINK-PKG has something to join.  Prefer the native
+         * BUILD-PKG verb: it compiles through the runtime (no shell, developer
+         * privilege, no mkpkg on PATH).  A package with a C extension needs a
+         * compiler; BUILD-PKG reports BUILD-PKG-NATIVE and we fall back to the
+         * mkpkg shell build (which also handles *.BP fallback source dirs).
+         EXECUTE 'BUILD-PKG ' : P1 CAPTURING BOUT
+         IF INDEX(BOUT, "BUILD-PKG-NATIVE", 1) THEN
+            EXECUTE '!test -d "':P1:'/BP" && mkpkg "':P1:'" || true'
+         END ELSE
+            IF INDEX(BOUT, "failed", 1) THEN RESULT = BOUT
+         END
       CASE OP = "LINK"
          * P1 = package dir.  Deploy into THIS account: LINK-PKG joins the
          * package's verbs (its VOC/) and LIB into resolution, pulling the
