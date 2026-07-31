@@ -156,18 +156,38 @@ LISTSRC:
    RDONE = 0
    LOOP UNTIL RDONE DO
       READNEXT ID FROM LLIST THEN
-         IF ID[1,1] # "_" AND ID[1,1] # "." THEN ITEMS<-1> = ID
+         * A program contributes its name whether it is present as source (ID)
+         * or only as a prebuilt object (_ID — a binary package); dotfiles are
+         * skipped.  Dedup so source+object side by side list the program once.
+         BEGIN CASE
+            CASE ID[1,1] = "."   ; PROG = ""
+            CASE ID[1,1] = "_"   ; PROG = ID[2, LEN(ID) - 1]
+            CASE 1               ; PROG = ID
+         END CASE
+         IF PROG # "" THEN
+            LOCATE(PROG, ITEMS; DUMP) ELSE ITEMS<-1> = PROG
+         END
       END ELSE RDONE = 1
    REPEAT
    RETURN
 
 * compile + globally catalog every listed item (via the pointer), then drop it.
+* A binary package ships prebuilt _objects: compile only the items that lack
+* one (a source install), then catalog every item either way — so a udt binary
+* artifact installs with no compiler, while a source package still compiles.
 DOCAT:
    NI = DCOUNT(ITEMS, @AM)
    IF NI > 0 THEN
-      CLIST = ""
-      FOR CI = 1 TO NI ; CLIST := ITEMS<CI> : " " ; NEXT CI
-      EXECUTE "BASIC MVPKG.SRC " : CLIST
+      NEEDBAS = ""
+      FOR CI = 1 TO NI
+         OBJID = "_" : ITEMS<CI>
+         READ OBJREC FROM LSF, OBJID THEN
+            HASOBJ = 1
+         END ELSE
+            NEEDBAS := ITEMS<CI> : " "
+         END
+      NEXT CI
+      IF NEEDBAS # "" THEN EXECUTE "BASIC MVPKG.SRC " : NEEDBAS
       FOR CI = 1 TO NI ; EXECUTE "CATALOG MVPKG.SRC " : ITEMS<CI> : " FORCE" ; NEXT CI
    END
    GOSUB DROPPTR
