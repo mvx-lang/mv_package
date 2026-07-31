@@ -4,7 +4,7 @@
   "description": "MVPKG — the MultiValue package manager client",
   "license": "GPL-2.0-only",
   "systems": ["mvx", "udt"],
-  "dependencies": [],
+  "dependencies": ["mv-lang/http", "mv-lang/json"],
   "deploy": {
     "verbs": ["MVPKG"]
   }
