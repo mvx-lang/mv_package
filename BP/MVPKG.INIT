@@ -1,0 +1,38 @@
+* mv_package — MVPKG subcommand: init.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG init [<registry-url>] — provision the current account for package
+* management.  The "run this first in a new account" step, analogous to
+* `git init`: it records the registry URL (if one is given), ensures the
+* global package store and the account's install manifest exist, and reports
+* the environment.  Idempotent and safe to rerun.
+*
+* It does not itself install MVPKG — MVPKG must already be resolvable to type
+* this.  Initial availability comes from the global install (or a manual
+* LINK-PKG); init prepares an account to use it.
+   SUBROUTINE MVPKG.INIT
+   S = SENTENCE()
+   A1 = FIELD(S, " ", 3)
+   ACCT = ENV("MVXACCOUNT")
+   IF ACCT = "" THEN ACCT = "."
+
+   * record the registry if a URL was supplied (OSWRITE -> 1 ok, 0 fail)
+   IF A1 # "" THEN
+      CONF = ACCT : "/mvpkg.conf"
+      IF NOT(OSWRITE(A1, CONF)) THEN PRINT "cannot write config ":CONF ; RETURN
+   END
+
+   CALL MVPKG.REG(REG)
+   CALL MVPKGOS("STORE", "", "", STORE)
+
+   * ensure the account's installed-manifest exists (empty is fine)
+   MFILE = ACCT : "/mvpkg.installed"
+   MTEXT = OSREAD(MFILE)
+   IF STATUS() # 0 THEN X = OSWRITE("", MFILE)
+
+   PRINT "mvpkg initialised"
+   PRINT "  account:  ":ACCT
+   PRINT "  registry: ":REG
+   PRINT "  store:    ":STORE
+   PRINT "install packages with:  MVPKG install <name>"
+   RETURN

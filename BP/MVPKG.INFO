@@ -1,0 +1,20 @@
+* mv_package — MVPKG subcommand: info.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG info <name> — show a package's registry metadata.
+   SUBROUTINE MVPKG.INFO
+   S = SENTENCE()
+   A1 = FIELD(S, " ", 3)
+   IF A1 = "" THEN PRINT "usage: MVPKG info <name>" ; RETURN
+   CALL MVPKG.REG(REG)
+   CALL MVPKG.META(A1, REG, META)
+   IF META = "" THEN
+      PRINT A1:": not found in registry ":REG
+      RETURN
+   END
+   PRINT "name:         ":META<1>
+   PRINT "version:      ":META<2>
+   PRINT "description:  ":META<4>
+   PRINT "dependencies: ":META<5>
+   PRINT "tarball:      ":REG:META<3>
+   RETURN

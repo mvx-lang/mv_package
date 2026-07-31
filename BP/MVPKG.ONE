@@ -1,0 +1,53 @@
+* mv_package — MVPKG helper: install one already-resolved package.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG.ONE(META, REG) — install the single package described by META (as
+* returned by MVPKG.META).  Two tiers.  GLOBAL (once per system): download
+* the release into the store, build it (compile BP -> CATALOG/LIB), record it
+* in the store manifest.  ACCOUNT (every run): LINK-PKG it into the current
+* account.  So `MVPKG install` rerun in another account downloads nothing —
+* it just links the package up.
+   SUBROUTINE MVPKG.ONE(META, REG)
+   CALL MVPKGOS("STORE", "", "", STORE)
+   PKGKEY = CHANGE(META<1>, "/", "_")
+   DEST = STORE : "/" : PKGKEY
+   GMAN = STORE : "/installed"
+   GKEY = META<1> : " " : META<2>
+   GTEXT = OSREAD(GMAN)
+   IF STATUS() # 0 THEN GTEXT = ""
+   GINST = 0
+   NG = DCOUNT(GTEXT, CHAR(10))
+   FOR GI = 1 TO NG
+      IF TRIM(FIELD(GTEXT, CHAR(10), GI)) = GKEY THEN GINST = 1
+   NEXT GI
+   IF GINST = 0 THEN
+      TMP = "/tmp/mvpkg_" : PKGKEY : ".tar.gz"
+      PRINT "fetching ":META<1>:" ":META<2>:" ..."
+      * registry-hosted (relative) or an external http(s) URL (a binary-only
+      * package from a vendor site or GitHub) — absolute is used as-is.
+      TURL = META<3>
+      IF TURL[1, 4] # "http" THEN TURL = REG : TURL
+      ST = HTTPGETFILE(TURL, TMP)
+      IF ST < 200 OR ST >= 300 THEN PRINT "download failed (status ":ST:")" ; RETURN
+      CALL MVPKGOS("RMRF", DEST, "", ERR)
+      IF ERR # "" THEN PRINT ERR
+      CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
+      IF ERR # "" THEN PRINT ERR ; RETURN
+      X = OSDELETE(TMP)
+      * a native CallC contribution (no-op on MVX); then build the package.
+      CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
+      IF ERR # "" THEN PRINT ERR
+      CALL MVPKGOS("BUILD", DEST, "", ERR)
+      IF ERR # "" THEN PRINT ERR
+      IF GTEXT # "" AND GTEXT[LEN(GTEXT), 1] # CHAR(10) THEN GTEXT := CHAR(10)
+      GTEXT := GKEY : CHAR(10)
+      X = OSWRITE(GTEXT, GMAN)
+      PRINT "installed ":META<1>:" ":META<2>:" (built)"
+   END ELSE
+      PRINT META<1>:" ":META<2>:" already installed — linking here"
+   END
+   * deploy into the current account
+   CALL MVPKGOS("LINK", DEST, "", ERR)
+   IF ERR # "" THEN PRINT ERR
+   PRINT "linked ":META<1>:" into this account"
+   RETURN

@@ -1,0 +1,27 @@
+* mv_package — MVPKG subcommand: search.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG search <term> — list packages whose name or description matches.
+   SUBROUTINE MVPKG.SEARCH
+   S = SENTENCE()
+   A1 = FIELD(S, " ", 3)
+   CALL MVPKG.REG(REG)
+   SPEC = ""
+   SPEC<-1> = MAPFIELD("name", 1, "", "TEXT", "packages")
+   SPEC<-1> = MAPFIELD("version", 2, "", "TEXT", "packages")
+   SPEC<-1> = MAPFIELD("description", 3, "", "TEXT", "packages")
+   BODY = HTTPGET(REG : "/search?q=" : A1)
+   IF BODY = "" THEN
+      PRINT "no packages match """:A1:""""
+      RETURN
+   END
+   R = JSONDECODE(BODY, SPEC)
+   N = DCOUNT(R<1>, @VM)
+   IF N = 0 OR R<1> = "" THEN
+      PRINT "no packages match """:A1:""""
+      RETURN
+   END
+   FOR I = 1 TO N
+      PRINT R<1,I> "L#16" : R<2,I> "L#10" : R<3,I>
+   NEXT I
+   RETURN

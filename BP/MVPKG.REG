@@ -1,0 +1,19 @@
+* mv_package — MVPKG helper: resolve the registry base URL.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG.REG(REG) — RESULT REG is the registry base URL, taken from
+* $MVPKG_REGISTRY, then the account's persisted mvpkg.conf, then the
+* built-in default.  Shared by every subcommand that talks to the registry.
+   SUBROUTINE MVPKG.REG(REG)
+   DEFURL = "https://mv-package.heydon.io"
+   CONF = ENV("MVXACCOUNT")
+   IF CONF = "" THEN CONF = "."
+   CONF = CONF : "/mvpkg.conf"
+   REG = ENV("MVPKG_REGISTRY")
+   IF REG = "" THEN
+      REG = OSREAD(CONF)
+      IF STATUS() # 0 THEN REG = ""
+      REG = TRIM(REG, CHAR(10), "T")
+   END
+   IF REG = "" THEN REG = DEFURL
+   RETURN

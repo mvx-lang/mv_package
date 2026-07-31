@@ -7,6 +7,7 @@
 * MVX port); the client MVPKG never shells out directly, so it stays portable.
 *
 *   OP = "MKDIR"  P1 = path                 -> create P1 (and parents)
+*   OP = "RMRF"   P1 = path                 -> remove P1 and its contents
 *   OP = "UNTAR"  P1 = tarball  P2 = destdir -> extract P1 into P2
 *   OP = "CALLC"  P1 = pkgdir   P2 = name    -> integrate a package's native
 *                   contribution.  No-op on MVX: native code is a compiled
@@ -37,6 +38,11 @@
    BEGIN CASE
       CASE OP = "MKDIR"
          EXECUTE '!mkdir -p "':P1:'"'
+      CASE OP = "RMRF"
+         * P1 = path.  Remove it and its contents (a stale store checkout
+         * before a fresh untar).  Shell escapes live here in the OS seam, not
+         * in the portable client.
+         EXECUTE '!rm -rf "':P1:'"'
       CASE OP = "UNTAR"
          EXECUTE '!mkdir -p "':P2:'" && tar -xzf "':P1:'" -C "':P2:'"'
       CASE OP = "CALLC"
