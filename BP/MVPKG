@@ -19,6 +19,7 @@
    CALL CMD.ADD("INFO", "show a package's registry metadata (name)", "MVPKG.INFO")
    CALL CMD.ADD("LIST", "show installed (managed) packages", "MVPKG.LIST")
    CALL CMD.ADD("UPDATE", "upgrade installed packages to latest ({name})", "MVPKG.UPDATE")
+   CALL CMD.ADD("REMOVE", "uninstall a package (name)", "MVPKG.REMOVE")
    CALL CMD.ADD("REGISTER", "adopt an already-installed package (name {version})", "MVPKG.REGISTER")
    CALL CMD.ADD("SEARCH", "find packages by name/description (term)", "MVPKG.SEARCH")
    CALL CMD.ADD("SETUP", "set the registry URL (url)", "MVPKG.SETUP")

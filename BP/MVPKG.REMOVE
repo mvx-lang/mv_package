@@ -1,0 +1,48 @@
+* mv_package — MVPKG subcommand: remove.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG remove <name> — uninstall a package: unlink it from this account (the
+* inverse of the LINK-PKG done on install; UNLINK-PKG refuses if another linked
+* package still depends on it), drop the store copy, and clear it from the
+* manifests.
+   SUBROUTINE MVPKG.REMOVE
+   S = SENTENCE()
+   A1 = FIELD(S, " ", 3)
+   IF A1 = "" THEN PRINT "usage: MVPKG remove <name>" ; RETURN
+   NM = A1
+   CALL MVPKGOS("STORE", "", "", STORE)
+   PKGKEY = CHANGE(NM, "/", "_")
+   DEST = STORE : "/" : PKGKEY
+   GMAN = STORE : "/installed"
+   GTEXT = OSREAD(GMAN)
+   IF STATUS() # 0 THEN GTEXT = ""
+   INST = 0
+   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+      IF FIELD(TRIM(FIELD(GTEXT, CHAR(10), GI)), " ", 1) = NM THEN INST = 1
+   NEXT GI
+   IF INST = 0 THEN PRINT NM : " is not installed" ; RETURN
+   PRINT "removing " : NM : " ..."
+   * unlink from this account, then drop the store copy
+   CALL MVPKGOS("UNLINK", DEST, "", ERR) ; IF ERR # "" THEN PRINT ERR
+   CALL MVPKGOS("RMRF", DEST, "", ERR)
+   * drop it from the global store manifest
+   NEW = ""
+   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+      LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
+      IF LN # "" AND FIELD(LN, " ", 1) # NM THEN NEW := LN : CHAR(10)
+   NEXT GI
+   X = OSWRITE(NEW, GMAN)
+   * drop it from this account's manifest
+   MFILE = ENV("MVXACCOUNT")
+   IF MFILE = "" THEN MFILE = "."
+   MFILE = MFILE : "/mvpkg.installed"
+   MTEXT = OSREAD(MFILE)
+   IF STATUS() # 0 THEN MTEXT = ""
+   NEW = ""
+   FOR I = 1 TO DCOUNT(MTEXT, CHAR(10))
+      LN = TRIM(FIELD(MTEXT, CHAR(10), I))
+      IF LN # "" AND LN # NM THEN NEW := LN : CHAR(10)
+   NEXT I
+   X = OSWRITE(NEW, MFILE)
+   PRINT "removed " : NM
+   RETURN
