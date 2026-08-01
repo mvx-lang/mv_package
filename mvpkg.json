@@ -1,6 +1,6 @@
 {
   "name": "mvx-lang/mvpkg",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "MVPKG — the MultiValue package manager client",
   "license": "GPL-2.0-only",
   "systems": ["mvx", "udt"],
