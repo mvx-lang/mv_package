@@ -11,9 +11,6 @@
       RETURN
    END
    CONF = GETENV("HOME") : "/mvpkg.conf"
-   OSWRITE A1 ON CONF THEN
-      PRINT "registry set to " : A1
-   END ELSE
-      PRINT "cannot write config " : CONF
-   END
+   OSWRITE A1 ON CONF
+   PRINT "registry set to " : A1
    RETURN
