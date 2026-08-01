@@ -1,0 +1,21 @@
+* mv_package — MVPKG subcommand: list.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG list — show the packages MVPKG manages on this system: the global store
+* manifest ("name version" per line), which both install and register write.
+   SUBROUTINE MVPKG.LIST
+   CALL MVPKGOS("STORE", "", "", STORE)
+   GMAN = STORE : "/installed"
+   GTEXT = OSREAD(GMAN)
+   IF STATUS() # 0 THEN GTEXT = ""
+   NG = 0
+   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+      IF TRIM(FIELD(GTEXT, CHAR(10), GI)) # "" THEN NG = NG + 1
+   NEXT GI
+   IF NG = 0 THEN PRINT "no packages installed" ; RETURN
+   PRINT "installed packages:"
+   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+      LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
+      IF LN # "" THEN PRINT "  ":LN
+   NEXT GI
+   RETURN
