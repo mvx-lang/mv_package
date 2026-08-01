@@ -34,10 +34,11 @@
 
    GOSUB GETREG
    BEGIN CASE
-      CASE CMD = "install" ; GOSUB INSTALL
-      CASE CMD = "info"    ; GOSUB INFO
-      CASE CMD = "config"  ; PRINT "registry: " : REG
-      CASE 1               ; GOSUB USAGE
+      CASE CMD = "install"  ; GOSUB INSTALL
+      CASE CMD = "info"     ; GOSUB INFO
+      CASE CMD = "register" ; GOSUB REGISTER
+      CASE CMD = "config"   ; PRINT "registry: " : REG
+      CASE 1                ; GOSUB USAGE
    END CASE
    STOP
 
@@ -97,6 +98,47 @@ INFO:
    PRINT "description:  " : META<4>
    PRINT "dependencies: " : META<5>
    PRINT "tarball:      " : REG : META<3>
+   RETURN
+
+* --- MVPKG register <name> [<version>] --------------------------------
+* Record an ALREADY-installed package (e.g. one installed standalone before
+* MVPKG was present) as installed, so MVPKG manages it: it is not reinstalled
+* as another package's dependency, and a later `MVPKG install <name>` of the
+* SAME version is a no-op (a newer version still upgrades).  Marks the global
+* store manifest ("name version") and this account's manifest ("name"); it does
+* NOT download or build anything — the package is assumed already present.
+REGISTER:
+   IF A1 = "" THEN PRINT "usage: MVPKG register <name> [<version>]" ; RETURN
+   FM = A1 ; GOSUB FETCHMETA
+   IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
+   NM = META<1>
+   VER = A2 ; IF VER = "" THEN VER = META<2>
+   * global store manifest: "name version"
+   CALL MVPKGOS("STORE", "", "", STORE)
+   GMAN = STORE : "/installed"
+   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+   GKEY = NM : " " : VER
+   FND = 0
+   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+      IF TRIM(FIELD(GTEXT, CHAR(10), GI)) = GKEY THEN FND = 1
+   NEXT GI
+   IF FND = 0 THEN
+      IF GTEXT # "" AND GTEXT[LEN(GTEXT), 1] # CHAR(10) THEN GTEXT := CHAR(10)
+      GTEXT := GKEY : CHAR(10)
+      OSWRITE GTEXT ON GMAN
+   END
+   * account manifest: "name"
+   OSREAD MTEXT FROM MFILE ELSE MTEXT = ""
+   AFND = 0
+   FOR I = 1 TO DCOUNT(MTEXT, CHAR(10))
+      IF TRIM(FIELD(MTEXT, CHAR(10), I)) = NM THEN AFND = 1
+   NEXT I
+   IF AFND = 0 THEN
+      IF MTEXT # "" AND MTEXT[LEN(MTEXT), 1] # CHAR(10) THEN MTEXT := CHAR(10)
+      MTEXT := NM : CHAR(10)
+      OSWRITE MTEXT ON MFILE
+   END
+   PRINT "registered " : NM : " " : VER : " (managed by MVPKG)"
    RETURN
 
 * --- MVPKG install <name> [<dest>] ------------------------------------
@@ -268,5 +310,6 @@ USAGE:
    PRINT "usage:"
    PRINT "  MVPKG install <name> [<dest>]"
    PRINT "  MVPKG info <name>"
+   PRINT "  MVPKG register <name> [<version>]"
    PRINT "  MVPKG config"
    RETURN
