@@ -25,6 +25,10 @@
       IF LN # "" THEN INSTALLED<-1> = LN
    NEXT I
 
+   * this client's system, for platform-gated dependencies (see DEPAPPLY)
+   CALL MVPKGOS("PLATFORM", "", "", PLAT)
+   MYSYS = FIELD(PLAT, ":", 1)
+
    * ---- phase 1: transitive closure; DEPSOF<i> parallels NEED<i> -------
    NEED = A1
    DEPSOF = ""
@@ -32,17 +36,22 @@
    LOOP WHILE K <= DCOUNT(NEED, @AM) DO
       CALL MVPKG.META(NEED<K>, REG, META)
       IF META = "" THEN PRINT NEED<K>:": not found in registry ":REG ; RETURN
-      DEPSOF<K> = META<5>
+      APPLIC = ""
       FOR J = 1 TO DCOUNT(META<5>, " ")
          D = FIELD(META<5>, " ", J)
          IF D # "" THEN
-            SEEN = 0
-            FOR X = 1 TO DCOUNT(NEED, @AM)
-               IF NEED<X> = D THEN SEEN = 1
-            NEXT X
-            IF SEEN = 0 THEN NEED<-1> = D
+            GOSUB DEPAPPLY
+            IF APPLIES THEN
+               APPLIC := DNAME : " "
+               SEEN = 0
+               FOR X = 1 TO DCOUNT(NEED, @AM)
+                  IF NEED<X> = DNAME THEN SEEN = 1
+               NEXT X
+               IF SEEN = 0 THEN NEED<-1> = DNAME
+            END
          END
       NEXT J
+      DEPSOF<K> = TRIM(APPLIC)
       K = K + 1
    REPEAT
 
@@ -90,4 +99,29 @@
       MTEXT = MTEXT : INSTALLED<I> : CHAR(10)
    NEXT I
    X = OSWRITE(MTEXT, MFILE)
+   RETURN
+
+* DEPAPPLY — platform-gate a dependency.  A dep is "name", "name@sys,sys" (only
+* on those systems), or "name@!sys,sys" (all systems except those).  Sets DNAME
+* (the bare package) and APPLIES (1 if it applies to this client's MYSYS).  E.g.
+* a package built into the runtime on one platform (mapfield -> MVX builtin)
+* declares "mapfield@!mvx": pulled on udt, skipped on mvx.
+DEPAPPLY:
+   ATP = INDEX(D, "@", 1)
+   IF ATP = 0 THEN
+      DNAME = D ; APPLIES = 1
+      RETURN
+   END
+   DNAME = D[1, ATP - 1]
+   FILT = D[ATP + 1, LEN(D)]
+   NEG = 0
+   IF FILT[1, 1] = "!" THEN NEG = 1 ; FILT = FILT[2, LEN(FILT)]
+   HIT = 0
+   FOR FJ = 1 TO DCOUNT(FILT, ",")
+      IF FIELD(FILT, ",", FJ) = MYSYS THEN HIT = 1
+   NEXT FJ
+   APPLIES = HIT
+   IF NEG THEN
+      IF HIT THEN APPLIES = 0 ELSE APPLIES = 1
+   END
    RETURN
