@@ -17,6 +17,7 @@
    CALL CMD.INIT("MVPKG", "MultiValue package manager")
    CALL CMD.ADD("INSTALL", "download and install a package (name)", "MVPKG.INSTALL")
    CALL CMD.ADD("INFO", "show a package's registry metadata (name)", "MVPKG.INFO")
+   CALL CMD.ADD("REGISTER", "adopt an already-installed package (name {version})", "MVPKG.REGISTER")
    CALL CMD.ADD("SEARCH", "find packages by name/description (term)", "MVPKG.SEARCH")
    CALL CMD.ADD("SETUP", "set the registry URL (url)", "MVPKG.SETUP")
    CALL CMD.ADD("CONFIG", "show the current registry URL", "MVPKG.CONFIG")
