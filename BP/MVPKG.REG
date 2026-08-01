@@ -16,4 +16,21 @@
       REG = TRIM(REG, CHAR(10), "T")
    END
    IF REG = "" THEN REG = DEFURL
+   * Refuse an insecure registry.  MVPKG downloads code that gets compiled,
+   * cataloged and run, so plain http is a MITM code-injection vector: require
+   * https.  http is allowed only for a localhost dev/test registry, or when
+   * the operator opts out with MVPKG_INSECURE (a trusted private network).
+   SCHEME = OCONV(FIELD(REG, ":", 1), "MCL")
+   IF SCHEME # "https" THEN
+      HOST = FIELD(FIELD(REG[LEN(SCHEME) + 4, LEN(REG)], "/", 1), ":", 1)
+      OK = 0
+      IF HOST = "localhost" OR HOST = "127.0.0.1" OR HOST = "::1" THEN OK = 1
+      IF ENV("MVPKG_INSECURE") # "" THEN OK = 1
+      IF OK = 0 THEN
+         PRINT "mvpkg: refusing insecure registry (need https): " : REG
+         PRINT "  fix it with:  MVPKG setup https://<host>"
+         PRINT "  or set MVPKG_INSECURE=1 to allow http on a trusted network"
+         STOP
+      END
+   END
    RETURN
