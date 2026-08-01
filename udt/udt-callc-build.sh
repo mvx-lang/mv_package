@@ -109,9 +109,18 @@ gcc -m64 -shared -fPIC -z muldefs $EXTRALIBS -L/lib64 -L/usr/lib64 \
     -o libu2callc.so
 
 # --- install the library and the canonical definition -------------------
+# Replace the library by ATOMIC RENAME, never an in-place cp.  UniData mmaps
+# $UDTHOME/bin/libu2callc.so per session; a cp overwrites the SAME inode
+# (truncate + rewrite), corrupting that mapping in every live session — the
+# session that triggered the rebuild then segfaults on exit.  Writing a fresh
+# inode and rename(2)-ing it into place leaves existing mappings on the old
+# inode intact (it survives until the last session drops it); only sessions
+# started after the swap pick up the new library.  $LIB.new is in the same
+# directory as $LIB, so mv is a true same-filesystem rename, not a copy.
 # ($UDTHOME/bin/work/cfuncdef is the registry CALLC.EXISTS reads.)
 $SUDO cp -p "$LIB" "$LIB.prev" 2>/dev/null || true
-$SUDO cp libu2callc.so "$LIB"
+$SUDO cp libu2callc.so "$LIB.new"
+$SUDO mv -f "$LIB.new" "$LIB"
 $SUDO cp cfuncdef "$WORK/cfuncdef"
 
 echo "udt-callc: installed — $(nm -D "$LIB" | grep -c ' T ') exported CallC function(s)"
