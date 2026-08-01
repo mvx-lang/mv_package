@@ -1,0 +1,56 @@
+* mv_package — MVPKG subcommand: remove (UniData port).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG remove <name> — uninstall a package: un-deploy its verbs from this
+* account, decatalog its programs globally, unstage its CallC contribution
+* (rebuilding libu2callc.so), drop the store copy, and clear it from the
+* manifests.  The inverse of install.
+   SUBROUTINE MVPKG.REMOVE
+   S = @SENTENCE
+   A1 = FIELD(S, " ", 3)
+   IF A1 = "" THEN PRINT "usage: MVPKG remove <name>" ; RETURN
+   NM = A1
+   CALL MVPKGOS("STORE", "", "", STORE)
+   PKGKEY = CHANGE(NM, "/", "_")
+   DEST = STORE : "/" : PKGKEY
+   GMAN = STORE : "/installed"
+   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+   INST = 0
+   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+      IF FIELD(TRIM(FIELD(GTEXT, CHAR(10), GI)), " ", 1) = NM THEN INST = 1
+   NEXT GI
+   IF INST = 0 THEN PRINT NM : " is not installed" ; RETURN
+   PRINT "removing " : NM : " ..."
+   * verbs to un-deploy (from the store copy's mvpkg.json deploy block)
+   OSREAD MJ FROM DEST : "/mvpkg.json" ELSE MJ = ""
+   CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL)
+   FOR I = 1 TO DCOUNT(DVERBS, " ")
+      V = FIELD(DVERBS, " ", I)
+      IF V # "" THEN CALL MVPKGOS("UNVERB", V, "", ERR) ; IF ERR # "" THEN PRINT ERR
+   NEXT I
+   * decatalog the programs, unstage the CallC contribution, drop the store copy
+   CALL MVPKGOS("DECAT", DEST, "BP", ERR) ; IF ERR # "" THEN PRINT ERR
+   * only a package that shipped a udt-callc/ contribution needs the library
+   * rebuilt (avoid a pointless rebuild for pure-BASIC packages).
+   HASCC = 0
+   OSREAD CCF FROM DEST : "/udt-callc/funcs" THEN HASCC = 1 ELSE HASCC = 0
+   IF HASCC THEN CALL MVPKGOS("CALLCRM", PKGKEY, "", ERR) ; IF ERR # "" THEN PRINT ERR
+   CALL MVPKGOS("RMDIR", DEST, "", ERR)
+   * drop it from the global store manifest
+   NEW = ""
+   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+      LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
+      IF LN # "" AND FIELD(LN, " ", 1) # NM THEN NEW := LN : CHAR(10)
+   NEXT GI
+   OSWRITE NEW ON GMAN
+   * drop it from this account's manifest
+   MFILE = "mvpkg.installed"
+   OSREAD MTEXT FROM MFILE ELSE MTEXT = ""
+   NEW = ""
+   FOR I = 1 TO DCOUNT(MTEXT, CHAR(10))
+      LN = TRIM(FIELD(MTEXT, CHAR(10), I))
+      IF LN # "" AND LN # NM THEN NEW := LN : CHAR(10)
+   NEXT I
+   OSWRITE NEW ON MFILE
+   PRINT "removed " : NM
+   RETURN

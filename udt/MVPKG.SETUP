@@ -1,0 +1,19 @@
+* mv_package — MVPKG subcommand: setup (UniData port).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG setup <url> — set (and persist) the registry base URL, written to
+* ~/mvpkg.conf (where MVPKG.REG reads it back).
+   SUBROUTINE MVPKG.SETUP
+   S = @SENTENCE
+   A1 = FIELD(S, " ", 3)
+   IF A1 = "" THEN
+      PRINT "usage: MVPKG setup <registry-url>"
+      RETURN
+   END
+   CONF = GETENV("HOME") : "/mvpkg.conf"
+   OSWRITE A1 ON CONF THEN
+      PRINT "registry set to " : A1
+   END ELSE
+      PRINT "cannot write config " : CONF
+   END
+   RETURN

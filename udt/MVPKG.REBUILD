@@ -1,0 +1,11 @@
+* mv_package — MVPKG subcommand: rebuild (UniData port).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG rebuild — rebuild the host's shared native (CallC) library from every
+* installed contribution (recovery, or after a manual add/remove).  On UniData
+* this relinks libu2callc.so from the currently-staged contributions.
+   SUBROUTINE MVPKG.REBUILD
+   CALL MVPKGOS("REBUILD", "", "", ERR)
+   IF ERR # "" THEN PRINT ERR ; RETURN
+   PRINT "rebuilt the native library from installed contributions"
+   RETURN

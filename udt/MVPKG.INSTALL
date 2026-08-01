@@ -1,0 +1,90 @@
+* mv_package — MVPKG subcommand: install (UniData port).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG install <name> — install a package and everything it depends on,
+* dependencies first.  A package declares its dependencies in the registry
+* metadata (space-separated names); names already installed into this account
+* (mvpkg.installed) are not reinstalled.
+   SUBROUTINE MVPKG.INSTALL
+   S = @SENTENCE
+   A1 = FIELD(S, " ", 3)
+   IF A1 = "" THEN
+      PRINT "usage: MVPKG install <name>"
+      RETURN
+   END
+   CALL MVPKG.REG(REG)
+
+   MFILE = "mvpkg.installed"
+   OSREAD MTEXT FROM MFILE ELSE MTEXT = ""
+   INSTALLED = ""
+   FOR I = 1 TO DCOUNT(MTEXT, CHAR(10))
+      LN = TRIM(FIELD(MTEXT, CHAR(10), I))
+      IF LN # "" THEN INSTALLED<-1> = LN
+   NEXT I
+
+   * ---- phase 1: transitive closure; DEPSOF<i> parallels NEED<i> -------
+   NEED = A1
+   DEPSOF = ""
+   K = 1
+   LOOP WHILE K <= DCOUNT(NEED, @AM) DO
+      CALL MVPKG.META(NEED<K>, REG, META)
+      IF META = "" THEN PRINT NEED<K> : ": not found in registry " : REG ; RETURN
+      DEPSOF<K> = META<5>
+      FOR J = 1 TO DCOUNT(META<5>, " ")
+         D = FIELD(META<5>, " ", J)
+         IF D # "" THEN
+            SEEN = 0
+            FOR X = 1 TO DCOUNT(NEED, @AM)
+               IF NEED<X> = D THEN SEEN = 1
+            NEXT X
+            IF SEEN = 0 THEN NEED<-1> = D
+         END
+      NEXT J
+      K = K + 1
+   REPEAT
+
+   * ---- phase 2: install deps-first (topological) ---------------------
+   NP = DCOUNT(NEED, @AM)
+   DONE = 0
+   LOOP UNTIL DONE DO
+      PROGRESS = 0 ; PENDING = 0
+      FOR I = 1 TO NP
+         P = NEED<I>
+         DONEP = 0
+         FOR X = 1 TO DCOUNT(INSTALLED, @AM)
+            IF INSTALLED<X> = P THEN DONEP = 1
+         NEXT X
+         IF DONEP = 0 THEN
+            PENDING = PENDING + 1
+            READY = 1
+            FOR J = 1 TO DCOUNT(DEPSOF<I>, " ")
+               D = FIELD(DEPSOF<I>, " ", J)
+               IF D # "" THEN
+                  HAVE = 0
+                  FOR X = 1 TO DCOUNT(INSTALLED, @AM)
+                     IF INSTALLED<X> = D THEN HAVE = 1
+                  NEXT X
+                  IF HAVE = 0 THEN READY = 0
+               END
+            NEXT J
+            IF READY THEN
+               CALL MVPKG.META(P, REG, META)
+               CALL MVPKG.ONE(META, REG)
+               INSTALLED<-1> = P
+               PROGRESS = 1
+            END
+         END
+      NEXT I
+      IF PENDING = 0 THEN DONE = 1
+      IF PROGRESS = 0 AND PENDING > 0 THEN
+         PRINT "mvpkg: cannot resolve dependencies (cycle or missing)"
+         DONE = 1
+      END
+   REPEAT
+
+   MTEXT = ""
+   FOR I = 1 TO DCOUNT(INSTALLED, @AM)
+      MTEXT := INSTALLED<I> : CHAR(10)
+   NEXT I
+   OSWRITE MTEXT ON MFILE
+   RETURN

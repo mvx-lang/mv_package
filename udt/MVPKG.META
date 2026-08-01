@@ -1,0 +1,42 @@
+* mv_package — MVPKG helper: fetch and decode a package's metadata (UniData).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG.META(NAME, REG, META) — fetch package NAME's metadata from registry
+* REG over HTTP and decode it.  META<1>=name <2>=version <3>=tarball
+* <4>=description <5>=dependencies (space-separated); META = "" on a miss.
+*
+* The request carries this client's platform as a query string
+* (?system=&arch=&os=&endian=), resolved through the MVPKGOS seam, so the
+* registry can serve the matching prebuilt binary artifact — else source.
+* UniData has no http/json intrinsics, so HTTP and JSON are the cataloged
+* seam functions (HTTPGET, JSONDECODE, MAPFIELD).
+   SUBROUTINE MVPKG.META(NAME, REG, META)
+   DEFFUN HTTPGET(A)
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B)
+   SPEC = ""
+   SPEC<-1> = MAPFIELD("name", 1)
+   SPEC<-1> = MAPFIELD("version", 2)
+   SPEC<-1> = MAPFIELD("tarball", 3)
+   SPEC<-1> = MAPFIELD("description", 4)
+   SPEC<-1> = MAPFIELD("dependencies", 5)
+   PLATQ = ""
+   CALL MVPKGOS("PLATFORM", "", "", PLAT)
+   IF PLAT # "" AND INDEX(PLAT, ":", 1) THEN
+      PSYS = FIELD(PLAT, ":", 1)
+      POS = FIELD(PLAT, ":", 2)
+      PARCH = FIELD(PLAT, ":", 3)
+      PEND = FIELD(PLAT, ":", 4)
+      IF PSYS # "" AND PARCH # "" THEN
+         PLATQ = "?system=" : PSYS : "&arch=" : PARCH
+         IF POS # "" THEN PLATQ := "&os=" : POS
+         IF PEND # "" THEN PLATQ := "&endian=" : PEND
+      END
+   END
+   BODY = HTTPGET(REG : "/package/" : NAME : PLATQ)
+   IF BODY = "" THEN
+      META = ""
+   END ELSE
+      META = JSONDECODE(BODY, SPEC)
+   END
+   RETURN

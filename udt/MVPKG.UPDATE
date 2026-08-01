@@ -1,0 +1,57 @@
+* mv_package — MVPKG subcommand: update (UniData port).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG update [<name>] — upgrade an installed package (or, with no name,
+* every installed package) to the registry's current version.  For each:
+* compare the installed version (the store manifest) to the registry's latest;
+* if newer, drop the old manifest line and run the normal global install for
+* the new version (download + catalog + deploy).
+   SUBROUTINE MVPKG.UPDATE
+   S = @SENTENCE
+   A1 = FIELD(S, " ", 3)
+   CALL MVPKG.REG(REG)
+   CALL MVPKGOS("STORE", "", "", STORE)
+   GMAN = STORE : "/installed"
+   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+   NAMES = ""
+   IF A1 # "" THEN
+      NAMES = A1
+   END ELSE
+      FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+         LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
+         IF LN # "" THEN NAMES<-1> = FIELD(LN, " ", 1)
+      NEXT GI
+   END
+   NN = DCOUNT(NAMES, @AM)
+   IF NN = 0 OR NAMES<1> = "" THEN PRINT "no packages installed" ; RETURN
+   FOR NI = 1 TO NN
+      NM = NAMES<NI>
+      OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+      INSTVER = ""
+      FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+         LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
+         IF FIELD(LN, " ", 1) = NM THEN INSTVER = FIELD(LN, " ", 2)
+      NEXT GI
+      BEGIN CASE
+         CASE INSTVER = ""
+            PRINT NM : ": not installed (use MVPKG install)"
+         CASE 1
+            CALL MVPKG.META(NM, REG, META)
+            BEGIN CASE
+               CASE META = ""
+                  PRINT NM : ": not found in registry " : REG
+               CASE META<2> = INSTVER
+                  PRINT NM : " " : INSTVER : " is up to date"
+               CASE 1
+                  PRINT "updating " : NM : " " : INSTVER : " -> " : META<2>
+                  NEW = ""
+                  FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+                     LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
+                     IF LN # "" AND FIELD(LN, " ", 1) # NM THEN NEW := LN : CHAR(10)
+                  NEXT GI
+                  OSWRITE NEW ON GMAN
+                  CALL MVPKG.ONE(META, REG)
+            END CASE
+      END CASE
+   NEXT NI
+   RETURN

@@ -1,0 +1,93 @@
+* mv_package — MVPKG helper: install one already-resolved package (UniData).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG.ONE(META, REG) — install the single package described by META (as
+* returned by MVPKG.META).  Two tiers.  GLOBAL (once per system): download
+* the release into the store, globally catalog its code, record it in the
+* store manifest.  ACCOUNT (every run): deploy the verbs + files into the
+* current account.  So `MVPKG install` rerun in another account downloads
+* nothing — it just links the package up.
+*
+* UniData deploy path (differs from MVX's LINK-PKG): the seam CATALOG op
+* compiles + globally catalogs the code, VERB deploys per-account VOC
+* pointers, MKFILE creates declared account files; the mvpkg.json deploy
+* block is walked by MVPKGDEP.
+   SUBROUTINE MVPKG.ONE(META, REG)
+   DEFFUN HTTPGETFILE(A, B)
+   CALL MVPKGOS("STORE", "", "", STORE)
+   PKGKEY = CHANGE(META<1>, "/", "_")
+   DEST = STORE : "/" : PKGKEY
+   GMAN = STORE : "/installed"
+   GKEY = META<1> : " " : META<2>
+   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+   GINST = 0
+   NG = DCOUNT(GTEXT, CHAR(10))
+   FOR GI = 1 TO NG
+      IF TRIM(FIELD(GTEXT, CHAR(10), GI)) = GKEY THEN GINST = 1
+   NEXT GI
+   IF GINST = 0 THEN
+      TMP = "/tmp/mvpkg_" : PKGKEY : ".tar.gz"
+      PRINT "fetching " : META<1> : " " : META<2> : " ..."
+      * registry-hosted (relative) or an external http(s) URL (a binary-only
+      * package served from a vendor site or GitHub) — absolute is used as-is.
+      TURL = META<3>
+      IF TURL[1, 4] # "http" THEN TURL = REG : TURL
+      ST = HTTPGETFILE(TURL, TMP)
+      IF ST < 200 OR ST >= 300 THEN PRINT "download failed (status " : ST : ")" ; RETURN
+      EXECUTE '!rm -rf "' : DEST : '"'
+      CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
+      IF ERR # "" THEN PRINT ERR ; RETURN
+      EXECUTE '!rm -f "' : TMP : '"'
+      CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
+      IF ERR # "" THEN PRINT ERR
+      GOSUB PARSEDEPLOY
+      GOSUB CATGLOBAL
+      IF GTEXT # "" AND GTEXT[LEN(GTEXT), 1] # CHAR(10) THEN GTEXT := CHAR(10)
+      GTEXT := GKEY : CHAR(10)
+      OSWRITE GTEXT ON GMAN
+      PRINT "installed " : META<1> : " " : META<2> : " (globally cataloged)"
+   END ELSE
+      GOSUB PARSEDEPLOY
+      PRINT META<1> : " " : META<2> : " already installed — deploying here"
+   END
+   GOSUB DEPLOYACCT
+   RETURN
+
+* --- flatten the mvpkg.json "deploy" block in BASIC (no shell/python) -------
+* MVPKGDEP walks the nested block (the flat JSON seam only reads flat strings),
+* yielding space-separated DVERBS, DFILES ("name:type"), DFALL ("dep:dir").
+PARSEDEPLOY:
+   OSREAD MJ FROM DEST : "/mvpkg.json" ELSE MJ = ""
+   CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL)
+   RETURN
+
+* --- GLOBAL: compile + globally catalog the code (once per system) ----------
+CATGLOBAL:
+   PRINT "cataloging " : META<1> : " ..."
+   CALL MVPKGOS("CATALOG", DEST, "BP", ERR) ; IF ERR # "" THEN PRINT ERR
+   * fallback dirs: catalog each only when its programs aren't already there.
+   NF = DCOUNT(DFALL, " ")
+   FOR I = 1 TO NF
+      PR = FIELD(DFALL, " ", I)
+      FBD = FIELD(PR, ":", 2)
+      IF FBD # "" THEN CALL MVPKGOS("CATIFNEW", DEST, FBD, ERR)
+   NEXT I
+   RETURN
+
+* --- ACCOUNT: deploy the verbs + files into the current account -------------
+DEPLOYACCT:
+   NV = DCOUNT(DVERBS, " ")
+   FOR I = 1 TO NV
+      V = FIELD(DVERBS, " ", I)
+      IF V # "" THEN CALL MVPKGOS("VERB", V, "", ERR) ; IF ERR # "" THEN PRINT ERR
+   NEXT I
+   NFI = DCOUNT(DFILES, " ")
+   FOR I = 1 TO NFI
+      FT = FIELD(DFILES, " ", I)
+      IF FT # "" THEN
+         FNM = FIELD(FT, ":", 1) ; FTY = FIELD(FT, ":", 2)
+         CALL MVPKGOS("MKFILE", FNM, FTY, ERR)
+      END
+   NEXT I
+   PRINT "deployed " : META<1> : " into this account"
+   RETURN

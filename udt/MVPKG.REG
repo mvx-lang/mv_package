@@ -1,0 +1,17 @@
+* mv_package — MVPKG helper: resolve the registry base URL (UniData port).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG.REG(REG) — RESULT REG is the registry base URL, taken from
+* $MVPKG_REGISTRY, then the persisted ~/mvpkg.conf, then the built-in
+* default.  Shared by every subcommand that talks to the registry.  UniData
+* port: GETENV + the statement form of OSREAD.
+   SUBROUTINE MVPKG.REG(REG)
+   DEFURL = "https://mv-package.heydon.io"
+   CONF = GETENV("HOME") : "/mvpkg.conf"
+   REG = GETENV("MVPKG_REGISTRY")
+   IF REG = "" THEN
+      OSREAD REG FROM CONF ELSE REG = ""
+      REG = TRIM(REG, CHAR(10), "T")
+   END
+   IF REG = "" THEN REG = DEFURL
+   RETURN
