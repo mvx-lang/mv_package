@@ -24,6 +24,7 @@
    CALL CMD.ADD("UPDATE", "upgrade installed packages to latest ({name})", "MVPKG.UPDATE")
    CALL CMD.ADD("REMOVE", "uninstall a package (name)", "MVPKG.REMOVE")
    CALL CMD.ADD("REGISTER", "adopt an already-installed package (name {version})", "MVPKG.REGISTER")
+   CALL CMD.ADD("SEARCH", "find packages by name/description (term)", "MVPKG.SEARCH")
    CALL CMD.ADD("SETUP", "set the registry URL (url)", "MVPKG.SETUP")
    CALL CMD.ADD("CONFIG", "show the current registry URL", "MVPKG.CONFIG")
    CALL CMD.ADD("REBUILD", "rebuild the host's native library", "MVPKG.REBUILD")

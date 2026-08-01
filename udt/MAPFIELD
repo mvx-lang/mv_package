@@ -1,4 +1,20 @@
-FUNCTION MAPFIELD(KEY, POS)
-* mv_package UniData seam — one JSON field spec: extract "KEY" into result
-* attribute POS.  Pairs with JSONDECODE.  GPL-2.0-only.
-   RETURN KEY : CHAR(253) : POS
+FUNCTION MAPFIELD(KEY, POS, CONV, TYPE, ASSOC)
+* mv_package UniData seam — build one %MAP% field spec entry, matching the MVX
+* MAPFIELD builtin:  name<VM>attr<VM>conv<VM>type<VM>assoc .  Pairs with
+* JSONDECODE (and any future spec-driven decoder — YAML, a dict projection).
+*   type   is TYPE, or derived from CONV when TYPE is empty:
+*            MD/MR/ML -> NUMERIC, MT -> TIME, D... -> DATE, else TEXT.
+*   assoc  empty = a single-valued (scalar) field; else the association name —
+*            its members decode as parallel multivalues (an array of objects).
+* GPL-2.0-only.
+   T = TYPE
+   IF T = "" THEN
+      CU = OCONV(CONV, "MCU")
+      BEGIN CASE
+         CASE CU[1,2] = "MD" OR CU[1,2] = "MR" OR CU[1,2] = "ML" ; T = "NUMERIC"
+         CASE CU[1,2] = "MT" ; T = "TIME"
+         CASE CU[1,1] = "D"  ; T = "DATE"
+         CASE 1              ; T = "TEXT"
+      END CASE
+   END
+   RETURN KEY : @VM : POS : @VM : CONV : @VM : T : @VM : ASSOC

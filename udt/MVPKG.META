@@ -13,13 +13,13 @@
    SUBROUTINE MVPKG.META(NAME, REG, META)
    DEFFUN HTTPGET(A)
    DEFFUN JSONDECODE(A, B)
-   DEFFUN MAPFIELD(A, B)
+   DEFFUN MAPFIELD(A, B, C, D, E)
    SPEC = ""
-   SPEC<-1> = MAPFIELD("name", 1)
-   SPEC<-1> = MAPFIELD("version", 2)
-   SPEC<-1> = MAPFIELD("tarball", 3)
-   SPEC<-1> = MAPFIELD("description", 4)
-   SPEC<-1> = MAPFIELD("dependencies", 5)
+   SPEC<-1> = MAPFIELD("name", 1, "", "", "")
+   SPEC<-1> = MAPFIELD("version", 2, "", "", "")
+   SPEC<-1> = MAPFIELD("tarball", 3, "", "", "")
+   SPEC<-1> = MAPFIELD("description", 4, "", "", "")
+   SPEC<-1> = MAPFIELD("dependencies", 5, "", "", "")
    PLATQ = ""
    CALL MVPKGOS("PLATFORM", "", "", PLAT)
    IF PLAT # "" AND INDEX(PLAT, ":", 1) THEN
