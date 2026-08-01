@@ -139,6 +139,24 @@
                EXECUTE "CREATE.FILE " : P1 : " 1"
             END
          END
+      CASE OP = "DECAT"
+         * P1 = package dir, P2 = source subdir.  The inverse of CATALOG: remove
+         * every program's global catalog entry so it no longer resolves.
+         SDIR = P1 : "/" : P2
+         GOSUB LISTSRC
+         GOSUB DODECAT
+      CASE OP = "UNVERB"
+         * P1 = verb name.  Remove this account's VOC pointer for the verb
+         * (the inverse of VERB).
+         OPEN "VOC" TO VVF ELSE RESULT = "MVPKGOS UNVERB: cannot open VOC" ; RETURN
+         DELETE VVF, P1
+      CASE OP = "CALLCRM"
+         * P1 = package key (name '/'->'_').  Unstage its CallC contribution and
+         * rebuild libu2callc.so from what remains (the inverse of CALLC).
+         EXECUTE '!"':BUILDER:'" remove "':P1:'"'
+      CASE OP = "RMDIR"
+         * P1 = directory.  Remove it (the store copy on uninstall).
+         EXECUTE '!rm -rf "':P1:'"'
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE
@@ -190,6 +208,16 @@ DOCAT:
       IF NEEDBAS # "" THEN EXECUTE "BASIC MVPKG.SRC " : NEEDBAS
       FOR CI = 1 TO NI ; EXECUTE "CATALOG MVPKG.SRC " : ITEMS<CI> : " FORCE" ; NEXT CI
    END
+   GOSUB DROPPTR
+   RETURN
+
+* decatalog every listed program (remove its global catalog entry), then drop
+* the temp pointer.  The inverse of DOCAT.
+DODECAT:
+   NI = DCOUNT(ITEMS, @AM)
+   FOR CI = 1 TO NI
+      EXECUTE "DELETE.CATALOG " : ITEMS<CI>
+   NEXT CI
    GOSUB DROPPTR
    RETURN
 
