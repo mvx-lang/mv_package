@@ -101,19 +101,27 @@
    X = OSWRITE(MTEXT, MFILE)
    RETURN
 
-* DEPAPPLY — platform-gate a dependency.  A dep is "name", "name@sys,sys" (only
-* on those systems), or "name@!sys,sys" (all systems except those).  Sets DNAME
-* (the bare package) and APPLIES (1 if it applies to this client's MYSYS).  E.g.
-* a package built into the runtime on one platform (mapfield -> MVX builtin)
-* declares "mapfield@!mvx": pulled on udt, skipped on mvx.
+* DEPAPPLY — parse a dependency "name[@sys][:constraint]" into DNAME (the bare
+* package), APPLIES (1 if it applies to this client's MYSYS), and DCONS (a
+* version constraint for SEMVER, "" if none).
+*   @sys,sys   only those systems;  @!sys,sys   all systems except those.
+*   :^1.2 / :~1.0 / :>=1.0,<2.0 / :1.2.* / :1.2.3   a version constraint.
+* E.g. a package built into the runtime on one platform (mapfield -> MVX
+* builtin) declares "mapfield@!mvx": pulled on udt, skipped on mvx.
 DEPAPPLY:
-   ATP = INDEX(D, "@", 1)
+   COLON = INDEX(D, ":", 1)
+   IF COLON > 0 THEN
+      DCONS = D[COLON + 1, LEN(D)] ; DB = D[1, COLON - 1]
+   END ELSE
+      DCONS = "" ; DB = D
+   END
+   ATP = INDEX(DB, "@", 1)
    IF ATP = 0 THEN
-      DNAME = D ; APPLIES = 1
+      DNAME = DB ; APPLIES = 1
       RETURN
    END
-   DNAME = D[1, ATP - 1]
-   FILT = D[ATP + 1, LEN(D)]
+   DNAME = DB[1, ATP - 1]
+   FILT = DB[ATP + 1, LEN(DB)]
    NEG = 0
    IF FILT[1, 1] = "!" THEN NEG = 1 ; FILT = FILT[2, LEN(FILT)]
    HIT = 0
