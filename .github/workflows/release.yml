@@ -1,7 +1,7 @@
 # Release the MVPKG client on a version tag: publish the source package as a
 # GitHub release asset.  The package registry indexes it via its release webhook
 # (it hosts nothing).  Asset name mirrors the registry's artifact key:
-#   source -> mv-lang_mvpkg-<ver>-source.tar.gz
+#   source -> mvx-lang_mvpkg-<ver>-source.tar.gz
 #
 # MVPKG is the bootstrap client — you install it first (clone + build.sh on MVX,
 # or compile the udt/ programs on UniData), then it installs everything else.
@@ -32,7 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           VER="${GITHUB_REF_NAME}"
-          BASE="mv-lang_mvpkg-$VER-source"
+          BASE="mvx-lang_mvpkg-$VER-source"
           # A clean checkout has only tracked files (build artifacts are
           # git-ignored); drop the repo/CI metadata and the docs submodule.
           tar czf "/tmp/$BASE.tar.gz" \
