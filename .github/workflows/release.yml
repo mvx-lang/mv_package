@@ -1,0 +1,54 @@
+# Release the MVPKG client on a version tag: publish the source package as a
+# GitHub release asset.  The package registry indexes it via its release webhook
+# (it hosts nothing).  Asset name mirrors the registry's artifact key:
+#   source -> mv-lang_mvpkg-<ver>-source.tar.gz
+#
+# MVPKG is the bootstrap client — you install it first (clone + build.sh on MVX,
+# or compile the udt/ programs on UniData), then it installs everything else.
+# So it is distributed as source; there is no prebuilt binary artifact.  The
+# source carries the client for both hosts (BP/ for MVX, udt/ for UniData).
+# Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only.
+#
+# Tag the bare version to release, e.g.:  git tag 1.0 && git push origin 1.0
+name: release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+*"
+
+permissions:
+  contents: write
+
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Package the source
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME}"
+          BASE="mv-lang_mvpkg-$VER-source"
+          # A clean checkout has only tracked files (build artifacts are
+          # git-ignored); drop the repo/CI metadata and the docs submodule.
+          tar czf "/tmp/$BASE.tar.gz" \
+            --exclude='./.git' --exclude='./.github' --exclude='./docs' .
+          mv "/tmp/$BASE.tar.gz" .
+          sha256sum "$BASE.tar.gz" > "$BASE.tar.gz.sha256"
+          echo "tarball=$BASE.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "checksum=$BASE.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the source asset
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: mvpkg ${{ github.ref_name }}
+          body: "MVPKG — the MultiValue package manager client (MVX + UniData). Source; indexed by the package registry."
+          files: |
+            ${{ steps.pkg.outputs.tarball }}
+            ${{ steps.pkg.outputs.checksum }}
+          fail_on_unmatched_files: true
