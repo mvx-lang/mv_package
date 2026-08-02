@@ -36,7 +36,7 @@
          CASE INSTVER = ""
             PRINT NM : ": not installed (use MVPKG install)"
          CASE 1
-            CALL MVPKG.META(NM, REG, META)
+            CALL MVPKG.META(NM, "", REG, META)
             BEGIN CASE
                CASE META = ""
                   PRINT NM : ": not found in registry " : REG

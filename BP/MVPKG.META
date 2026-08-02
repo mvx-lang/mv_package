@@ -1,20 +1,23 @@
 * mv_package — MVPKG helper: fetch and decode a package's metadata.
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
-* MVPKG.META(NAME, REG, META) — fetch package NAME's metadata from registry
-* REG over HTTP and decode it.  META<1>=name <2>=version <3>=tarball
-* <4>=description <5>=dependencies (space-separated); META = "" on a miss.
+* MVPKG.META(NAME, VER, REG, META) — fetch package NAME's metadata from registry
+* REG over HTTP and decode it.  VER="" resolves the latest; an exact version
+* (to satisfy a dependency constraint) asks for that one (?version=).
+* META<1>=name <2>=version <3>=tarball <4>=description <5>=dependencies
+* <6>=versions (space-separated, newest-first); META = "" on a miss.
 *
 * The request carries this client's platform as a query string
 * (?system=&arch=&os=&endian=), resolved through the MVPKGOS seam, so the
 * registry can serve the matching prebuilt binary artifact — else source.
-   SUBROUTINE MVPKG.META(NAME, REG, META)
+   SUBROUTINE MVPKG.META(NAME, VER, REG, META)
    SPEC = ""
    SPEC<-1> = MAPFIELD("name", 1)
    SPEC<-1> = MAPFIELD("version", 2)
    SPEC<-1> = MAPFIELD("tarball", 3)
    SPEC<-1> = MAPFIELD("description", 4)
    SPEC<-1> = MAPFIELD("dependencies", 5)
+   SPEC<-1> = MAPFIELD("versions", 6)
    PLATQ = ""
    CALL MVPKGOS("PLATFORM", "", "", PLAT)
    IF PLAT # "" AND INDEX(PLAT, ":", 1) THEN
@@ -28,7 +31,15 @@
          IF PEND # "" THEN PLATQ := "&endian=" : PEND
       END
    END
-   BODY = HTTPGET(REG : "/package/" : NAME : PLATQ)
+   Q = PLATQ
+   IF VER # "" THEN
+      IF Q = "" THEN
+         Q = "?version=" : VER
+      END ELSE
+         Q = "?version=" : VER : "&" : Q[2, LEN(Q)]
+      END
+   END
+   BODY = HTTPGET(REG : "/package/" : NAME : Q)
    IF BODY = "" THEN
       META = ""
    END ELSE

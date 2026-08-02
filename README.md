@@ -42,6 +42,30 @@ already present is not reinstalled. On UniData this means installing an app
 that depends on `curses` pulls the native bridge in and rebuilds the shared
 library — one command, nothing manual.
 
+**Dependency syntax.** Each entry in the `dependencies` list is a package name
+with two optional suffixes, `name[@system][:constraint]`:
+
+- `@system` — a platform gate. `name@udt,mvx` applies only on those systems;
+  `name@!mvx` applies everywhere *except* those. A package built into the
+  runtime on one platform declares the fallback for the others, e.g.
+  `mapfield@!mvx` (MAPFIELD is a builtin on MVX, a package on UniData).
+- `:constraint` — a version constraint, Composer/npm style:
+  `mapfield:^1.2` (>=1.2.0 <2.0.0), `~1.4.0` (>=1.4.0 <1.5.0), `>=1.0,<2.0`
+  (comma = AND), `1.2.*`, an exact `1.4.2`, or `*` for any. The client picks
+  the **newest published version** satisfying it.
+
+Both may appear together: `mapfield@!mvx:^1.0`.
+
+**Release channels.** A registry version is *stable* unless it carries a
+pre-release suffix (`1.3.0-beta.1`, `2.0.0-rc.2`, `1.0.0-dev`). The default
+"latest" a bare `MVPKG install <name>` (or an unconstrained dependency)
+resolves to is always the newest **stable** release, so following a stable
+series is the default — a published beta never pulls anyone off it. To opt in
+to a pre-release, pin it exactly (`MVPKG install thing` then a version
+constraint referencing it) or write a constraint whose lower bound is itself a
+pre-release, e.g. `thing:^1.3.0-beta` matches `1.3.0-beta.1`, `1.3.0-rc.1`,
+and the eventual `1.3.0`.
+
 The registry URL is taken from `$MVPKG_REGISTRY`, then a persisted `mvpkg.conf`,
 then the built-in default (`https://mv-package.heydon.io`).
 
@@ -74,10 +98,10 @@ release and hosting your own registry are documented in that repo.
 ## Manifest
 
 A package's registry metadata mirrors MVX's `PKG` fields (`name`, `version`,
-`description`, a `dependencies` list — space-separated package names — and,
-for resolution across platforms, a `systems` list). `mkrelease.sh` takes the
-dependencies as its fifth argument. The release tar carries the account's own
-`.mvx` / `PKG`.
+`description`, a `dependencies` list — space-separated, each entry
+`name[@system][:constraint]` as above — and, for resolution across platforms,
+a `systems` list). `mkrelease.sh` takes the dependencies as its fifth
+argument. The release tar carries the account's own `.mvx` / `PKG`.
 
 ## Native code on UniData — the shared CallC library
 

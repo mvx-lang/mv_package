@@ -29,12 +29,15 @@
    CALL MVPKGOS("PLATFORM", "", "", PLAT)
    MYSYS = FIELD(PLAT, ":", 1)
 
-   * ---- phase 1: transitive closure; DEPSOF<i> parallels NEED<i> -------
+   * ---- phase 1: transitive closure; DEPSOF<i> / CONS<i> parallel NEED<i> --
+   * CONS<i> is the version constraint a dependency was requested with ("" for
+   * the top-level package and unconstrained deps).
    NEED = A1
+   CONS = ""
    DEPSOF = ""
    K = 1
    LOOP WHILE K <= DCOUNT(NEED, @AM) DO
-      CALL MVPKG.META(NEED<K>, REG, META)
+      CALL MVPKG.META(NEED<K>, "", REG, META)
       IF META = "" THEN PRINT NEED<K>:": not found in registry ":REG ; RETURN
       APPLIC = ""
       FOR J = 1 TO DCOUNT(META<5>, " ")
@@ -47,7 +50,10 @@
                FOR X = 1 TO DCOUNT(NEED, @AM)
                   IF NEED<X> = DNAME THEN SEEN = 1
                NEXT X
-               IF SEEN = 0 THEN NEED<-1> = DNAME
+               IF SEEN = 0 THEN
+                  NEED<-1> = DNAME
+                  CONS<DCOUNT(NEED, @AM)> = DCONS
+               END
             END
          END
       NEXT J
@@ -80,7 +86,20 @@
                END
             NEXT J
             IF READY THEN
-               CALL MVPKG.META(P, REG, META)
+               CALL MVPKG.META(P, "", REG, META)
+               IF META = "" THEN PRINT P:": not found in registry ":REG ; RETURN
+               PCONS = CONS<I>
+               IF PCONS # "" THEN
+                  GOSUB RESOLVE
+                  IF TGT = "" THEN
+                     PRINT P : ": no published version satisfies " : PCONS
+                     RETURN
+                  END
+                  IF TGT # META<2> THEN
+                     CALL MVPKG.META(P, TGT, REG, META)
+                     IF META = "" THEN PRINT P:" ":TGT:": not found in registry ":REG ; RETURN
+                  END
+               END
                CALL MVPKG.ONE(META, REG)
                INSTALLED<-1> = P
                PROGRESS = 1
@@ -99,6 +118,23 @@
       MTEXT = MTEXT : INSTALLED<I> : CHAR(10)
    NEXT I
    X = OSWRITE(MTEXT, MFILE)
+   RETURN
+
+* RESOLVE — given P, its constraint PCONS, and META (latest, with META<6> the
+* published versions newest-first), pick TGT = the newest version satisfying
+* PCONS ("" if none).  Constraint commas mean AND (>=1.0,<2.0), which SEMVER
+* expresses as space-separated ranges, so normalise "," -> " ".
+RESOLVE:
+   TGT = ""
+   PC = CHANGE(PCONS, ",", " ")
+   VLIST = META<6>
+   FOR VI = 1 TO DCOUNT(VLIST, " ")
+      CV = FIELD(VLIST, " ", VI)
+      IF CV # "" AND TGT = "" THEN
+         CALL SEMVER("SAT", CV, PC, SR)
+         IF SR = 1 THEN TGT = CV
+      END
+   NEXT VI
    RETURN
 
 * DEPAPPLY — parse a dependency "name[@sys][:constraint]" into DNAME (the bare

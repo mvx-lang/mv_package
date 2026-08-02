@@ -7,7 +7,7 @@
    A1 = FIELD(S, " ", 3)
    IF A1 = "" THEN PRINT "usage: MVPKG info <name>" ; RETURN
    CALL MVPKG.REG(REG)
-   CALL MVPKG.META(A1, REG, META)
+   CALL MVPKG.META(A1, "", REG, META)
    IF META = "" THEN
       PRINT A1:": not found in registry ":REG
       RETURN
