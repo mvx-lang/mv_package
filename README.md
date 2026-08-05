@@ -105,6 +105,11 @@ argument. The release tar carries the account's own `.mvx` / `PKG`.
 
 ## Native code on UniData — the shared CallC library
 
+> **Status: implemented** (issue #3 part 2). The manager owns and aggregates
+> `libu2callc.so`; the per-package registry, union relink on install/remove, and
+> the authoritative `cfuncdef` for `CALLC.EXISTS` all ship today. The remaining
+> half of #3 is optional-dependency / platform-gating support in the resolver.
+
 Some packages reach into the host through native C: on UniData that means
 functions compiled into **CallC**, which UniData exposes to BASIC as `CALLC
 NAME(...)`. UniData loads exactly **one** `libu2callc.so`, so native add-ons
