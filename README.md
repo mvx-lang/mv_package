@@ -43,8 +43,14 @@ that depends on `curses` pulls the native bridge in and rebuilds the shared
 library — one command, nothing manual.
 
 **Dependency syntax.** Each entry in the `dependencies` list is a package name
-with two optional suffixes, `name[@system][:constraint]`:
+with an optional `?` prefix and two optional suffixes,
+`[?]name[@system][:constraint]`:
 
+- `?` — **optional**. The dependency is installed like any other when the
+  registry has it, but a missing one is skipped with a warning instead of
+  failing the install. Use it for add-ons an app uses when present and does
+  without otherwise (e.g. `?udt_curses@udt`); the app guards its use at run
+  time with `CALL MVPKG.HAS(name, ok)` (or `CALLC.EXISTS` for a native probe).
 - `@system` — a platform gate. `name@udt,mvx` applies only on those systems;
   `name@!mvx` applies everywhere *except* those. A package built into the
   runtime on one platform declares the fallback for the others, e.g.
@@ -54,7 +60,7 @@ with two optional suffixes, `name[@system][:constraint]`:
   (comma = AND), `1.2.*`, an exact `1.4.2`, or `*` for any. The client picks
   the **newest published version** satisfying it.
 
-Both may appear together: `mapfield@!mvx:^1.0`.
+All may appear together, in that order: `?udt_curses@udt:^1.0`.
 
 **Release channels.** A registry version is *stable* unless it carries a
 pre-release suffix (`1.3.0-beta.1`, `2.0.0-rc.2`, `1.0.0-dev`). The default
@@ -99,9 +105,19 @@ release and hosting your own registry are documented in that repo.
 
 A package's registry metadata mirrors MVX's `PKG` fields (`name`, `version`,
 `description`, a `dependencies` list — space-separated, each entry
-`name[@system][:constraint]` as above — and, for resolution across platforms,
+`[?]name[@system][:constraint]` as above — and, for resolution across platforms,
 a `systems` list). `mkrelease.sh` takes the dependencies as its fifth
 argument. The release tar carries the account's own `.mvx` / `PKG`.
+
+**`provides`.** A package may also declare a `provides` list — virtual names it
+satisfies. It is how a package stands in for another: if `udt_curses` is later
+ported and renamed `mvx-lang/cursors`, its manifest declares
+`"provides": ["udt_curses"]`, and anything that still depends on `udt_curses`
+is satisfied by installing `cursors` (its provided names are recorded as
+present, so `MVPKG.HAS("udt_curses")` is true and the dependency resolves).
+Resolving a *bare* dependency on a virtual name whose provider is not otherwise
+in the graph needs the registry's provides index (a follow-up); a provider
+already in the dependency set satisfies it today.
 
 ## Native code on UniData — the shared CallC library
 

@@ -33,11 +33,17 @@
    CONS = ""
    OPT = 0                            ;* OPT<i> parallel NEED<i>: 1 = optional dep
    SKIPPED = ""                       ;* optional deps found unavailable this run
+   PROVVIRT = ""                      ;* virtual names a NEED package provides, and
+   PROVREAL = ""                      ;*   the real package that provides each
    DEPSOF = ""
    K = 1
    LOOP WHILE K <= DCOUNT(NEED, @AM) DO
       CALL MVPKG.META(NEED<K>, "", REG, META)
       IF META = "" THEN PRINT NEED<K> : ": not found in registry " : REG ; RETURN
+      FOR PV = 1 TO DCOUNT(META<7>, " ")       ;* record what this package provides
+         VN = FIELD(META<7>, " ", PV)
+         IF VN # "" THEN PROVVIRT<-1> = VN ; PROVREAL<-1> = NEED<K>
+      NEXT PV
       APPLIC = ""
       FOR J = 1 TO DCOUNT(META<5>, " ")
          D = FIELD(META<5>, " ", J)
@@ -104,9 +110,13 @@
                DOINST = 1
                CALL MVPKG.META(P, "", REG, META)
                IF META = "" THEN
-                  MISSWHY = "not found in registry " : REG
-                  GOSUB OPTMISS ; DOINST = 0
-                  IF FATAL THEN RETURN
+                  DOINST = 0
+                  GOSUB PROVDEFER      ;* a pending provider may yet satisfy P
+                  IF DEFER = 0 THEN
+                     MISSWHY = "not found in registry " : REG
+                     GOSUB OPTMISS
+                     IF FATAL THEN RETURN
+                  END
                END
                IF DOINST THEN
                   PCONS = CONS<I>
@@ -127,6 +137,10 @@
                IF DOINST THEN
                   CALL MVPKG.ONE(META, REG)
                   INSTALLED<-1> = P
+                  FOR PV = 1 TO DCOUNT(META<7>, " ")   ;* provides now satisfied
+                     VN = FIELD(META<7>, " ", PV)
+                     IF VN # "" THEN INSTALLED<-1> = VN
+                  NEXT PV
                   PROGRESS = 1
                END
             END
@@ -163,6 +177,24 @@ OPTMISS:
       PRINT P : ": " : MISSWHY
       FATAL = 1
    END
+   RETURN
+
+* PROVDEFER — P was not found as a real package.  If P is a virtual name that a
+* still-pending package provides (a rename: mvx-lang/cursors "provides":
+* ["udt_curses"]), defer it (DEFER=1) rather than failing: it is satisfied once
+* that provider installs, which records P among the installed names.
+PROVDEFER:
+   DEFER = 0
+   FOR PV = 1 TO DCOUNT(PROVVIRT, @AM)
+      IF PROVVIRT<PV> = P THEN
+         PROVIDER = PROVREAL<PV>
+         INST = 0
+         FOR X = 1 TO DCOUNT(INSTALLED, @AM)
+            IF INSTALLED<X> = PROVIDER THEN INST = 1
+         NEXT X
+         IF INST = 0 THEN DEFER = 1
+      END
+   NEXT PV
    RETURN
 
 * RESOLVE — given P, its constraint PCONS, and META (latest, with META<6> the
