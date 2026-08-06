@@ -25,11 +25,16 @@ $SUDO cp "$HERE/udt-callc-build.sh" "$UDTHOME/bin/udt-callc-build"
 $SUDO chmod +x "$UDTHOME/bin/udt-callc-build"
 echo "mv_package: installed $UDTHOME/bin/udt-callc-build"
 
-# 2) the core capability probe, cataloged globally
+# 2) the capability + package probes, cataloged globally so every account can
+#    guard optional add-ons at run time: CALLC.EXISTS (a native CallC function
+#    is present) and MVPKG.HAS (a "?"-optional package is installed here).
 mkdir -p "$ACCT/BP"
-cp "$HERE/CALLC.EXISTS" "$ACCT/BP/CALLC.EXISTS"
-( cd "$ACCT" && printf 'BASIC BP CALLC.EXISTS\nCATALOG BP CALLC.EXISTS GLOBAL FORCE\n' | udt ) >/dev/null 2>&1
-echo "mv_package: cataloged CALLC.EXISTS globally — every account can now probe"
-echo "mv_package:   for optional native capabilities, e.g."
+for probe in CALLC.EXISTS MVPKG.HAS; do
+   cp "$HERE/$probe" "$ACCT/BP/$probe"
+   ( cd "$ACCT" && printf 'BASIC BP %s\nCATALOG BP %s GLOBAL FORCE\n' "$probe" "$probe" | udt ) >/dev/null 2>&1
+done
+echo "mv_package: cataloged CALLC.EXISTS + MVPKG.HAS globally — every account can"
+echo "mv_package:   now guard optional add-ons at run time, e.g."
 echo "mv_package:     DEFFUN CALLC.EXISTS(A)"
 echo "mv_package:     IF CALLC.EXISTS(\"CURSINIT\") THEN ... ELSE ..."
+echo "mv_package:     CALL MVPKG.HAS(\"mvx-lang/udt_curses\", OK)"

@@ -16,3 +16,4 @@ server/node_modules/
 
 # Generated release tarballs (registry meta.json stays tracked if seeded)
 server/registry/**/*.tar.gz
+VOC/LIB

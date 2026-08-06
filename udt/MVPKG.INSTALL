@@ -31,6 +31,8 @@
    * the top-level package and unconstrained deps).
    NEED = A1
    CONS = ""
+   OPT = 0                            ;* OPT<i> parallel NEED<i>: 1 = optional dep
+   SKIPPED = ""                       ;* optional deps found unavailable this run
    DEPSOF = ""
    K = 1
    LOOP WHILE K <= DCOUNT(NEED, @AM) DO
@@ -42,14 +44,30 @@
          IF D # "" THEN
             GOSUB DEPAPPLY
             IF APPLIES THEN
-               APPLIC := DNAME : " "
-               SEEN = 0
+               SEEN = 0 ; SEENIDX = 0
                FOR X = 1 TO DCOUNT(NEED, @AM)
-                  IF NEED<X> = DNAME THEN SEEN = 1
+                  IF NEED<X> = DNAME THEN SEEN = 1 ; SEENIDX = X
                NEXT X
-               IF SEEN = 0 THEN
-                  NEED<-1> = DNAME
-                  CONS<DCOUNT(NEED, @AM)> = DCONS
+               IF SEEN THEN
+                  APPLIC := DNAME : " "
+                  IF OPTIONAL = 0 THEN OPT<SEENIDX> = 0   ;* a required edge wins
+               END ELSE
+                  SKIP = 0
+                  IF OPTIONAL THEN
+                     * probe: an optional dep is pulled when the registry has it,
+                     * and quietly skipped (not a failure) when it does not
+                     CALL MVPKG.META(DNAME, "", REG, PROBE)
+                     IF PROBE = "" THEN
+                        PRINT "mvpkg: optional dependency " : DNAME : " unavailable - skipping"
+                        SKIP = 1
+                     END
+                  END
+                  IF SKIP = 0 THEN
+                     APPLIC := DNAME : " "
+                     NEED<-1> = DNAME
+                     CONS<DCOUNT(NEED, @AM)> = DCONS
+                     OPT<DCOUNT(NEED, @AM)> = OPTIONAL
+                  END
                END
             END
          END
@@ -83,23 +101,34 @@
                END
             NEXT J
             IF READY THEN
+               DOINST = 1
                CALL MVPKG.META(P, "", REG, META)
-               IF META = "" THEN PRINT P : ": not found in registry " : REG ; RETURN
-               PCONS = CONS<I>
-               IF PCONS # "" THEN
-                  GOSUB RESOLVE
-                  IF TGT = "" THEN
-                     PRINT P : ": no published version satisfies " : PCONS
-                     RETURN
-                  END
-                  IF TGT # META<2> THEN
-                     CALL MVPKG.META(P, TGT, REG, META)
-                     IF META = "" THEN PRINT P : " " : TGT : ": not found in registry " : REG ; RETURN
+               IF META = "" THEN
+                  MISSWHY = "not found in registry " : REG
+                  GOSUB OPTMISS ; DOINST = 0
+                  IF FATAL THEN RETURN
+               END
+               IF DOINST THEN
+                  PCONS = CONS<I>
+                  IF PCONS # "" THEN
+                     GOSUB RESOLVE
+                     IF TGT = "" THEN
+                        MISSWHY = "no published version satisfies " : PCONS
+                        GOSUB OPTMISS ; DOINST = 0
+                        IF FATAL THEN RETURN
+                     END ELSE
+                        IF TGT # META<2> THEN
+                           CALL MVPKG.META(P, TGT, REG, META)
+                           IF META = "" THEN PRINT P : " " : TGT : ": not found in registry " : REG ; RETURN
+                        END
+                     END
                   END
                END
-               CALL MVPKG.ONE(META, REG)
-               INSTALLED<-1> = P
-               PROGRESS = 1
+               IF DOINST THEN
+                  CALL MVPKG.ONE(META, REG)
+                  INSTALLED<-1> = P
+                  PROGRESS = 1
+               END
             END
          END
       NEXT I
@@ -112,9 +141,28 @@
 
    MTEXT = ""
    FOR I = 1 TO DCOUNT(INSTALLED, @AM)
-      MTEXT := INSTALLED<I> : CHAR(10)
+      ISK = 0                          ;* a skipped optional is not really installed
+      FOR SI = 1 TO DCOUNT(SKIPPED, @AM)
+         IF SKIPPED<SI> = INSTALLED<I> THEN ISK = 1
+      NEXT SI
+      IF ISK = 0 THEN MTEXT := INSTALLED<I> : CHAR(10)
    NEXT I
    OSWRITE MTEXT ON MFILE
+   RETURN
+
+* OPTMISS — dependency P could not be resolved (reason MISSWHY).  If it is
+* optional, skip it (an app guards its use at runtime with MVPKG.HAS /
+* CALLC.EXISTS) and mark it done so dependents proceed; otherwise it is a hard
+* failure and FATAL tells the caller to abort.
+OPTMISS:
+   FATAL = 0
+   IF OPT<I> THEN
+      PRINT "mvpkg: optional dependency " : P : " unavailable (" : MISSWHY : ") - skipping"
+      INSTALLED<-1> = P ; SKIPPED<-1> = P ; PROGRESS = 1
+   END ELSE
+      PRINT P : ": " : MISSWHY
+      FATAL = 1
+   END
    RETURN
 
 * RESOLVE — given P, its constraint PCONS, and META (latest, with META<6> the
@@ -134,19 +182,24 @@ RESOLVE:
    NEXT VI
    RETURN
 
-* DEPAPPLY — parse a dependency "name[@sys][:constraint]" into DNAME (the bare
-* package), APPLIES (1 if it applies to this client's MYSYS), and DCONS (a
-* version constraint for SEMVER, "" if none).
+* DEPAPPLY — parse a dependency "[?]name[@sys][:constraint]" into DNAME (the bare
+* package), APPLIES (1 if it applies to this client's MYSYS), OPTIONAL (1 if the
+* dependency is optional), and DCONS (a version constraint for SEMVER, "" if none).
+*   ?          leading — optional: install if available, skip (don't fail) if not.
 *   @sys,sys   only those systems;  @!sys,sys   all systems except those.
 *   :^1.2 / :~1.0 / :>=1.0,<2.0 / :1.2.* / :1.2.3   a version constraint.
 * E.g. a package built into the runtime on one platform (mapfield -> MVX
-* builtin) declares "mapfield@!mvx": pulled on udt, skipped on mvx.
+* builtin) declares "mapfield@!mvx": pulled on udt, skipped on mvx.  An optional
+* native add-on the app guards with CALLC.EXISTS declares "?udt_curses".
 DEPAPPLY:
-   COLON = INDEX(D, ":", 1)
+   OPTIONAL = 0
+   DD = D
+   IF DD[1, 1] = "?" THEN OPTIONAL = 1 ; DD = DD[2, LEN(DD)]
+   COLON = INDEX(DD, ":", 1)
    IF COLON > 0 THEN
-      DCONS = D[COLON + 1, LEN(D)] ; DB = D[1, COLON - 1]
+      DCONS = DD[COLON + 1, LEN(DD)] ; DB = DD[1, COLON - 1]
    END ELSE
-      DCONS = "" ; DB = D
+      DCONS = "" ; DB = DD
    END
    ATP = INDEX(DB, "@", 1)
    IF ATP = 0 THEN

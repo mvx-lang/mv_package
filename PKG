@@ -3,5 +3,5 @@ mvpkg
 MVPKG — the MultiValue package manager client
 mvx udt
 http
-json
+json@!mvx
 ?cmd
