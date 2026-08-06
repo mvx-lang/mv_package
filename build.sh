@@ -18,11 +18,12 @@ MVX="$MVX_HOME/build/bin/mvx"
 [ -x "$MVX" ] || { echo "mvx not found under $MVX_HOME/build/bin" >&2; exit 1; }
 export MVX_DRIVERS="$MVX_HOME/build/lib"
 
-# The OS seam and the package-presence probe (subroutines) first, then the
-# client verb (developer privilege to compile and catalog).  MVPKG.HAS is the
-# runtime complement of an optional dependency — apps CALL it to guard use of a
-# "?"-optional package, so it is cataloged alongside the client.
-for it in MVPKGOS MVPKG.HAS MVPKG; do
+# Catalog every BP record (developer privilege to compile and catalog): the
+# client verb MVPKG, the OS seam MVPKGOS, SEMVER, the presence probe MVPKG.HAS,
+# and every MVPKG.* subroutine the verb CALLs — CALL does not cascade, so each
+# must be cataloged for `MVPKG install` to resolve its whole chain.  CATALOG
+# picks exe vs shared from each record's SUBROUTINE declaration.
+for it in $(cd "$HERE/BP" && ls); do
   MVXPRIV=developer "$MVX" -a "$HERE" -c "CATALOG BP $it"
 done
 echo "mv_package built.  run (installing needs the unrestricted tier for untar):"
