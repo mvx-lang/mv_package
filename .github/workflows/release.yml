@@ -1,12 +1,14 @@
-# Release the MVPKG client on a version tag: publish the source package as a
-# GitHub release asset.  The package registry indexes it via its release webhook
-# (it hosts nothing).  Asset name mirrors the registry's artifact key:
+# Release the MVPKG client on a version tag.  Like every mvx-lang package it
+# publishes source PLUS a per-Pick account artifact — the manager is itself a
+# downloadable PICK account you install from.  Asset names mirror the registry's
+# artifact key (<base>-<ver>-<suffix>, base = name '/'->'_'):
 #   source -> mvx-lang_mvpkg-<ver>-source.tar.gz
+#   mvx    -> mvx-lang_mvpkg-<ver>-mvx-<os>-<arch>-<endian>.tar.gz  (compiled, native)
+#   udt    -> mvx-lang_mvpkg-<ver>-udt-any-any-le.tar.gz            (BASIC, portable)
 #
-# MVPKG is the bootstrap client — you install it first (clone + build.sh on MVX,
-# or compile the udt/ programs on UniData), then it installs everything else.
-# So it is distributed as source; there is no prebuilt binary artifact.  The
-# source carries the client for both hosts (BP/ for MVX, udt/ for UniData).
+# The mvx account is compiled with the published mvx toolchain (mkpkg.sh); the
+# udt account is pure BASIC + shell (cataloged on the target by install.sh), so
+# it just stages + tars on a hosted runner — no container, no native code.
 # Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only.
 #
 # Tag the bare version to release, e.g.:  git tag 1.0 && git push origin 1.0
@@ -31,3 +33,79 @@ jobs:
           title: mvpkg
           body: "MVPKG — the MultiValue package manager client (MVX + UniData). Source; indexed by the package registry."
           extra-exclude: docs        # the docs wiki submodule
+
+  # ---- mvx binary: the MVPKG client account compiled with the mvx toolchain ---
+  # No native extension (the CallC bridge is UniData-only) — mkpkg.sh compiles
+  # BP/* into CATALOG/ with the published mvx-basic.  Native -> os/arch-locked.
+  mvx-binary:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up the mvx toolchain (latest published build)
+        uses: mvx-lang/mvx/.github/actions/setup-mvx@main
+        with:
+          version: latest
+      - name: Build + stage the mvx account
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME}"; ARCH="$(uname -m)"; OS="linux"
+          case "$(printf '\1\2' | od -An -tx2 | tr -d ' \n')" in
+            0201*) ENDIAN=le ;; 0102*) ENDIAN=be ;; *) ENDIAN=le ;;
+          esac
+          BASE="mvx-lang_mvpkg-$VER-mvx-$OS-$ARCH-$ENDIAN"
+          # build.sh catalogs BP/* IN-ACCOUNT so cross-refs (MVPKG.META -> HTTPGET)
+          # resolve — mkpkg's independent bundling does not.  setup-mvx put mvx +
+          # its drivers under $MVXHOME; build.sh takes $MVX / $MVX_DRIVERS overrides.
+          MVX="$(command -v mvx)" MVX_DRIVERS="$MVXHOME/lib" sh build.sh
+          test -x CATALOG/MVPKG
+          # Compiled account: BP source + CATALOG verb + LIB subroutine .so's + VOC
+          # + the cmd bundle + metadata; drop debug + runtime state.
+          DIST="dist/$BASE"; rm -rf "$DIST"; mkdir -p "$DIST"
+          for d in BP CATALOG LIB VOC VOC.DICT CMD.BP CMD.BP.DICT PKG mvpkg.json LICENSE README.md; do
+            [ -e "$d" ] && cp -a "$d" "$DIST/" || true
+          done
+          find "$DIST" -name '*.dSYM' -prune -exec rm -rf {} + 2>/dev/null || true
+          tar czf "$BASE.tar.gz" -C "$DIST" .
+          sha256sum "$BASE.tar.gz" > "$BASE.tar.gz.sha256"
+          echo "tarball=$BASE.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "checksum=$BASE.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+      - name: Publish the mvx binary asset
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            ${{ steps.pkg.outputs.tarball }}
+            ${{ steps.pkg.outputs.checksum }}
+          fail_on_unmatched_files: true
+
+  # ---- udt account: the MVPKG client as a self-installing UniData account -----
+  # Pure BASIC + shell (cataloged on the target by install.sh) — no compile, no
+  # container, no self-hosted runner — so it stages + tars on a hosted runner and
+  # is os/arch-independent (udt-any-any-le).  Unpacks to mvpkg/; cd mvpkg && ./install.sh
+  udt-binary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Stage the udt account package
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME}"
+          BASE="mvx-lang_mvpkg-$VER-udt-any-any-le"
+          rm -rf dist && mkdir -p dist
+          sh udt/build-udt.sh dist              # stages dist/mvpkg/ (the account)
+          tar czf "$BASE.tar.gz" -C dist mvpkg  # wrap mvpkg/ by name (clean, strippable)
+          sha256sum "$BASE.tar.gz" > "$BASE.tar.gz.sha256"
+          echo "tarball=$BASE.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "checksum=$BASE.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+      - name: Publish the udt account asset
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            ${{ steps.pkg.outputs.tarball }}
+            ${{ steps.pkg.outputs.checksum }}
+          fail_on_unmatched_files: true

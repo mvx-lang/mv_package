@@ -13,10 +13,15 @@
 #   MVXPRIV=unrestricted mvx -a . -c 'MVPKG install ev_eb ./ev_eb'
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
-: "${MVX_HOME:?set MVX_HOME to your mvx-lang checkout (with a built toolchain)}"
-MVX="$MVX_HOME/build/bin/mvx"
-[ -x "$MVX" ] || { echo "mvx not found under $MVX_HOME/build/bin" >&2; exit 1; }
-export MVX_DRIVERS="$MVX_HOME/build/lib"
+# The mvx runtime + its drivers.  Default to a source checkout's build tree
+# ($MVX_HOME/build/bin/mvx + build/lib), but allow $MVX / $MVX_DRIVERS overrides
+# so a PUBLISHED toolchain works too (e.g. CI's setup-mvx puts mvx on PATH and
+# ships the drivers under $MVXHOME/lib) — no full checkout required.
+MVX="${MVX:-${MVX_HOME:+$MVX_HOME/build/bin/mvx}}"
+[ -n "$MVX" ] && [ -x "$MVX" ] || MVX="$(command -v mvx 2>/dev/null || true)"
+[ -n "$MVX" ] && [ -x "$MVX" ] || { echo "mvx not found — set \$MVX or MVX_HOME, or put mvx on PATH" >&2; exit 1; }
+export MVX_DRIVERS="${MVX_DRIVERS:-${MVX_HOME:+$MVX_HOME/build/lib}}"
+: "${MVX_DRIVERS:?set MVX_DRIVERS (or MVX_HOME) to the mvx driver dir}"
 
 # Catalog every BP record (developer privilege to compile and catalog): the
 # client verb MVPKG, the OS seam MVPKGOS, SEMVER, the presence probe MVPKG.HAS,
