@@ -1,7 +1,7 @@
 mvpkg
-1.9.0
+1.10.0
 MVPKG — the MultiValue package manager client
 mvx udt
-http
+http@mvx
 json@!mvx
 ?cmd

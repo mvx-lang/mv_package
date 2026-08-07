@@ -1,10 +1,10 @@
 {
   "name": "mvx-lang/mvpkg",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "MVPKG — the MultiValue package manager client",
   "license": "GPL-2.0-only",
   "systems": ["mvx", "udt"],
-  "dependencies": ["mvx-lang/http", "mvx-lang/json@!mvx", "?mvx-lang/cmd"],
+  "dependencies": ["mvx-lang/http@mvx", "mvx-lang/json@!mvx", "?mvx-lang/cmd"],
   "deploy": {
     "verbs": ["MVPKG"],
     "fallback": { "cmd": ["CMD.BP"] }

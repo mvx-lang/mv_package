@@ -88,6 +88,21 @@ say "MVPKG init"
 ( cd "$HERE" && printf 'MVPKG init\nQUIT\n' | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
   | grep -iE "initialised|registry|store" | sed 's/^/  /' || true
 
+# 6) pull this account's managed deps down over curl, then self-register mvpkg.
+#    The bundled cut-down cmd/json bootstrap MVPKG; now that its HTTP seam works
+#    (HTTPGETFILE shells out to curl), fetch the full published packages so they
+#    show in MVPKG LIST and upgrade independently, and register mvpkg itself so
+#    it is listed + upgradable (MVPKG update).  Best-effort: the bundled versions
+#    already work, so a briefly-unreachable registry is a warning, not a failure.
+say "pulling managed deps (json, cmd) + registering mvpkg over curl  [needs network]"
+# this release's own version (PKG line 2) — released layout has PKG beside
+# install.sh, the dev tree has it one up — so register records what is actually
+# installed, not whatever the registry currently calls latest.
+MVVER="$(sed -n 2p "$HERE/PKG" 2>/dev/null || true)"; [ -n "$MVVER" ] || MVVER="$(sed -n 2p "$HERE/../PKG" 2>/dev/null || true)"
+( cd "$HERE" && printf 'MVPKG install mvx-lang/json\nMVPKG install mvx-lang/cmd\nMVPKG register mvx-lang/mvpkg %s\nQUIT\n' "$MVVER" \
+    | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
+  | grep -iE "install|deploy|registered|up to date|error|not found|refus" | sed 's/^/  /' || true
+
 cat <<EOF
 mvpkg-install: done.
   * operator account:   $HERE   (type MVPKG here)
