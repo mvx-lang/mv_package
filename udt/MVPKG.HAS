@@ -17,19 +17,20 @@
    MFILE = "mvpkg.installed"
    OSREAD MTEXT FROM MFILE ELSE MTEXT = ""
 
-   IN = NAME ; GOSUB BNAME ; WANTBN = BN
+   PN = NAME ; GOSUB BNAME ; WANTBN = BN
    NL = DCOUNT(MTEXT, CHAR(10))
    FOR I = 1 TO NL
       L = TRIM(FIELD(MTEXT, CHAR(10), I))
       IF L # "" THEN
          IF L = NAME THEN FOUND = 1
-         IN = L ; GOSUB BNAME
+         PN = L ; GOSUB BNAME
          IF BN = WANTBN THEN FOUND = 1
       END
    NEXT I
    RETURN
 
-* BN = the bare package name in IN: the field after the last "/".
+* BN = the bare package name in PN: the field after the last "/".
+* (PN, not IN — IN is a reserved word in UniData BASIC.)
 BNAME:
-   BN = FIELD(IN, "/", COUNT(IN, "/") + 1)
+   BN = FIELD(PN, "/", COUNT(PN, "/") + 1)
    RETURN
