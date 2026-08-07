@@ -31,7 +31,7 @@ echo "mv_package: installed $UDTHOME/bin/udt-callc-build"
 mkdir -p "$ACCT/BP"
 for probe in CALLC.EXISTS MVPKG.HAS; do
    cp "$HERE/$probe" "$ACCT/BP/$probe"
-   ( cd "$ACCT" && printf 'BASIC BP %s\nCATALOG BP %s GLOBAL FORCE\n' "$probe" "$probe" | udt ) >/dev/null 2>&1
+   ( cd "$ACCT" && printf 'BASIC BP %s\nCATALOG BP %s FORCE\n' "$probe" "$probe" | udt ) >/dev/null 2>&1
 done
 echo "mv_package: cataloged CALLC.EXISTS + MVPKG.HAS globally — every account can"
 echo "mv_package:   now guard optional add-ons at run time, e.g."
