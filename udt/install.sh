@@ -34,6 +34,9 @@ say() { printf 'mvpkg-install: %s\n' "$1"; }
 die() { printf 'mvpkg-install: %s\n' "$1" >&2; exit 1; }
 [ -d "$UDTHOME" ] && [ -x "$UDT" ] || die "UDTHOME=$UDTHOME is not a UniData install (set UDTHOME)"
 command -v sudo >/dev/null 2>&1 || die "sudo not found — needed for \$UDTHOME writes"
+# MVPKG fetches packages over HTTP through the curl seam (UniData's native HTTPS
+# doesn't reliably reach github + follow redirects), so curl is a prerequisite.
+command -v curl >/dev/null 2>&1 || die "curl not found — MVPKG downloads packages over HTTP with curl: sudo dnf install -y curl"
 [ -d "$HERE/BP" ] || die "no BP/ here — run this from the unpacked mvpkg udt account"
 
 # 1) make this dir a real UniData account (idempotent) — the operator account
