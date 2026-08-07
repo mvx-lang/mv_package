@@ -45,7 +45,11 @@
          * in the portable client.
          EXECUTE '!rm -rf "':P1:'"'
       CASE OP = "UNTAR"
-         EXECUTE '!mkdir -p "':P2:'" && tar -xzf "':P1:'" -C "':P2:'"'
+         * Extract into P2.  Account-shaped packages wrap their tree in one named
+         * top dir (e.g. git/); contents-at-root packages do not.  Count the
+         * distinct top-level components and, when there is exactly one, strip it
+         * so the package's files land at the store root either way.
+         EXECUTE '!mkdir -p "':P2:'"; n=`tar -tzf "':P1:'" | sed "s#^\./##; s#/.*##" | grep -v "^$" | sort -u | wc -l | tr -d " "`; if [ "$n" = 1 ]; then tar -xzf "':P1:'" --strip-components=1 -C "':P2:'"; else tar -xzf "':P1:'" -C "':P2:'"; fi'
       CASE OP = "CALLC"
          * MVX has no shared CallC library to aggregate — nothing to do.
       CASE OP = "REBUILD"
