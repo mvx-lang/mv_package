@@ -1,21 +1,64 @@
 * mv_package — MVPKG subcommand: list (UniData port).
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
-* MVPKG list — show the packages MVPKG manages on this system: the global
-* store manifest ("name version" per line), which install and register both
-* write.
+* MVPKG list — show the packages MVPKG manages on this system as a table:
+* PACKAGE  VERSION  STATUS  DESCRIPTION.
+*   name + version : the global store manifest ("name version" per line).
+*   description    : read from each package's stored mvpkg.json (local; blank
+*                    for a package adopted via `register`, which has no store copy).
+*   status         : per the CURRENT account — "deployed" when this account's
+*                    manifest (mvpkg.installed) lists it, else "system" (installed
+*                    in the shared store but not deployed into this account).
    SUBROUTINE MVPKG.LIST
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B, C, D, E)
    CALL MVPKGOS("STORE", "", "", STORE)
    GMAN = STORE : "/installed"
    OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+   * this account's deployed set — the CWD is the account, so a relative read
+   OSREAD MTEXT FROM "mvpkg.installed" ELSE MTEXT = ""
+   NL = DCOUNT(GTEXT, CHAR(10))
    NG = 0
-   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+   FOR GI = 1 TO NL
       IF TRIM(FIELD(GTEXT, CHAR(10), GI)) # "" THEN NG = NG + 1
    NEXT GI
    IF NG = 0 THEN PRINT "no packages installed" ; RETURN
-   PRINT "installed packages:"
-   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+   SPEC = MAPFIELD("description", 1, "", "", "")
+   * a self-registered package (mvpkg) has no store copy — its manifest is this
+   * account's own mvpkg.json; read it once to fill that one row's description.
+   SELFSPEC = MAPFIELD("name", 1, "", "", "")
+   SELFSPEC<-1> = MAPFIELD("description", 2, "", "", "")
+   OSREAD SELFJ FROM "mvpkg.json" ELSE SELFJ = ""
+   SELFNAME = "" ; SELFDESC = ""
+   IF SELFJ # "" THEN SM = JSONDECODE(SELFJ, SELFSPEC) ; SELFNAME = TRIM(SM<1>) ; SELFDESC = TRIM(SM<2>)
+   PRINT FMT("PACKAGE", "22L") : FMT("VERSION", "9L") : FMT("STATUS", "10L") : "DESCRIPTION"
+   FOR GI = 1 TO NL
       LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
-      IF LN # "" THEN PRINT "  " : LN
+      IF LN # "" THEN
+         NM = FIELD(LN, " ", 1)
+         VER = FIELD(LN, " ", 2)
+         * description from the package's stored manifest (local, no network)
+         PKGKEY = CHANGE(NM, "/", "_")
+         OSREAD J FROM STORE : "/" : PKGKEY : "/mvpkg.json" ELSE J = ""
+         DESC = ""
+         IF J # "" THEN
+            M = JSONDECODE(J, SPEC) ; DESC = TRIM(M<1>)
+         END ELSE
+            IF NM = SELFNAME THEN DESC = SELFDESC
+         END
+         IF LEN(DESC) > 48 THEN DESC = DESC[1, 47] : ">"
+         * status for the current account.  The account manifest may list a
+         * package by its full name (a direct install) or by its short/virtual
+         * name (a transitive or provides-resolved dep, e.g. "mapfield" for
+         * mvx-lang/mapfield), so match either.
+         STAT = "system"
+         LAST = FIELD(NM, "/", DCOUNT(NM, "/"))
+         NM2 = DCOUNT(MTEXT, CHAR(10))
+         FOR MI = 1 TO NM2
+            AN = TRIM(FIELD(MTEXT, CHAR(10), MI))
+            IF AN # "" AND (AN = NM OR AN = LAST) THEN STAT = "deployed"
+         NEXT MI
+         PRINT FMT(NM, "22L") : FMT(VER, "9L") : FMT(STAT, "10L") : DESC
+      END
    NEXT GI
    RETURN
