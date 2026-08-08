@@ -94,18 +94,32 @@ say "MVPKG init"
 #    show in MVPKG LIST and upgrade independently, and register mvpkg itself so
 #    it is listed + upgradable (MVPKG update).  Best-effort: the bundled versions
 #    already work, so a briefly-unreachable registry is a warning, not a failure.
-say "pulling managed deps (json, cmd, curl-cmd) + registering mvpkg over curl  [needs network]"
+# Choose the HTTP transport.  Both mvx-lang/curl-cmd (shells out to the OS curl
+# binary) and mvx-lang/curl (in-process libcurl via CallC — faster, no fork per
+# request) provide the virtual "curl", so either satisfies mvpkg's dependency.
+# Prefer libcurl when its build requirements are present — gcc, the OS libcurl,
+# and the ncurses the UniData CallC link pulls — probed by actually trying that
+# link; otherwise use the portable command version.
+if command -v gcc >/dev/null 2>&1 \
+   && printf 'int main(void){return 0;}\n' | gcc -xc - -l:libcurl.so.4 -lncurses -o /dev/null 2>/dev/null; then
+  HTTPPKG="mvx-lang/curl";     HTTPWHICH="in-process libcurl (mvx-lang/curl)"
+else
+  HTTPPKG="mvx-lang/curl-cmd"; HTTPWHICH="OS curl command (mvx-lang/curl-cmd)"
+fi
+say "HTTP transport: $HTTPWHICH"
+say "pulling managed deps (json, cmd, ${HTTPPKG#mvx-lang/}) + registering mvpkg over curl  [needs network]"
 # this release's own version (PKG line 2) — released layout has PKG beside
 # install.sh, the dev tree has it one up — so register records what is actually
 # installed, not whatever the registry currently calls latest.
 MVVER="$(sed -n 2p "$HERE/PKG" 2>/dev/null || true)"; [ -n "$MVVER" ] || MVVER="$(sed -n 2p "$HERE/../PKG" 2>/dev/null || true)"
-( cd "$HERE" && printf 'MVPKG install mvx-lang/json\nMVPKG install mvx-lang/cmd\nMVPKG install curl\nMVPKG register mvx-lang/mvpkg %s\nQUIT\n' "$MVVER" \
+( cd "$HERE" && printf 'MVPKG install mvx-lang/json\nMVPKG install mvx-lang/cmd\nMVPKG install %s\nMVPKG register mvx-lang/mvpkg %s\nQUIT\n' "$HTTPPKG" "$MVVER" \
     | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
   | grep -iE "install|deploy|registered|up to date|error|not found|refus" | sed 's/^/  /' || true
 
 cat <<EOF
 mvpkg-install: done.
   * operator account:   $HERE   (type MVPKG here)
+  * HTTP transport:     $HTTPWHICH
   * CallC aggregator:   $UDTHOME/bin/udt-callc-build
 Next, in this account:  MVPKG install <name>   |   MVPKG register mvx-lang/git
 EOF
