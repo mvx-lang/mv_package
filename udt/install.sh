@@ -94,12 +94,12 @@ say "MVPKG init"
 #    show in MVPKG LIST and upgrade independently, and register mvpkg itself so
 #    it is listed + upgradable (MVPKG update).  Best-effort: the bundled versions
 #    already work, so a briefly-unreachable registry is a warning, not a failure.
-say "pulling managed deps (json, cmd) + registering mvpkg over curl  [needs network]"
+say "pulling managed deps (json, cmd, curl-cmd) + registering mvpkg over curl  [needs network]"
 # this release's own version (PKG line 2) — released layout has PKG beside
 # install.sh, the dev tree has it one up — so register records what is actually
 # installed, not whatever the registry currently calls latest.
 MVVER="$(sed -n 2p "$HERE/PKG" 2>/dev/null || true)"; [ -n "$MVVER" ] || MVVER="$(sed -n 2p "$HERE/../PKG" 2>/dev/null || true)"
-( cd "$HERE" && printf 'MVPKG install mvx-lang/json\nMVPKG install mvx-lang/cmd\nMVPKG register mvx-lang/mvpkg %s\nQUIT\n' "$MVVER" \
+( cd "$HERE" && printf 'MVPKG install mvx-lang/json\nMVPKG install mvx-lang/cmd\nMVPKG install curl\nMVPKG register mvx-lang/mvpkg %s\nQUIT\n' "$MVVER" \
     | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
   | grep -iE "install|deploy|registered|up to date|error|not found|refus" | sed 's/^/  /' || true
 
