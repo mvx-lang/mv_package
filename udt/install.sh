@@ -112,9 +112,17 @@ say "pulling managed deps (json, cmd, ${HTTPPKG#mvx-lang/}) + registering mvpkg 
 # install.sh, the dev tree has it one up — so register records what is actually
 # installed, not whatever the registry currently calls latest.
 MVVER="$(sed -n 2p "$HERE/PKG" 2>/dev/null || true)"; [ -n "$MVVER" ] || MVVER="$(sed -n 2p "$HERE/../PKG" 2>/dev/null || true)"
-( cd "$HERE" && printf 'MVPKG install mvx-lang/json\nMVPKG install mvx-lang/cmd\nMVPKG install %s\nMVPKG register mvx-lang/mvpkg %s\nQUIT\n' "$HTTPPKG" "$MVVER" \
-    | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
-  | grep -iE "install|deploy|registered|up to date|error|not found|refus" | sed 's/^/  /' || true
+# ONE MVPKG command per udt session.  Each `MVPKG install` spawns child udt
+# processes (compile + catalog) that talk over SysV message queues; running
+# several commands back-to-back in a single piped session intermittently fails
+# with "can't get to msgq in U_tosbcs" as those queues contend.  Per-session is
+# the same one-op-per-session rule the global catalog above already follows.
+for dep in mvx-lang/json mvx-lang/cmd "$HTTPPKG"; do
+  ( cd "$HERE" && printf 'MVPKG install %s\nQUIT\n' "$dep" | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
+    | grep -iE "installed |deploy|up to date|error|not found|refus|msgq" | sed 's/^/  /' || true
+done
+( cd "$HERE" && printf 'MVPKG register mvx-lang/mvpkg %s\nQUIT\n' "$MVVER" | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
+  | grep -iE "registered|error|not found|msgq" | sed 's/^/  /' || true
 
 cat <<EOF
 mvpkg-install: done.
