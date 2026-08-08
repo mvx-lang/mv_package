@@ -56,7 +56,17 @@
          * so the package's files land at the store root either way.
          EXECUTE '!mkdir -p "':P2:'"; n=`tar -tzf "':P1:'" | sed "s#^\./##; s#/.*##" | grep -v "^$" | sort -u | wc -l | tr -d " "`; if [ "$n" = 1 ]; then tar -xzf "':P1:'" --strip-components=1 -C "':P2:'"; else tar -xzf "':P1:'" -C "':P2:'"; fi'
       CASE OP = "CALLC"
-         EXECUTE '!"':BUILDER:'" add "':P1:'" "':P2:'"'
+         * Fold P1's udt-callc contribution (named P2) into libu2callc.so.  A
+         * package with no contribution is a no-op; a real one relinks and needs
+         * gcc.  Capture the builder's exit (via a temp file, like PLATFORM) so a
+         * failed link surfaces as an error the caller aborts on — not a silent
+         * success that then catalogs verbs with no CallC backend behind them.
+         TMPF = "/tmp/mvpkg_callc_" : @USERNO
+         EXECUTE '!"':BUILDER:'" add "':P1:'" "':P2:'"; echo $? > "':TMPF:'"'
+         OSREAD RC FROM TMPF ELSE RC = "1"
+         EXECUTE '!rm -f "':TMPF:'"'
+         RC = TRIM(CONVERT(CHAR(10):CHAR(13), "  ", RC))
+         IF RC # "0" THEN RESULT = "CallC build failed (udt-callc-build exit ":RC:") — see its output above (gcc / package -devel libs missing?)"
       CASE OP = "REBUILD"
          EXECUTE '!"':BUILDER:'"'
       CASE OP = "PLATFORM"

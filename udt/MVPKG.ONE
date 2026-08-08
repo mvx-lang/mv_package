@@ -15,6 +15,10 @@
    SUBROUTINE MVPKG.ONE(META, REG)
    DEFFUN HTTPGETFILE(A, B)
    CALL MVPKGOS("STORE", "", "", STORE)
+   * Never act on empty metadata: a blank name would make DEST the store ROOT,
+   * so a later rm/untar would target the whole store.  Callers should have
+   * caught a registry miss (MVPKG.META returns "" for one), but guard here too.
+   IF TRIM(META<1>) = "" THEN PRINT "mvpkg: empty package metadata — skipping" ; RETURN
    PKGKEY = CHANGE(META<1>, "/", "_")
    DEST = STORE : "/" : PKGKEY
    GMAN = STORE : "/installed"
@@ -39,7 +43,11 @@
       IF ERR # "" THEN PRINT ERR ; RETURN
       EXECUTE '!rm -f "' : TMP : '"'
       CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
-      IF ERR # "" THEN PRINT ERR
+      * A failed native fold must abort BEFORE cataloging — otherwise the
+      * package's verbs (e.g. HTTPGET) get cataloged over working ones with no
+      * CallC backend behind them.  The store manifest is not written yet, so the
+      * package is simply left uninstalled; fix the toolchain and re-run.
+      IF ERR # "" THEN PRINT ERR ; RETURN
       GOSUB PARSEDEPLOY
       GOSUB CATGLOBAL
       IF GTEXT # "" AND GTEXT[LEN(GTEXT), 1] # CHAR(10) THEN GTEXT := CHAR(10)

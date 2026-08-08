@@ -54,6 +54,15 @@ remove)
 	echo "udt-callc: unstaged $pkg" ;;
 esac
 
+# Every path below (re)links the library and needs a compiler.  A no-callc `add`
+# already exited 0 above, so this only gates packages that actually contribute
+# native code — fail early and clearly rather than deep in the gcc invocations.
+command -v gcc >/dev/null 2>&1 || {
+	echo "udt-callc: gcc not found — CallC packages need a compiler to (re)link $LIB." >&2
+	echo "udt-callc: install it (e.g. 'sudo dnf install -y gcc') plus any package -devel libs, then retry." >&2
+	exit 3
+}
+
 BUILD=$(mktemp -d "${TMPDIR:-/tmp}/udtcallc.XXXXXX")
 trap 'rm -rf "$BUILD"' EXIT
 cd "$BUILD"

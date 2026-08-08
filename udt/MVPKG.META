@@ -51,5 +51,10 @@
       META = ""
    END ELSE
       META = JSONDECODE(BODY, SPEC)
+      * A miss returns a JSON error object ({"error":"not found"}) with no
+      * "name" — treat any response without a resolved name as a miss (META="").
+      * Otherwise the caller "installs" an empty package: blank name -> blank
+      * store dir -> it rm's/untars the whole store root and catalogs nothing.
+      IF META<1> = "" THEN META = ""
    END
    RETURN
