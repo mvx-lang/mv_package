@@ -35,6 +35,8 @@
       BEGIN CASE
          CASE INSTVER = ""
             PRINT NM : ": not installed (use MVPKG install)"
+         CASE INSTVER = "source"
+            GOSUB SRCUPDATE           ;* a --source working copy: git pull in place
          CASE 1
             CALL MVPKG.META(NM, "", REG, META)
             BEGIN CASE
@@ -54,4 +56,26 @@
             END CASE
       END CASE
    NEXT NI
+   RETURN
+
+* SRCUPDATE — a package installed with --source is a plain git working copy, so
+* "update" is a fast-forward `git pull` in that directory (the path was recorded
+* under the store's src/ marker at install).  --ff-only so local commits/edits
+* are never clobbered — resolve those by hand.
+SRCUPDATE:
+   PKGKEY = CHANGE(NM, "/", "_")
+   OSREAD WCDIR FROM STORE : "/src/" : PKGKEY ELSE WCDIR = ""
+   WCDIR = TRIM(WCDIR)
+   IF WCDIR = "" THEN PRINT NM : ": source working-copy path not recorded" ; RETURN
+   PRINT "updating " : NM : " (git pull in " : WCDIR : ") ..."
+   TMPF = "/tmp/mvpkg_pull_" : @USERNO
+   EXECUTE '!cd "' : WCDIR : '" && git pull --ff-only; echo $? > "' : TMPF : '"'
+   OSREAD RC FROM TMPF ELSE RC = "1"
+   EXECUTE '!rm -f "' : TMPF : '"'
+   RC = TRIM(CONVERT(CHAR(10) : CHAR(13), "  ", RC))
+   IF RC # "0" THEN
+      PRINT NM : ": git pull failed (exit " : RC : ") — resolve local changes in " : WCDIR
+   END ELSE
+      PRINT NM : ": pulled (rebuild with the account's install.sh if needed)"
+   END
    RETURN

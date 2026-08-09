@@ -18,7 +18,7 @@
 * privilege to do so.  A package that carries a udt-callc/ contribution
 * rebuilds the shared CallC library (via MVPKGOS "CALLC") when installed.
    CALL CMD.INIT("MVPKG", "MultiValue package manager")
-   CALL CMD.ADD("INSTALL", "download and install a package (name)", "MVPKG.INSTALL")
+   CALL CMD.ADD("INSTALL", "install a package (name); --source [<dir>] git-clones an editable working copy", "MVPKG.INSTALL")
    CALL CMD.ADD("INFO", "show a package's registry metadata (name)", "MVPKG.INFO")
    CALL CMD.ADD("LIST", "show installed (managed) packages", "MVPKG.LIST")
    CALL CMD.ADD("UPDATE", "upgrade installed packages to latest ({name})", "MVPKG.UPDATE")

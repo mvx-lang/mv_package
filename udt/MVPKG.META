@@ -6,7 +6,8 @@
 * (to satisfy a dependency constraint) asks for that one (?version=).
 * META<1>=name <2>=version <3>=tarball <4>=description <5>=dependencies
 * <6>=versions (space-separated, newest-first) <7>=provides (virtual names this
-* package satisfies, space-separated); META = "" on a miss.
+* package satisfies, space-separated) <8>=source (repo URL, for --source clones);
+* META = "" on a miss.
 *
 * The request carries this client's platform as a query string
 * (?system=&arch=&os=&endian=), resolved through the MVPKGOS seam, so the
@@ -25,6 +26,7 @@
    SPEC<-1> = MAPFIELD("dependencies", 5, "", "", "")
    SPEC<-1> = MAPFIELD("versions", 6, "", "", "")
    SPEC<-1> = MAPFIELD("provides", 7, "", "", "")
+   SPEC<-1> = MAPFIELD("srcrepo", 8, "", "", "")
    PLATQ = ""
    CALL MVPKGOS("PLATFORM", "", "", PLAT)
    IF PLAT # "" AND INDEX(PLAT, ":", 1) THEN

@@ -7,12 +7,27 @@
 * (mvpkg.installed) are not reinstalled.
    SUBROUTINE MVPKG.INSTALL
    S = @SENTENCE
-   A1 = FIELD(S, " ", 3)
+   * args after "MVPKG install": the package name (first non-flag word), an
+   * optional target dir, and flags.  --source / -s selects source mode: clone
+   * the package's account-repo into a git working copy instead of unpacking a
+   * release tar.
+   SRCMODE = 0 ; A1 = "" ; TGTDIR = ""
+   FOR FI = 3 TO DCOUNT(S, " ")
+      W = FIELD(S, " ", FI)
+      IF W = "--source" OR W = "-s" THEN
+         SRCMODE = 1
+      END ELSE
+         IF W # "" THEN
+            IF A1 = "" THEN A1 = W ELSE IF TGTDIR = "" THEN TGTDIR = W
+         END
+      END
+   NEXT FI
    IF A1 = "" THEN
-      PRINT "usage: MVPKG install <name>"
+      PRINT "usage: MVPKG install <name> [--source [<dir>]]"
       RETURN
    END
    CALL MVPKG.REG(REG)
+   IF SRCMODE THEN GOSUB SRCINSTALL ; RETURN
 
    MFILE = "mvpkg.installed"
    OSREAD MTEXT FROM MFILE ELSE MTEXT = ""
@@ -162,6 +177,52 @@
       IF ISK = 0 THEN MTEXT := INSTALLED<I> : CHAR(10)
    NEXT I
    OSWRITE MTEXT ON MFILE
+   RETURN
+
+* SRCINSTALL — source mode: clone the package's account-repo into a git working
+* copy (via udt-git), so the installed account IS an editable checkout you can
+* develop, commit, and push from.  Gated on git as an optional capability
+* (CALLC.EXISTS) — binary/release mode stays the default.  `MVPKG update` then
+* pulls + re-materialises (needs udt-git pull; tracked in mv_git remotes).
+SRCINSTALL:
+   * Source mode clones the package's SOURCE repo (plain BP/* files) into an
+   * editable working copy with a plain `git clone` — udt-git clone is for
+   * record-git DATA accounts, not source repos, so it materialises nothing here.
+   CALL MVPKG.META(A1, "", REG, META)
+   IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
+   REPO = TRIM(META<8>)
+   IF REPO = "" THEN PRINT META<1> : ": no source repository recorded — cannot clone" ; RETURN
+   * default target: the package's short name, under $HOME so it is writable
+   IF TGTDIR = "" THEN TGTDIR = FIELD(META<1>, "/", DCOUNT(META<1>, "/"))
+   IF TGTDIR[1, 1] # "/" THEN TGTDIR = GETENV("HOME") : "/" : TGTDIR
+   PRINT "cloning " : META<1> : " from " : REPO : " -> " : TGTDIR : " ..."
+   TMPF = "/tmp/mvpkg_clone_" : @USERNO
+   EXECUTE '!git clone "' : REPO : '" "' : TGTDIR : '"; echo $? > "' : TMPF : '"'
+   OSREAD RC FROM TMPF ELSE RC = "1"
+   EXECUTE '!rm -f "' : TMPF : '"'
+   RC = TRIM(CONVERT(CHAR(10) : CHAR(13), "  ", RC))
+   IF RC # "0" THEN PRINT "mvpkg: clone failed (git exit " : RC : ") — is git installed? (sudo dnf install -y git)" ; RETURN
+   * record the source install: a store-manifest line ("name source") so it shows
+   * in MVPKG LIST, plus a marker holding the working-copy path for MVPKG update.
+   CALL MVPKGOS("STORE", "", "", STORE)
+   PKGKEY = CHANGE(META<1>, "/", "_")
+   EXECUTE '!mkdir -p "' : STORE : '/src"'
+   OSWRITE TGTDIR ON STORE : "/src/" : PKGKEY
+   GMAN = STORE : "/installed"
+   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+   GKEY = META<1> : " source"
+   FND = 0
+   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
+      IF TRIM(FIELD(GTEXT, CHAR(10), GI)) = GKEY THEN FND = 1
+   NEXT GI
+   IF FND = 0 THEN
+      IF GTEXT # "" AND GTEXT[LEN(GTEXT), 1] # CHAR(10) THEN GTEXT := CHAR(10)
+      GTEXT := GKEY : CHAR(10)
+      OSWRITE GTEXT ON GMAN
+   END
+   PRINT "source install: " : TGTDIR : " is a git working copy of " : META<1>
+   PRINT "  edit / commit / push there; provision + build it with its install.sh"
+   PRINT "  (or build.sh); 'MVPKG update' git-pulls it."
    RETURN
 
 * OPTMISS — dependency P could not be resolved (reason MISSWHY).  If it is
