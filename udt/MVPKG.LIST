@@ -1,17 +1,26 @@
 * mv_package — MVPKG subcommand: list (UniData port).
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
-* MVPKG list — show the packages MVPKG manages on this system as a table:
-* PACKAGE  VERSION  STATUS  DESCRIPTION.
+* MVPKG list [--long] — show the packages MVPKG manages on this system as a
+* table: PACKAGE  VERSION  STATUS  DESCRIPTION.
 *   name + version : the global store manifest ("name version" per line).
 *   description    : read from each package's stored mvpkg.json (local; blank
 *                    for a package adopted via `register`, which has no store copy).
+*                    Truncated to one line unless --long, which wraps the full
+*                    text over multiple lines, aligned under the DESCRIPTION column.
 *   status         : per the CURRENT account — "deployed" when this account's
 *                    manifest (mvpkg.installed) lists it, else "system" (installed
 *                    in the shared store but not deployed into this account).
    SUBROUTINE MVPKG.LIST
    DEFFUN JSONDECODE(A, B)
    DEFFUN MAPFIELD(A, B, C, D, E)
+   * --long / -l : wrap the full description instead of truncating it
+   LONG = 0
+   SENT = @SENTENCE
+   FOR FI = 1 TO DCOUNT(SENT, " ")
+      W = FIELD(SENT, " ", FI)
+      IF W = "--long" OR W = "-l" THEN LONG = 1
+   NEXT FI
    CALL MVPKGOS("STORE", "", "", STORE)
    GMAN = STORE : "/installed"
    OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
@@ -31,6 +40,8 @@
    OSREAD SELFJ FROM "mvpkg.json" ELSE SELFJ = ""
    SELFNAME = "" ; SELFDESC = ""
    IF SELFJ # "" THEN SM = JSONDECODE(SELFJ, SELFSPEC) ; SELFNAME = TRIM(SM<1>) ; SELFDESC = TRIM(SM<2>)
+   INDENT = SPACE(41)          ;* 22 + 9 + 10 — aligns wrapped lines under DESCRIPTION
+   WRAPW = 50                  ;* description column width for --long wrapping
    PRINT FMT("PACKAGE", "22L") : FMT("VERSION", "9L") : FMT("STATUS", "10L") : "DESCRIPTION"
    FOR GI = 1 TO NL
       LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
@@ -46,7 +57,6 @@
          END ELSE
             IF NM = SELFNAME THEN DESC = SELFDESC
          END
-         IF LEN(DESC) > 48 THEN DESC = DESC[1, 47] : ">"
          * status for the current account.  The account manifest may list a
          * package by its full name (a direct install) or by its short/virtual
          * name (a transitive or provides-resolved dep, e.g. "mapfield" for
@@ -58,7 +68,44 @@
             AN = TRIM(FIELD(MTEXT, CHAR(10), MI))
             IF AN # "" AND (AN = NM OR AN = LAST) THEN STAT = "deployed"
          NEXT MI
-         PRINT FMT(NM, "22L") : FMT(VER, "9L") : FMT(STAT, "10L") : DESC
+         PREFIX = FMT(NM, "22L") : FMT(VER, "9L") : FMT(STAT, "10L")
+         IF LONG THEN
+            GOSUB WRAPDESC
+         END ELSE
+            IF LEN(DESC) > 48 THEN DESC = DESC[1, 47] : ">"
+            PRINT PREFIX : DESC
+         END
       END
    NEXT GI
+   RETURN
+*
+* WRAPDESC — print DESC word-wrapped at WRAPW: the first line follows PREFIX (the
+* name/version/status columns), each continuation line is indented so it sits
+* under the DESCRIPTION column.  A word longer than WRAPW takes its own line.
+WRAPDESC:
+   OUT = ""
+   LINE = ""
+   FOR WI = 1 TO DCOUNT(DESC, " ")
+      W = FIELD(DESC, " ", WI)
+      IF W # "" THEN
+         IF LINE = "" THEN
+            LINE = W
+         END ELSE
+            IF LEN(LINE) + 1 + LEN(W) <= WRAPW THEN
+               LINE = LINE : " " : W
+            END ELSE
+               OUT<-1> = LINE ; LINE = W
+            END
+         END
+      END
+   NEXT WI
+   IF LINE # "" THEN OUT<-1> = LINE
+   NLN = DCOUNT(OUT, @AM)
+   IF NLN = 0 THEN
+      PRINT PREFIX
+   END ELSE
+      FOR LI = 1 TO NLN
+         IF LI = 1 THEN PRINT PREFIX : OUT<LI> ELSE PRINT INDENT : OUT<LI>
+      NEXT LI
+   END
    RETURN
