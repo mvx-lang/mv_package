@@ -203,7 +203,7 @@ SRCINSTALL:
    * build + deploy the working copy through the standard declarative path
    * (MVPKG.ONE source mode): fold native CallC, globally catalog, deploy verbs +
    * files — the SAME path a binary install uses, no package script.
-   META<9> = TGTDIR
+   META<20> = TGTDIR
    CALL MVPKG.ONE(META, REG)
    * record the source install: a store-manifest line ("name source") so it shows
    * in MVPKG LIST, plus a marker holding the working-copy path for MVPKG update.

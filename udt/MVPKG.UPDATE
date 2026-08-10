@@ -82,7 +82,7 @@ SRCUPDATE:
    PRINT NM : ": pulled — rebuilding ..."
    CALL MVPKG.META(NM, "", REG, MB)
    IF MB # "" THEN
-      MB<9> = WCDIR
+      MB<20> = WCDIR
       CALL MVPKG.ONE(MB, REG)
    END
    RETURN

@@ -20,13 +20,22 @@
    * caught a registry miss (MVPKG.META returns "" for one), but guard here too.
    IF TRIM(META<1>) = "" THEN PRINT "mvpkg: empty package metadata — skipping" ; RETURN
    PKGKEY = CHANGE(META<1>, "/", "_")
+   * Preflight the OS C libraries the package declares (META<9>): if any are
+   * absent, stop with a clear message BEFORE the CallC fold hits a cryptic
+   * linker error.  This replaces per-package install.sh library preflights.
+   GOSUB CLIBCHECK
+   IF CLIBMISS # "" THEN
+      PRINT META<1> : ": needs OS C libraries not found: " : TRIM(CLIBMISS)
+      PRINT "  install the OS package(s) providing them, then re-run."
+      RETURN
+   END
    * --source: build + deploy directly from a git working copy (its path in
-   * META<9>) through the SAME declarative path as a binary install — fold the
+   * META<20>) through the SAME declarative path as a binary install — fold the
    * native CallC contribution, globally catalog the code, deploy the mvpkg.json
    * verbs + files.  No download, no store manifest (MVPKG install --source
    * records the working copy), and NO package script — the fixed set of MVPKGOS
    * operations is the one trusted install path everything goes through.
-   SRCDIR = TRIM(META<9>)
+   SRCDIR = TRIM(META<20>)
    IF SRCDIR # "" THEN
       DEST = SRCDIR
       CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
@@ -114,4 +123,23 @@ DEPLOYACCT:
       END
    NEXT I
    PRINT "deployed " : META<1> : " into this account"
+   RETURN
+
+* --- preflight declared OS C libraries -------------------------------------
+* CLIBCHECK — a package declares in its mvpkg.json the OS C libraries its CallC
+* links (META<9>, space-separated sonames, e.g. "libcurl.so.4 libgit2.so.1.7").
+* Set CLIBMISS to any not present in ldconfig's cache, so the install stops with
+* a clear message rather than a cryptic linker failure deep in the fold.
+CLIBCHECK:
+   CLIBMISS = ""
+   CLIBS = TRIM(META<9>)
+   IF CLIBS = "" THEN RETURN
+   TMPF = "/tmp/mvpkg_ldc_" : @USERNO
+   EXECUTE '!ldconfig -p > "' : TMPF : '" 2>/dev/null'
+   OSREAD LDC FROM TMPF ELSE LDC = ""
+   EXECUTE '!rm -f "' : TMPF : '"'
+   FOR CI = 1 TO DCOUNT(CLIBS, " ")
+      LB = FIELD(CLIBS, " ", CI)
+      IF LB # "" AND INDEX(LDC, LB, 1) = 0 THEN CLIBMISS := LB : " "
+   NEXT CI
    RETURN
