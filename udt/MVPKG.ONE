@@ -127,9 +127,15 @@ DEPLOYACCT:
 
 * --- preflight declared OS C libraries -------------------------------------
 * CLIBCHECK — a package declares in its mvpkg.json the OS C libraries its CallC
-* links (META<9>, space-separated sonames, e.g. "libcurl.so.4 libgit2.so.1.7").
-* Set CLIBMISS to any not present in ldconfig's cache, so the install stops with
-* a clear message rather than a cryptic linker failure deep in the fold.
+* links (META<9>, space-separated).  Each entry is one of:
+*   libcurl.so.4                     an exact soname
+*   libgit2.so.1.7|libgit2.so.1.9    alternatives — ANY present satisfies it
+*   libgit2.so:>=1.7,<2.8            a base soname + a SEMVER range over the
+*                                    version suffix (libgit2 churns its soname by
+*                                    distro: 1.7 on EPEL, 1.9 upstream)
+* The requirement is met if the cache has a match; CLIBMISS collects any entry
+* that has none, so the install stops with a clear message rather than a cryptic
+* linker failure deep in the fold.
 CLIBCHECK:
    CLIBMISS = ""
    CLIBS = TRIM(META<9>)
@@ -138,8 +144,49 @@ CLIBCHECK:
    EXECUTE '!ldconfig -p > "' : TMPF : '" 2>/dev/null'
    OSREAD LDC FROM TMPF ELSE LDC = ""
    EXECUTE '!rm -f "' : TMPF : '"'
+   NLC = DCOUNT(LDC, CHAR(10))
    FOR CI = 1 TO DCOUNT(CLIBS, " ")
       LB = FIELD(CLIBS, " ", CI)
-      IF LB # "" AND INDEX(LDC, LB, 1) = 0 THEN CLIBMISS := LB : " "
+      IF LB # "" THEN
+         HIT = 0
+         COLON = INDEX(LB, ":", 1)
+         IF COLON > 0 THEN
+            SOBASE = LB[1, COLON - 1]
+            CONS = CHANGE(LB[COLON + 1, LEN(LB)], ",", " ")
+            GOSUB CLIBRANGE
+         END ELSE
+            FOR AI = 1 TO DCOUNT(LB, "|")
+               ALT = FIELD(LB, "|", AI)
+               IF ALT # "" AND INDEX(LDC, ALT, 1) > 0 THEN HIT = 1
+            NEXT AI
+         END
+         IF HIT = 0 THEN CLIBMISS := LB : " "
+      END
    NEXT CI
+   RETURN
+
+* CLIBRANGE — is any installed "<SOBASE>.<version>" soname satisfying CONS (a
+* space-separated SEMVER range)?  Scan ldconfig lines for SOBASE., pull the
+* version suffix, and test it with the same SEMVER used for package constraints.
+CLIBRANGE:
+   HIT = 0
+   FOR LI = 1 TO NLC
+      LNL = FIELD(LDC, CHAR(10), LI)
+      P = INDEX(LNL, SOBASE : ".", 1)
+      IF P > 0 THEN
+         VS = LNL[P + LEN(SOBASE) + 1, LEN(LNL)]
+         VER = ""
+         DONEV = 0
+         FOR VI = 1 TO LEN(VS)
+            C = VS[VI, 1]
+            IF DONEV = 0 THEN
+               IF C = " " OR C = "(" OR C = CHAR(9) THEN DONEV = 1 ELSE VER := C
+            END
+         NEXT VI
+         IF VER # "" THEN
+            CALL SEMVER("SAT", VER, CONS, SR)
+            IF SR = 1 THEN HIT = 1
+         END
+      END
+   NEXT LI
    RETURN
