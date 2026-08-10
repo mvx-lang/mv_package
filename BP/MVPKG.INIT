@@ -8,31 +8,43 @@
 * the environment.  Idempotent and safe to rerun.
 *
 * It does not itself install MVPKG — MVPKG must already be resolvable to type
-* this.  Initial availability comes from the global install (or a manual
-* LINK-PKG); init prepares an account to use it.
+* this.  Initial availability comes from the global/bootstrap install (or a
+* manual LINK-PKG); init prepares an account to use it.
    SUBROUTINE MVPKG.INIT
-   S = SENTENCE()
+$IFDEF MVX
+$DEFINE GETENV ENV
+$DEFINE ARGV SENTENCE()
+$ELSE
+$DEFINE ARGV @SENTENCE
+$ENDIF
+   S = ARGV
    A1 = FIELD(S, " ", 3)
-   ACCT = ENV("MVXACCOUNT")
-   IF ACCT = "" THEN ACCT = "."
 
-   * record the registry if a URL was supplied (OSWRITE -> 1 ok, 0 fail)
+   * record the registry if a URL was supplied (persisted where MVPKG.REG reads
+   * it back): MVX writes account-relative with the function OSWRITE, UniData
+   * writes ~/mvpkg.conf with the statement form.
    IF A1 # "" THEN
-      CONF = ACCT : "/mvpkg.conf"
-      IF NOT(OSWRITE(A1, CONF)) THEN PRINT "cannot write config ":CONF ; RETURN
+$IFDEF MVX
+      CONF = GETENV("MVXACCOUNT")
+      IF CONF = "" THEN CONF = "."
+      CONF = CONF : "/mvpkg.conf"
+      IF NOT(OSWRITE(A1, CONF)) THEN PRINT "cannot write config " : CONF ; RETURN
+$ELSE
+      CONF = GETENV("HOME") : "/mvpkg.conf"
+      OSWRITE A1 ON CONF
+$ENDIF
    END
 
    CALL MVPKG.REG(REG)
    CALL MVPKGOS("STORE", "", "", STORE)
 
-   * ensure the account's installed-manifest exists (empty is fine)
-   MFILE = ACCT : "/mvpkg.installed"
-   MTEXT = OSREAD(MFILE)
-   IF STATUS() # 0 THEN X = OSWRITE("", MFILE)
+   * ensure the account's installed set exists (empty is fine) — a native
+   * master-dictionary record (MVPKG.LOCK), not an OS file
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
+   IF IREC = "" THEN CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", "MVPKG-LOCK", IERR)
 
    PRINT "mvpkg initialised"
-   PRINT "  account:  ":ACCT
-   PRINT "  registry: ":REG
-   PRINT "  store:    ":STORE
+   PRINT "  registry: " : REG
+   PRINT "  store:    " : STORE
    PRINT "install packages with:  MVPKG install <name>"
    RETURN
