@@ -12,19 +12,25 @@
 * compiles + globally catalogs the code, VERB deploys per-account VOC
 * pointers, MKFILE creates declared account files; the mvpkg.json deploy
 * block is walked by MVPKGDEP.
-   SUBROUTINE MVPKG.ONE(META, REG)
+   SUBROUTINE MVPKG.ONE(META, REG, RESULT)
    DEFFUN HTTPGETFILE(A, B)
+   * RESULT is "" on success, else a short reason — the caller must NOT record the
+   * package as installed when it is non-empty (a failed install used to still be
+   * written to the account manifest, so a retry saw it as done and silently
+   * skipped it).
+   RESULT = ""
    CALL MVPKGOS("STORE", "", "", STORE)
    * Never act on empty metadata: a blank name would make DEST the store ROOT,
    * so a later rm/untar would target the whole store.  Callers should have
    * caught a registry miss (MVPKG.META returns "" for one), but guard here too.
-   IF TRIM(META<1>) = "" THEN PRINT "mvpkg: empty package metadata — skipping" ; RETURN
+   IF TRIM(META<1>) = "" THEN RESULT = "empty package metadata" ; PRINT "mvpkg: " : RESULT : " — skipping" ; RETURN
    PKGKEY = CHANGE(META<1>, "/", "_")
    * Preflight the OS C libraries the package declares (META<9>): if any are
    * absent, stop with a clear message BEFORE the CallC fold hits a cryptic
    * linker error.  This replaces per-package install.sh library preflights.
    GOSUB CLIBCHECK
    IF CLIBMISS # "" THEN
+      RESULT = "missing OS C libraries: " : TRIM(CLIBMISS)
       PRINT META<1> : ": needs OS C libraries not found: " : TRIM(CLIBMISS)
       PRINT "  install the OS package(s) providing them, then re-run."
       RETURN
@@ -39,7 +45,7 @@
    IF SRCDIR # "" THEN
       DEST = SRCDIR
       CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
-      IF ERR # "" THEN PRINT ERR ; RETURN
+      IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
       GOSUB PARSEDEPLOY
       GOSUB CATGLOBAL
       GOSUB DEPLOYACCT
@@ -62,17 +68,17 @@
       TURL = META<3>
       IF TURL[1, 4] # "http" THEN TURL = REG : TURL
       ST = HTTPGETFILE(TURL, TMP)
-      IF ST < 200 OR ST >= 300 THEN PRINT "download failed (status " : ST : ")" ; RETURN
+      IF ST < 200 OR ST >= 300 THEN RESULT = "download failed (status " : ST : ")" ; PRINT RESULT ; RETURN
       EXECUTE '!rm -rf "' : DEST : '"'
       CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
-      IF ERR # "" THEN PRINT ERR ; RETURN
+      IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
       EXECUTE '!rm -f "' : TMP : '"'
       CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
       * A failed native fold must abort BEFORE cataloging — otherwise the
       * package's verbs (e.g. HTTPGET) get cataloged over working ones with no
       * CallC backend behind them.  The store manifest is not written yet, so the
       * package is simply left uninstalled; fix the toolchain and re-run.
-      IF ERR # "" THEN PRINT ERR ; RETURN
+      IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
       GOSUB PARSEDEPLOY
       GOSUB CATGLOBAL
       IF GTEXT # "" AND GTEXT[LEN(GTEXT), 1] # CHAR(10) THEN GTEXT := CHAR(10)

@@ -52,7 +52,8 @@
                      IF LN # "" AND FIELD(LN, " ", 1) # NM THEN NEW := LN : CHAR(10)
                   NEXT GI
                   OSWRITE NEW ON GMAN
-                  CALL MVPKG.ONE(META, REG)
+                  CALL MVPKG.ONE(META, REG, OERR)
+                  IF OERR # "" THEN PRINT NM : ": update failed — " : OERR
             END CASE
       END CASE
    NEXT NI
@@ -83,6 +84,7 @@ SRCUPDATE:
    CALL MVPKG.META(NM, "", REG, MB)
    IF MB # "" THEN
       MB<20> = WCDIR
-      CALL MVPKG.ONE(MB, REG)
+      CALL MVPKG.ONE(MB, REG, OERR)
+      IF OERR # "" THEN PRINT NM : ": rebuild failed — " : OERR
    END
    RETURN

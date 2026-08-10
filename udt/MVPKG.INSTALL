@@ -150,13 +150,24 @@
                   END
                END
                IF DOINST THEN
-                  CALL MVPKG.ONE(META, REG)
-                  INSTALLED<-1> = P
-                  FOR PV = 1 TO DCOUNT(META<7>, " ")   ;* provides now satisfied
-                     VN = FIELD(META<7>, " ", PV)
-                     IF VN # "" THEN INSTALLED<-1> = VN
-                  NEXT PV
-                  PROGRESS = 1
+                  CALL MVPKG.ONE(META, REG, OERR)
+                  IF OERR = "" THEN
+                     INSTALLED<-1> = P
+                     FOR PV = 1 TO DCOUNT(META<7>, " ")   ;* provides now satisfied
+                        VN = FIELD(META<7>, " ", PV)
+                        IF VN # "" THEN INSTALLED<-1> = VN
+                     NEXT PV
+                     PROGRESS = 1
+                  END ELSE
+                     * install failed (e.g. a missing C library) — do NOT record
+                     * it as installed, and stop so the account manifest is not
+                     * polluted with a package that is not actually here (which
+                     * would make a later retry silently skip it).  Persist the
+                     * successes so far, then abort.
+                     PRINT P : ": not installed — " : OERR
+                     GOSUB WRITEMANIFEST
+                     RETURN
+                  END
                END
             END
          END
@@ -168,6 +179,14 @@
       END
    REPEAT
 
+   GOSUB WRITEMANIFEST
+   RETURN
+
+* WRITEMANIFEST — persist this account's manifest from INSTALLED (minus SKIPPED
+* optionals).  Called on normal completion AND on a mid-run install failure, so
+* the manifest always reflects what actually installed — never a package whose
+* install aborted.
+WRITEMANIFEST:
    MTEXT = ""
    FOR I = 1 TO DCOUNT(INSTALLED, @AM)
       ISK = 0                          ;* a skipped optional is not really installed
@@ -204,7 +223,8 @@ SRCINSTALL:
    * (MVPKG.ONE source mode): fold native CallC, globally catalog, deploy verbs +
    * files — the SAME path a binary install uses, no package script.
    META<20> = TGTDIR
-   CALL MVPKG.ONE(META, REG)
+   CALL MVPKG.ONE(META, REG, OERR)
+   IF OERR # "" THEN PRINT META<1> : ": source build failed — " : OERR : " (working copy left at " : TGTDIR : ")" ; RETURN
    * record the source install: a store-manifest line ("name source") so it shows
    * in MVPKG LIST, plus a marker holding the working-copy path for MVPKG update.
    CALL MVPKGOS("STORE", "", "", STORE)
