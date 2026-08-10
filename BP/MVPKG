@@ -2,20 +2,21 @@
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
 * A Composer/npm for MultiValue: it talks to a registry over HTTP, resolves a
-* package, downloads its release tar archive and installs it into an account.
-* The client only ever downloads and unpacks the archive whole — it never
-* inspects, compiles, or otherwise depends on its contents.  A release may be
-* binary-only (pre-built CATALOG executables + LIB libraries with no BP source
-* at all), and installs exactly the same way as one that ships source.
-* Portable BASIC: the only non-MV operations (untar, mkdir, build, link) go
-* through MVPKGOS, so the same source runs on any MV system with an MVPKGOS.
+* package, downloads its release tar archive and installs it into an account,
+* pulling in its dependencies first.  The only non-MV operations (download,
+* untar, build/catalog, deploy) go through the MVPKGOS seam, so this one source
+* runs on any MV system that ships an MVPKGOS — MVX builds + links the package
+* (BUILD-PKG/LINK-PKG); UniData compiles + globally catalogs it and deploys
+* per-account VOC verbs.  HTTP/JSON are MVX intrinsics; UniData reaches them as
+* the cataloged seam functions.
 *
 * The verb is built on the cmd command framework: it declares its subcommands
 * and dispatches to one handler subroutine each (MVPKG.INSTALL, MVPKG.INFO, …),
-* which read SENTENCE() themselves.  A cut-down copy of cmd is bundled in
-* CMD.BP so MVPKG runs standalone; the full mv_cmd overrides it when installed.
+* which read the invocation sentence themselves.  A cut-down copy of cmd is
+* bundled in CMD.BP so MVPKG runs standalone; the full mv_cmd overrides it when
+* installed.
    CALL CMD.INIT("MVPKG", "MultiValue package manager")
-   CALL CMD.ADD("INSTALL", "download and install a package (name)", "MVPKG.INSTALL")
+   CALL CMD.ADD("INSTALL", "install a package (name); --source [<dir>] git-clones an editable working copy", "MVPKG.INSTALL")
    CALL CMD.ADD("INFO", "show a package's registry metadata (name)", "MVPKG.INFO")
    CALL CMD.ADD("LIST", "show installed (managed) packages", "MVPKG.LIST")
    CALL CMD.ADD("UPDATE", "upgrade installed packages to latest ({name})", "MVPKG.UPDATE")
@@ -26,4 +27,7 @@
    CALL CMD.ADD("CONFIG", "show the current registry URL", "MVPKG.CONFIG")
    CALL CMD.ADD("REBUILD", "rebuild the host's native library", "MVPKG.REBUILD")
    CALL CMD.ADD("INIT", "provision this account for package management ({url})", "MVPKG.INIT")
+$IFNDEF MVX
+   CALL CMD.ADD("NOTIFY", "login-proc check: modal if a deployed package is behind the store", "MVPKG.NOTIFY")
+$ENDIF
    CALL CMD.RUN

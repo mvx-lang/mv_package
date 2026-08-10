@@ -1,48 +1,90 @@
 * mv_package — MVPKG subcommand: remove.
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
-* MVPKG remove <name> — uninstall a package: unlink it from this account (the
-* inverse of the LINK-PKG done on install; UNLINK-PKG refuses if another linked
-* package still depends on it), drop the store copy, and clear it from the
-* manifests.
+* MVPKG remove <name> — uninstall a package: un-deploy it from this account,
+* drop the store copy, and clear it from the system inventory, this account's
+* lock and its manifest.  The inverse of install.  Only the un-deploy step
+* differs by platform: MVX unlinks the whole package (UNLINK-PKG, which refuses
+* if another linked package still depends on it); UniData un-deploys the
+* mvpkg.json verbs, decatalogs the code and unstages any CallC contribution.
    SUBROUTINE MVPKG.REMOVE
-   S = SENTENCE()
+$IFDEF MVX
+$DEFINE ARGV SENTENCE()
+$ELSE
+$DEFINE ARGV @SENTENCE
+$ENDIF
+   S = ARGV
    A1 = FIELD(S, " ", 3)
    IF A1 = "" THEN PRINT "usage: MVPKG remove <name>" ; RETURN
    NM = A1
    CALL MVPKGOS("STORE", "", "", STORE)
    PKGKEY = CHANGE(NM, "/", "_")
    DEST = STORE : "/" : PKGKEY
-   GMAN = STORE : "/installed"
-   GTEXT = OSREAD(GMAN)
-   IF STATUS() # 0 THEN GTEXT = ""
+   * is it in the SYSTEM store? (MVPKG.STORE "installed" <2> names)
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
    INST = 0
-   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-      IF FIELD(TRIM(FIELD(GTEXT, CHAR(10), GI)), " ", 1) = NM THEN INST = 1
-   NEXT GI
+   LOCATE(NM, SREC, 2; SPOS) THEN INST = 1
    IF INST = 0 THEN PRINT NM : " is not installed" ; RETURN
    PRINT "removing " : NM : " ..."
-   * unlink from this account, then drop the store copy
+   * ---- un-deploy from this account + drop the store copy (deploy model) ----
+$IFDEF MVX
    CALL MVPKGOS("UNLINK", DEST, "", ERR) ; IF ERR # "" THEN PRINT ERR
    CALL MVPKGOS("RMRF", DEST, "", ERR)
-   * drop it from the global store manifest
-   NEW = ""
-   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-      LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
-      IF LN # "" AND FIELD(LN, " ", 1) # NM THEN NEW := LN : CHAR(10)
-   NEXT GI
-   X = OSWRITE(NEW, GMAN)
-   * drop it from this account's manifest
-   MFILE = ENV("MVXACCOUNT")
-   IF MFILE = "" THEN MFILE = "."
-   MFILE = MFILE : "/mvpkg.installed"
-   MTEXT = OSREAD(MFILE)
-   IF STATUS() # 0 THEN MTEXT = ""
-   NEW = ""
-   FOR I = 1 TO DCOUNT(MTEXT, CHAR(10))
-      LN = TRIM(FIELD(MTEXT, CHAR(10), I))
-      IF LN # "" AND LN # NM THEN NEW := LN : CHAR(10)
+$ELSE
+   * verbs to un-deploy (from the store copy's mvpkg.json deploy block)
+   OSREAD MJ FROM DEST : "/mvpkg.json" ELSE MJ = ""
+   CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL)
+   FOR I = 1 TO DCOUNT(DVERBS, " ")
+      V = FIELD(DVERBS, " ", I)
+      IF V # "" THEN CALL MVPKGOS("UNVERB", V, "", ERR) ; IF ERR # "" THEN PRINT ERR
    NEXT I
-   X = OSWRITE(NEW, MFILE)
+   * decatalog the programs, unstage the CallC contribution, drop the store copy
+   CALL MVPKGOS("DECAT", DEST, "BP", ERR) ; IF ERR # "" THEN PRINT ERR
+   * only a package that shipped a udt-callc/ contribution needs the library
+   * rebuilt (avoid a pointless rebuild for pure-BASIC packages).
+   HASCC = 0
+   OSREAD CCF FROM DEST : "/udt-callc/funcs" THEN HASCC = 1 ELSE HASCC = 0
+   IF HASCC THEN CALL MVPKGOS("CALLCRM", PKGKEY, "", ERR) ; IF ERR # "" THEN PRINT ERR
+   CALL MVPKGOS("RMDIR", DEST, "", ERR)
+$ENDIF
+   * drop it from the SYSTEM store inventory (name + parallel version)
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
+   LOCATE(NM, SREC, 2; SPOS) THEN
+      SREC = DELETE(SREC, 2, SPOS, 0)
+      SREC = DELETE(SREC, 3, SPOS, 0)
+      CALL MVPKGOS("STOREWRITE", "installed", SREC, SERR)
+   END
+   * drop the source working-copy marker too, if any
+   CALL MVPKGOS("STOREDELETE", "SRC." : PKGKEY, "", SERR)
+   * drop it from this account's lock (the MVPKG.LOCK record), name + version
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
+   NREC = "MVPKG-LOCK"
+   NJ = 0
+   FOR I = 1 TO DCOUNT(IREC<2>, @VM)
+      LN = TRIM(IREC<2,I>)
+      IF LN # "" AND LN # NM THEN
+         NJ = NJ + 1
+         NREC<2,NJ> = LN
+         NREC<3,NJ> = IREC<3,I>
+      END
+   NEXT I
+   CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", NREC, IERR)
+   * un-declare it from the manifest too (composer remove), matched by the name
+   * part of each dep spec "[?]name[@sys][:constraint]" — a no-op if it was only
+   * a transitive dep and never declared.
+   CALL MVPKGOS("MDREAD", "MVPKG.MANIFEST", "", MREC)
+   NMR = "MVPKG-MANIFEST"
+   MJ2 = 0
+   FOR I = 1 TO DCOUNT(MREC<2>, @VM)
+      SP = TRIM(MREC<2,I>)
+      IF SP # "" THEN
+         SN = SP
+         IF SN[1,1] = "?" THEN SN = SN[2, LEN(SN)]
+         CP = INDEX(SN, ":", 1) ; IF CP > 0 THEN SN = SN[1, CP - 1]
+         AP = INDEX(SN, "@", 1) ; IF AP > 0 THEN SN = SN[1, AP - 1]
+         IF SN # NM THEN MJ2 = MJ2 + 1 ; NMR<2,MJ2> = SP
+      END
+   NEXT I
+   CALL MVPKGOS("MDWRITE", "MVPKG.MANIFEST", NMR, MERR)
    PRINT "removed " : NM
    RETURN

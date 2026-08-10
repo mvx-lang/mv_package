@@ -1,59 +1,92 @@
 * mv_package — MVPKG subcommand: update.
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
-* MVPKG update [<name>] — upgrade an installed package (or, with no name, every
-* installed package) to the registry's current version.  For each: compare the
-* installed version (the store manifest) to the registry's latest; if newer,
-* drop the old manifest line and run the normal install (MVPKG.ONE) for the new
-* version.  `update` with no name walks the whole manifest.
+* MVPKG update [<name>] — upgrade an installed package (or, with no name,
+* every installed package) to the registry's current version.  For each:
+* compare the installed version (the store inventory) to the registry's latest;
+* if newer, run the normal global install (MVPKG.ONE) for the new version
+* (download + build/catalog + deploy).  A --source working copy fast-forwards
+* with git pull and rebuilds in place instead.
    SUBROUTINE MVPKG.UPDATE
-   S = SENTENCE()
+$IFDEF MVX
+$DEFINE ARGV SENTENCE()
+$ELSE
+$DEFINE ARGV @SENTENCE
+$ENDIF
+   S = ARGV
    A1 = FIELD(S, " ", 3)
    CALL MVPKG.REG(REG)
    CALL MVPKGOS("STORE", "", "", STORE)
-   GMAN = STORE : "/installed"
-   GTEXT = OSREAD(GMAN)
-   IF STATUS() # 0 THEN GTEXT = ""
+   * SYSTEM inventory — MVPKG.STORE "installed" (<2> names / <3> versions)
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
    NAMES = ""
    IF A1 # "" THEN
       NAMES = A1
    END ELSE
-      FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-         LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
-         IF LN # "" THEN NAMES<-1> = FIELD(LN, " ", 1)
+      FOR GI = 1 TO DCOUNT(SREC<2>, @VM)
+         IF TRIM(SREC<2,GI>) # "" THEN NAMES<-1> = TRIM(SREC<2,GI>)
       NEXT GI
    END
    NN = DCOUNT(NAMES, @AM)
    IF NN = 0 OR NAMES<1> = "" THEN PRINT "no packages installed" ; RETURN
    FOR NI = 1 TO NN
       NM = NAMES<NI>
-      GTEXT = OSREAD(GMAN)
-      IF STATUS() # 0 THEN GTEXT = ""
+      CALL MVPKGOS("STOREREAD", "installed", "", SREC)
       INSTVER = ""
-      FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-         LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
-         IF FIELD(LN, " ", 1) = NM THEN INSTVER = FIELD(LN, " ", 2)
-      NEXT GI
+      LOCATE(NM, SREC, 2; SPOS) THEN INSTVER = TRIM(SREC<3,SPOS>)
       BEGIN CASE
          CASE INSTVER = ""
-            PRINT NM:": not installed (use MVPKG install)"
+            PRINT NM : ": not installed (use MVPKG install)"
+         CASE INSTVER = "source"
+            GOSUB SRCUPDATE           ;* a --source working copy: git pull in place
          CASE 1
             CALL MVPKG.META(NM, "", REG, META)
             BEGIN CASE
                CASE META = ""
-                  PRINT NM:": not found in registry ":REG
+                  PRINT NM : ": not found in registry " : REG
                CASE META<2> = INSTVER
-                  PRINT NM:" ":INSTVER:" is up to date"
+                  PRINT NM : " " : INSTVER : " is up to date"
                CASE 1
-                  PRINT "updating ":NM:" ":INSTVER:" -> ":META<2>
-                  NEW = ""
-                  FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-                     LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
-                     IF LN # "" AND FIELD(LN, " ", 1) # NM THEN NEW := LN : CHAR(10)
-                  NEXT GI
-                  X = OSWRITE(NEW, GMAN)
-                  CALL MVPKG.ONE(META, REG)
+                  PRINT "updating " : NM : " " : INSTVER : " -> " : META<2>
+                  * MVPKG.ONE re-fetches the new version and updates the store
+                  * inventory's version in place (LOCATE on <2>).
+                  CALL MVPKG.ONE(META, REG, OERR)
+                  IF OERR # "" THEN PRINT NM : ": update failed — " : OERR
             END CASE
       END CASE
    NEXT NI
+   RETURN
+
+* SRCUPDATE — a package installed with --source is a plain git working copy, so
+* "update" is a fast-forward `git pull` in that directory (the path was recorded
+* under the store's src/ marker at install).  --ff-only so local commits/edits
+* are never clobbered — resolve those by hand.
+SRCUPDATE:
+   PKGKEY = CHANGE(NM, "/", "_")
+   CALL MVPKGOS("STOREREAD", "SRC." : PKGKEY, "", WCDIR)
+   WCDIR = TRIM(WCDIR)
+   IF WCDIR = "" THEN PRINT NM : ": source working-copy path not recorded" ; RETURN
+   PRINT "updating " : NM : " (git pull in " : WCDIR : ") ..."
+   TMPF = "/tmp/mvpkg_pull_" : @USERNO
+   EXECUTE '!cd "' : WCDIR : '" && git pull --ff-only; echo $? > "' : TMPF : '"'
+$IFDEF MVX
+   RC = OSREAD(TMPF) ; IF STATUS() # 0 THEN RC = "1"
+$ELSE
+   OSREAD RC FROM TMPF ELSE RC = "1"
+$ENDIF
+   EXECUTE '!rm -f "' : TMPF : '"'
+   RC = TRIM(CONVERT(CHAR(10) : CHAR(13), "  ", RC))
+   IF RC # "0" THEN
+      PRINT NM : ": git pull failed (exit " : RC : ") — resolve local changes in " : WCDIR
+      RETURN
+   END
+   * rebuild + redeploy the working copy through the standard declarative path,
+   * so the pulled (or locally edited) source goes live.
+   PRINT NM : ": pulled — rebuilding ..."
+   CALL MVPKG.META(NM, "", REG, MB)
+   IF MB # "" THEN
+      MB<20> = WCDIR
+      CALL MVPKG.ONE(MB, REG, OERR)
+      IF OERR # "" THEN PRINT NM : ": rebuild failed — " : OERR
+   END
    RETURN

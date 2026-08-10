@@ -2,39 +2,84 @@
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
 * MVPKG install <name> — install a package and everything it depends on,
-* dependencies first.  A package declares its dependencies in the registry
-* metadata (space-separated names); names already installed into this account
-* (mvpkg.installed) are not reinstalled.
+* dependencies first, and declare it in this account's manifest (composer
+* require).  Names already in this account's lock (the MVPKG.LOCK record) are
+* not reinstalled.
+*
+* MVPKG install  (no name) — install this account's declared dependency set
+* (composer install): lock-first from MVPKG.LOCK, or, with no lock yet, resolve
+* the MVPKG.MANIFEST deps and write the lock.
+*
+* Account state is native master-dictionary (VOC/MD) records, not OS files:
+*   MVPKG.MANIFEST  <1> marker  <2> declared dep specs ("[?]name[@sys][:cons]")
+*   MVPKG.LOCK      <1> marker  <2> resolved names     <3> parallel versions
    SUBROUTINE MVPKG.INSTALL
-   S = SENTENCE()
-   A1 = FIELD(S, " ", 3)
-   IF A1 = "" THEN
-      PRINT "usage: MVPKG install <name>"
-      RETURN
-   END
+$IFDEF MVX
+$DEFINE GETENV ENV
+$DEFINE ARGV SENTENCE()
+$ELSE
+$DEFINE ARGV @SENTENCE
+$ENDIF
+   S = ARGV
+   * args after "MVPKG install": the package name (first non-flag word), an
+   * optional target dir, and flags.  --source / -s selects source mode: clone
+   * the package's account-repo into a git working copy instead of unpacking a
+   * release tar.
+   SRCMODE = 0 ; A1 = "" ; TGTDIR = ""
+   FOR FI = 3 TO DCOUNT(S, " ")
+      W = FIELD(S, " ", FI)
+      IF W = "--source" OR W = "-s" THEN
+         SRCMODE = 1
+      END ELSE
+         IF W # "" THEN
+            IF A1 = "" THEN A1 = W ELSE IF TGTDIR = "" THEN TGTDIR = W
+         END
+      END
+   NEXT FI
    CALL MVPKG.REG(REG)
+   IF SRCMODE THEN
+      IF A1 = "" THEN PRINT "usage: MVPKG install <name> --source [<dir>]" ; RETURN
+      GOSUB SRCINSTALL ; RETURN
+   END
 
-   MFILE = ENV("MVXACCOUNT")
-   IF MFILE = "" THEN MFILE = "."
-   MFILE = MFILE : "/mvpkg.installed"
-   MTEXT = OSREAD(MFILE)
-   IF STATUS() # 0 THEN MTEXT = ""
-   INSTALLED = ""
-   FOR I = 1 TO DCOUNT(MTEXT, CHAR(10))
-      LN = TRIM(FIELD(MTEXT, CHAR(10), I))
-      IF LN # "" THEN INSTALLED<-1> = LN
-   NEXT I
-
-   * this client's system, for platform-gated dependencies (see DEPAPPLY)
+   * this client's system, for platform-gated deps + manifest parsing (DEPAPPLY)
    CALL MVPKGOS("PLATFORM", "", "", PLAT)
    MYSYS = FIELD(PLAT, ":", 1)
 
-   * ---- phase 1: transitive closure; DEPSOF<i> / CONS<i> parallel NEED<i> --
-   * CONS<i> is the version constraint a dependency was requested with ("" for
-   * the top-level package and unconstrained deps).
-   NEED = A1
-   CONS = ""
-   OPT = 0                            ;* OPT<i> parallel NEED<i>: 1 = optional dep
+   * this account's lock — the resolved/installed set (the composer.lock
+   * equivalent), the native MVPKG.LOCK master-dictionary record: <1> marker,
+   * <2> names (packages + provided names), <3> the parallel versions.  Read
+   * through the seam so a D3/UniVerse port keeps account state in the master
+   * dictionary too.  INSTALLED / VERS are the parallel working lists.
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
+   INSTALLED = "" ; VERS = ""
+   FOR I = 1 TO DCOUNT(IREC<2>, @VM)
+      LN = TRIM(IREC<2,I>)
+      IF LN # "" THEN INSTALLED<-1> = LN ; VERS<-1> = IREC<3,I>
+   NEXT I
+
+   * ---- seed the NEED set (with parallel CONS / OPT) from the invocation ----
+   * CONS<i> is the version constraint NEED<i> was requested with ("" = latest).
+   NEED = "" ; CONS = "" ; OPT = 0
+   IF A1 # "" THEN
+      * `MVPKG install <pkg>` — install it (+deps) and declare it in the manifest
+      * (composer require): the package becomes a stated dependency of this account.
+      NEED = A1 ; CONS<1> = "" ; OPT<1> = 0
+      GOSUB MANIFESTADD
+   END ELSE
+      * `MVPKG install` (no name) — install the account's declared set, lock-first
+      * (composer install): reinstall exactly what MVPKG.LOCK pins, or, with no
+      * lock yet, resolve the MVPKG.MANIFEST deps (WRITELOCK then records them).
+      GOSUB PROJECTSEED
+      IF NEED = "" THEN
+         PRINT "mvpkg: nothing to install — no MVPKG.MANIFEST deps and no MVPKG.LOCK"
+         PRINT "  add a dependency with:  MVPKG install <name>"
+         RETURN
+      END
+   END
+
+   * ---- phase 1: transitive closure; DEPSOF<i> parallel NEED<i> ------------
+   * (NEED / CONS / OPT are seeded above; the closure extends them with deps.)
    SKIPPED = ""                       ;* optional deps found unavailable this run
    PROVVIRT = ""                      ;* virtual names a NEED package provides, and
    PROVREAL = ""                      ;*   the real package that provides each
@@ -42,7 +87,7 @@
    K = 1
    LOOP WHILE K <= DCOUNT(NEED, @AM) DO
       CALL MVPKG.META(NEED<K>, "", REG, META)
-      IF META = "" THEN PRINT NEED<K>:": not found in registry ":REG ; RETURN
+      IF META = "" THEN PRINT NEED<K> : ": not found in registry " : REG ; RETURN
       FOR PV = 1 TO DCOUNT(META<7>, " ")       ;* record what this package provides
          VN = FIELD(META<7>, " ", PV)
          IF VN # "" THEN PROVVIRT<-1> = VN ; PROVREAL<-1> = NEED<K>
@@ -132,19 +177,29 @@
                      END ELSE
                         IF TGT # META<2> THEN
                            CALL MVPKG.META(P, TGT, REG, META)
-                           IF META = "" THEN PRINT P:" ":TGT:": not found in registry ":REG ; RETURN
+                           IF META = "" THEN PRINT P : " " : TGT : ": not found in registry " : REG ; RETURN
                         END
                      END
                   END
                END
                IF DOINST THEN
-                  CALL MVPKG.ONE(META, REG)
-                  INSTALLED<-1> = P
-                  FOR PV = 1 TO DCOUNT(META<7>, " ")   ;* provides now satisfied
-                     VN = FIELD(META<7>, " ", PV)
-                     IF VN # "" THEN INSTALLED<-1> = VN
-                  NEXT PV
-                  PROGRESS = 1
+                  CALL MVPKG.ONE(META, REG, OERR)
+                  IF OERR = "" THEN
+                     INSTALLED<-1> = P ; VERS<-1> = META<2>
+                     FOR PV = 1 TO DCOUNT(META<7>, " ")   ;* provides now satisfied
+                        VN = FIELD(META<7>, " ", PV)
+                        IF VN # "" THEN INSTALLED<-1> = VN ; VERS<-1> = ""
+                     NEXT PV
+                     PROGRESS = 1
+                  END ELSE
+                     * install failed (e.g. a missing C library) — do NOT record
+                     * it in the lock, and stop so the account lock is not polluted
+                     * with a package that is not actually here (which would make a
+                     * later retry silently skip it).  Persist the successes so far.
+                     PRINT P : ": not installed — " : OERR
+                     GOSUB WRITELOCK
+                     RETURN
+                  END
                END
             END
          END
@@ -156,15 +211,103 @@
       END
    REPEAT
 
-   MTEXT = ""
+   GOSUB WRITELOCK
+   RETURN
+
+* WRITELOCK — persist this account's lock (the resolved/installed set) from
+* INSTALLED / VERS (minus SKIPPED optionals): <2> names, <3> parallel versions.
+* Called on normal completion AND on a mid-run install failure, so the lock
+* always reflects what actually installed — never a package whose install aborted.
+WRITELOCK:
+   IREC = "MVPKG-LOCK"
+   MJ = 0
    FOR I = 1 TO DCOUNT(INSTALLED, @AM)
+      NMI = INSTALLED<I>
       ISK = 0                          ;* a skipped optional is not really installed
       FOR SI = 1 TO DCOUNT(SKIPPED, @AM)
-         IF SKIPPED<SI> = INSTALLED<I> THEN ISK = 1
+         IF SKIPPED<SI> = NMI THEN ISK = 1
       NEXT SI
-      IF ISK = 0 THEN MTEXT = MTEXT : INSTALLED<I> : CHAR(10)
+      IF ISK = 0 THEN
+         * a lock lists each name once.  A bare-name dep that resolves through
+         * "provides" appears both as the resolved package (with a version) and
+         * as its own virtual name (no version) — collapse to one entry, keeping
+         * a real version over the empty one.
+         LOCATE(NMI, IREC, 2; EPOS) THEN
+            IF IREC<3,EPOS> = "" THEN IREC<3,EPOS> = VERS<I>
+         END ELSE
+            MJ = MJ + 1
+            IREC<2,MJ> = NMI
+            IREC<3,MJ> = VERS<I>
+         END
+      END
    NEXT I
-   X = OSWRITE(MTEXT, MFILE)
+   CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", IREC, WERR)
+   IF WERR # "" THEN PRINT "mvpkg: " : WERR
+   RETURN
+
+* SRCINSTALL — source mode: git-clone the package's SOURCE repo into an editable
+* working copy, then build + deploy it through the SAME declarative install path
+* as a binary release (MVPKG.ONE, driven by mvpkg.json) — no per-package script.
+* `MVPKG update` git-pulls + rebuilds.  Plain `git clone`, not udt-git clone,
+* because the package repos are normal source trees (plain BP/*), not record-git
+* DATA accounts.
+SRCINSTALL:
+   CALL MVPKG.META(A1, "", REG, META)
+   IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
+   REPO = TRIM(META<8>)
+   IF REPO = "" THEN PRINT META<1> : ": no source repository recorded — cannot clone" ; RETURN
+   * default target: the package's short name, under $HOME so it is writable
+   IF TGTDIR = "" THEN TGTDIR = FIELD(META<1>, "/", DCOUNT(META<1>, "/"))
+   IF TGTDIR[1, 1] # "/" THEN TGTDIR = GETENV("HOME") : "/" : TGTDIR
+   PRINT "cloning " : META<1> : " from " : REPO : " -> " : TGTDIR : " ..."
+   TMPF = "/tmp/mvpkg_clone_" : @USERNO
+   EXECUTE '!git clone "' : REPO : '" "' : TGTDIR : '"; echo $? > "' : TMPF : '"'
+$IFDEF MVX
+   RC = OSREAD(TMPF) ; IF STATUS() # 0 THEN RC = "1"
+$ELSE
+   OSREAD RC FROM TMPF ELSE RC = "1"
+$ENDIF
+   EXECUTE '!rm -f "' : TMPF : '"'
+   RC = TRIM(CONVERT(CHAR(10) : CHAR(13), "  ", RC))
+   IF RC # "0" THEN PRINT "mvpkg: clone failed (git exit " : RC : ") — is git installed? (sudo dnf install -y git)" ; RETURN
+   * build + deploy the working copy through the standard declarative path
+   * (MVPKG.ONE source mode): fold native CallC, globally catalog, deploy verbs +
+   * files — the SAME path a binary install uses, no package script.
+   META<20> = TGTDIR
+   CALL MVPKG.ONE(META, REG, OERR)
+   IF OERR # "" THEN PRINT META<1> : ": source build failed — " : OERR : " (working copy left at " : TGTDIR : ")" ; RETURN
+   * record the source install: a store-manifest line ("name source") so it shows
+   * in MVPKG LIST, plus a marker holding the working-copy path for MVPKG update.
+   PKGKEY = CHANGE(META<1>, "/", "_")
+   * record the working-copy path + a system-inventory entry (version "source")
+   * in MVPKG.STORE — the SRC.<key> record replaces the OS src/<key> marker.
+   CALL MVPKGOS("STOREWRITE", "SRC." : PKGKEY, TGTDIR, SERR)
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
+   IF SREC = "" THEN SREC = "MVPKG-STORE"
+   LOCATE(META<1>, SREC, 2; SPOS) THEN
+      SREC<3,SPOS> = "source"
+   END ELSE
+      SAN = DCOUNT(SREC<2>, @VM) + 1
+      SREC<2,SAN> = META<1>
+      SREC<3,SAN> = "source"
+   END
+   CALL MVPKGOS("STOREWRITE", "installed", SREC, SERR)
+   * record it in this account's lock too (version "source"), so LIST shows it
+   * deployed here and MVPKG.HAS finds it.
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", LREC)
+   SFND = 0
+   FOR LI = 1 TO DCOUNT(LREC<2>, @VM)
+      IF TRIM(LREC<2,LI>) = META<1> THEN SFND = 1
+   NEXT LI
+   IF SFND = 0 THEN
+      IF LREC = "" THEN LREC = "MVPKG-LOCK"
+      LREC<2,-1> = META<1>
+      LREC<3,-1> = "source"
+      CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", LREC, LERR)
+   END
+   PRINT "source install: " : TGTDIR : " is an editable working copy of " : META<1>
+   PRINT "  (built + deployed).  Edit BP/*, then  MVPKG update " : META<1>
+   PRINT "  to git-pull + rebuild; commit / push from " : TGTDIR : "."
    RETURN
 
 * OPTMISS — dependency P could not be resolved (reason MISSWHY).  If it is
@@ -175,7 +318,7 @@ OPTMISS:
    FATAL = 0
    IF OPT<I> THEN
       PRINT "mvpkg: optional dependency " : P : " unavailable (" : MISSWHY : ") - skipping"
-      INSTALLED<-1> = P ; SKIPPED<-1> = P ; PROGRESS = 1
+      INSTALLED<-1> = P ; VERS<-1> = "" ; SKIPPED<-1> = P ; PROGRESS = 1
    END ELSE
       PRINT P : ": " : MISSWHY
       FATAL = 1
@@ -253,4 +396,76 @@ DEPAPPLY:
    IF NEG THEN
       IF HIT THEN APPLIES = 0 ELSE APPLIES = 1
    END
+   RETURN
+
+* MANIFESTADD — record A1 as a declared dependency in the account manifest (the
+* composer.json equivalent, MVPKG.MANIFEST: <1> marker, <2> the dependency specs
+* "[?]name[@sys][:constraint]").  Matched by bare package name so re-requiring a
+* package (perhaps with a new constraint) updates its spec rather than duplicating.
+MANIFESTADD:
+   CALL MVPKGOS("MDREAD", "MVPKG.MANIFEST", "", MFR)
+   SP = A1 ; GOSUB SPECNAME ; WANTN = SN
+   MFND = 0
+   FOR MDI = 1 TO DCOUNT(MFR<2>, @VM)
+      SP = TRIM(MFR<2,MDI>)
+      IF SP # "" THEN
+         GOSUB SPECNAME
+         IF SN = WANTN THEN MFND = 1 ; MFR<2,MDI> = A1   ;* refresh the stored spec
+      END
+   NEXT MDI
+   IF MFND = 0 THEN
+      IF MFR = "" THEN MFR = "MVPKG-MANIFEST"
+      MFR<2,-1> = A1
+   END
+   CALL MVPKGOS("MDWRITE", "MVPKG.MANIFEST", MFR, MERR)
+   IF MERR # "" THEN PRINT "mvpkg: " : MERR
+   RETURN
+
+* PROJECTSEED — `MVPKG install` with no package: seed NEED / CONS / OPT for a
+* whole-account install.  Lock-first (composer install): if MVPKG.LOCK already
+* pins packages, reinstall exactly those at their locked versions.  Otherwise
+* resolve the declared MVPKG.MANIFEST deps; phase 2 + WRITELOCK write the lock.
+* Provided virtual names (a lock entry with no version) and source working copies
+* (version "source") are not seeded — the former is re-satisfied when its provider
+* installs, the latter is managed through `MVPKG update`.
+PROJECTSEED:
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", LKR)
+   HAVELOCK = 0
+   FOR LI = 1 TO DCOUNT(LKR<2>, @VM)
+      IF TRIM(LKR<2,LI>) # "" AND TRIM(LKR<3,LI>) # "" THEN HAVELOCK = 1
+   NEXT LI
+   IF HAVELOCK THEN
+      PRINT "installing from lock (MVPKG.LOCK) ..."
+      FOR LI = 1 TO DCOUNT(LKR<2>, @VM)
+         NM = TRIM(LKR<2,LI>) ; LV = TRIM(LKR<3,LI>)
+         IF NM # "" AND LV # "" AND LV # "source" THEN
+            NEED<-1> = NM
+            CONS<DCOUNT(NEED, @AM)> = LV       ;* pin to the exact locked version
+            OPT<DCOUNT(NEED, @AM)> = 0
+         END
+      NEXT LI
+   END ELSE
+      CALL MVPKGOS("MDREAD", "MVPKG.MANIFEST", "", MFR)
+      FOR MDI = 1 TO DCOUNT(MFR<2>, @VM)
+         D = TRIM(MFR<2,MDI>)
+         IF D # "" THEN
+            GOSUB DEPAPPLY
+            IF APPLIES THEN
+               NEED<-1> = DNAME
+               CONS<DCOUNT(NEED, @AM)> = DCONS
+               OPT<DCOUNT(NEED, @AM)> = OPTIONAL
+            END
+         END
+      NEXT MDI
+      IF NEED # "" THEN PRINT "resolving " : DCOUNT(NEED, @AM) : " declared dependency(ies) ..."
+   END
+   RETURN
+
+* SPECNAME — SN = the bare package name of dependency spec SP: strip a leading
+* "?" (optional), a trailing ":constraint", and an "@system" filter.
+SPECNAME:
+   SN = SP
+   IF SN[1, 1] = "?" THEN SN = SN[2, LEN(SN)]
+   CP = INDEX(SN, ":", 1) ; IF CP > 0 THEN SN = SN[1, CP - 1]
+   AP = INDEX(SN, "@", 1) ; IF AP > 0 THEN SN = SN[1, AP - 1]
    RETURN
