@@ -131,3 +131,28 @@ mvpkg-install: done.
   * CallC aggregator:   $UDTHOME/bin/udt-callc-build
 Next, in this account:  MVPKG install <name>   |   MVPKG register mvx-lang/git
 EOF
+
+# Packages with native (CallC) code — git, curl, curses, ... — are compiled into
+# UniData at install, which needs a C build toolchain.  The toolchain (and how to
+# install it) differs by platform, so tailor the hint by OS + package manager and
+# fall back to a generic note; only mention it when no compiler is on PATH.
+# Pure-BASIC packages need none of this.
+if ! command -v gcc >/dev/null 2>&1 && ! command -v cc >/dev/null 2>&1; then
+  case "$(uname -s 2>/dev/null || echo unknown)" in
+    Linux)
+      if   command -v dnf     >/dev/null 2>&1; then TOOLHINT="sudo dnf install -y gcc ncurses-devel"
+      elif command -v yum     >/dev/null 2>&1; then TOOLHINT="sudo yum install -y gcc ncurses-devel"
+      elif command -v apt-get >/dev/null 2>&1; then TOOLHINT="sudo apt-get install -y gcc libncurses-dev"
+      else TOOLHINT="install gcc and the ncurses development files with your package manager"; fi ;;
+    AIX)  TOOLHINT="install a C compiler (gcc from the AIX Toolbox, or IBM XL C) and the library development files" ;;
+    *)    TOOLHINT="install your platform's C compiler and the development files for the libraries native packages link" ;;
+  esac
+  cat <<EOF
+
+mvpkg-install: TIP — installing packages with native (CallC) code (git, curl,
+  curses, ...) needs a C build toolchain.  On this system:
+      $TOOLHINT
+  Each native package also names the OS C library it links; MVPKG preflights it
+  before building and tells you exactly what to install.
+EOF
+fi
