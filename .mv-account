@@ -1,0 +1,5 @@
+# .mv-account - open (portable) account descriptor
+name = mv_package
+version = 1
+openaccount = 1
+hash = lmdb
