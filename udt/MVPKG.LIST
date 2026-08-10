@@ -62,13 +62,21 @@
          * mvx-lang/mapfield), so match either.
          STAT = "system"
          LAST = FIELD(NM, "/", DCOUNT(NM, "/"))
+         LOCKVER = ""
          NM2 = DCOUNT(IREC<2>, @VM)
          FOR MI = 1 TO NM2
             AN = TRIM(IREC<2,MI>)
-            IF AN # "" AND (AN = NM OR AN = LAST) THEN STAT = "deployed"
+            IF AN # "" AND (AN = NM OR AN = LAST) THEN STAT = "deployed" ; LOCKVER = TRIM(IREC<3,MI>)
          NEXT MI
-         * default lists only what is deployed HERE; --all lists the whole system
-         IF ALLP OR STAT = "deployed" THEN
+         * the system store has a NEWER version than this account deployed (it was
+         * upgraded in another account) → this account needs upgrading
+         IF STAT = "deployed" AND LOCKVER # "" AND VER # "" AND VER # "source" THEN
+            CALL SEMVER("CMP", VER, LOCKVER, CMPR)
+            IF CMPR > 0 THEN STAT = "upgrade"
+         END
+         * default lists only what is deployed HERE (deployed or needing upgrade);
+         * --all lists the whole system, including "system" (not deployed here)
+         IF ALLP OR STAT # "system" THEN
             SHOWN = SHOWN + 1
             * description from the package's stored manifest (local, no network)
             PKGKEY = CHANGE(NM, "/", "_")
