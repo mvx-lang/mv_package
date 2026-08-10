@@ -9,7 +9,7 @@
 *                    Truncated to one line unless --long, which wraps the full
 *                    text over multiple lines, aligned under the DESCRIPTION column.
 *   status         : per the CURRENT account — "deployed" when this account's
-*                    manifest (mvpkg.installed) lists it, else "system" (installed
+*                    MVPKG.LOCK record lists it, else "system" (installed
 *                    in the shared store but not deployed into this account).
    SUBROUTINE MVPKG.LIST
    DEFFUN JSONDECODE(A, B)
@@ -24,8 +24,8 @@
    CALL MVPKGOS("STORE", "", "", STORE)
    GMAN = STORE : "/installed"
    OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
-   * this account's deployed set — the CWD is the account, so a relative read
-   OSREAD MTEXT FROM "mvpkg.installed" ELSE MTEXT = ""
+   * this account's deployed set — the native MVPKG.LOCK record (names in <2>)
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
    NL = DCOUNT(GTEXT, CHAR(10))
    NG = 0
    FOR GI = 1 TO NL
@@ -63,9 +63,9 @@
          * mvx-lang/mapfield), so match either.
          STAT = "system"
          LAST = FIELD(NM, "/", DCOUNT(NM, "/"))
-         NM2 = DCOUNT(MTEXT, CHAR(10))
+         NM2 = DCOUNT(IREC<2>, @VM)
          FOR MI = 1 TO NM2
-            AN = TRIM(FIELD(MTEXT, CHAR(10), MI))
+            AN = TRIM(IREC<2,MI>)
             IF AN # "" AND (AN = NM OR AN = LAST) THEN STAT = "deployed"
          NEXT MI
          PREFIX = FMT(NM, "22L") : FMT(VER, "9L") : FMT(STAT, "10L")

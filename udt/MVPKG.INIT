@@ -23,9 +23,10 @@
    CALL MVPKG.REG(REG)
    CALL MVPKGOS("STORE", "", "", STORE)
 
-   * ensure the account's installed-manifest exists (empty is fine)
-   MFILE = "mvpkg.installed"
-   OSREAD MTEXT FROM MFILE ELSE OSWRITE "" ON MFILE
+   * ensure the account's installed set exists (empty is fine) — a native
+   * master-dictionary record (MVPKG.LOCK), not an OS file
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
+   IF IREC = "" THEN CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", "MVPKG-LOCK", IERR)
 
    PRINT "mvpkg initialised"
    PRINT "  registry: " : REG

@@ -43,14 +43,35 @@
       IF LN # "" AND FIELD(LN, " ", 1) # NM THEN NEW := LN : CHAR(10)
    NEXT GI
    OSWRITE NEW ON GMAN
-   * drop it from this account's manifest
-   MFILE = "mvpkg.installed"
-   OSREAD MTEXT FROM MFILE ELSE MTEXT = ""
-   NEW = ""
-   FOR I = 1 TO DCOUNT(MTEXT, CHAR(10))
-      LN = TRIM(FIELD(MTEXT, CHAR(10), I))
-      IF LN # "" AND LN # NM THEN NEW := LN : CHAR(10)
+   * drop it from this account's lock (the MVPKG.LOCK record), name + version
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
+   NREC = "MVPKG-LOCK"
+   NJ = 0
+   FOR I = 1 TO DCOUNT(IREC<2>, @VM)
+      LN = TRIM(IREC<2,I>)
+      IF LN # "" AND LN # NM THEN
+         NJ = NJ + 1
+         NREC<2,NJ> = LN
+         NREC<3,NJ> = IREC<3,I>
+      END
    NEXT I
-   OSWRITE NEW ON MFILE
+   CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", NREC, IERR)
+   * un-declare it from the manifest too (composer remove), matched by the name
+   * part of each dep spec "[?]name[@sys][:constraint]" — a no-op if it was only
+   * a transitive dep and never declared.
+   CALL MVPKGOS("MDREAD", "MVPKG.MANIFEST", "", MREC)
+   NMR = "MVPKG-MANIFEST"
+   MJ2 = 0
+   FOR I = 1 TO DCOUNT(MREC<2>, @VM)
+      SP = TRIM(MREC<2,I>)
+      IF SP # "" THEN
+         SN = SP
+         IF SN[1,1] = "?" THEN SN = SN[2, LEN(SN)]
+         CP = INDEX(SN, ":", 1) ; IF CP > 0 THEN SN = SN[1, CP - 1]
+         AP = INDEX(SN, "@", 1) ; IF AP > 0 THEN SN = SN[1, AP - 1]
+         IF SN # NM THEN MJ2 = MJ2 + 1 ; NMR<2,MJ2> = SP
+      END
+   NEXT I
+   CALL MVPKGOS("MDWRITE", "MVPKG.MANIFEST", NMR, MERR)
    PRINT "removed " : NM
    RETURN

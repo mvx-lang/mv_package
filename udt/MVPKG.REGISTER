@@ -32,17 +32,18 @@
       GTEXT := GKEY : CHAR(10)
       OSWRITE GTEXT ON GMAN
    END
-   * account manifest: "name"
-   MFILE = "mvpkg.installed"
-   OSREAD MTEXT FROM MFILE ELSE MTEXT = ""
+   * account lock: the MVPKG.LOCK record (name in <2>, version in <3>)
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
    AFND = 0
-   FOR I = 1 TO DCOUNT(MTEXT, CHAR(10))
-      IF TRIM(FIELD(MTEXT, CHAR(10), I)) = NM THEN AFND = 1
+   FOR I = 1 TO DCOUNT(IREC<2>, @VM)
+      IF TRIM(IREC<2,I>) = NM THEN AFND = 1 ; IREC<3,I> = VER   ;* refresh version
    NEXT I
    IF AFND = 0 THEN
-      IF MTEXT # "" AND MTEXT[LEN(MTEXT), 1] # CHAR(10) THEN MTEXT := CHAR(10)
-      MTEXT := NM : CHAR(10)
-      OSWRITE MTEXT ON MFILE
+      IF IREC = "" THEN IREC = "MVPKG-LOCK"
+      AN = DCOUNT(IREC<2>, @VM) + 1
+      IREC<2,AN> = NM
+      IREC<3,AN> = VER
    END
+   CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", IREC, IERR)
    PRINT "registered " : NM : " " : VER : " (managed by MVPKG)"
    RETURN

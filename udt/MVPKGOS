@@ -26,6 +26,12 @@
 *                     resolve (local VOC "C" or global catalog)? — for fallback
 *   OP = "MKFILE"   P1 = name  P2 = type       -> create an account file if
 *                     absent ("dir" or "" = dynamic) — deploy.files
+*   OP = "MDREAD"   P1 = recid                 -> RESULT = the account master-
+*                     dictionary record (VOC/MD), "" if absent — MVPKG keeps its
+*                     manifest / lock / installed set as native MV records here
+*   OP = "MDWRITE"  P1 = recid  P2 = record    -> write the account master-
+*                     dictionary record
+*   OP = "MDDELETE" P1 = recid                 -> delete the account record
 *   OP = "PLATFORM"                            -> RESULT =
 *                     "<system>:<os>:<arch>:<endian>", the identity the client
 *                     sends the registry so it serves the matching prebuilt
@@ -153,6 +159,23 @@
                EXECUTE "CREATE.FILE " : P1 : " 1"
             END
          END
+      CASE OP = "MDREAD"
+         * Read a record from the account master dictionary — the portable home
+         * for account state (VOC on UniData/UniVerse, MD on D3).  P1 = record id;
+         * RESULT = the record (a dynamic array), or "" when it is not on file.
+         * This is how MVPKG keeps its manifest / lock / installed set the Pick
+         * way — native MV records, not OS-level files.
+         OPEN "VOC" TO MDF ELSE RESULT = "" ; RETURN
+         READ MDR FROM MDF, P1 THEN RESULT = MDR ELSE RESULT = ""
+      CASE OP = "MDWRITE"
+         * P1 = record id, P2 = the record (a dynamic array).  Persist account
+         * state as a native master-dictionary record.
+         OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDWRITE: cannot open VOC" ; RETURN
+         WRITE P2 ON MDF, P1
+      CASE OP = "MDDELETE"
+         * P1 = record id.  Remove an account state record.
+         OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open VOC" ; RETURN
+         DELETE MDF, P1
       CASE OP = "DECAT"
          * P1 = package dir, P2 = source subdir.  The inverse of CATALOG: remove
          * every program's global catalog entry so it no longer resolves.
