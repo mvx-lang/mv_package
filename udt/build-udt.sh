@@ -34,7 +34,7 @@ cp "$HERE"/MVPKGOS "$HERE"/MVPKGDEP "$HERE"/MVPKG.NOTIFY \
    "$HERE"/MVPKG.LOCK.H "$HERE"/MVPKG.MANIFEST.H \
    "$HERE"/HTTPGET "$HERE"/HTTPGETFILE "$HERE"/JSONDECODE "$HERE"/MAPFIELD \
    "$HERE"/CALLC.EXISTS "$ACCT/BP/"
-cp "$HERE"/CMD.BP/CMD.INIT "$HERE"/CMD.BP/CMD.ADD "$HERE"/CMD.BP/CMD.RUN "$ACCT/BP/"
+cp "$ROOT"/CMD.BP/CMD.INIT "$ROOT"/CMD.BP/CMD.ADD "$ROOT"/CMD.BP/CMD.RUN "$ACCT/BP/"
 
 # The self-installer, the CallC aggregator it deploys, and the package metadata.
 cp "$HERE"/install.sh          "$ACCT/install.sh";          chmod +x "$ACCT/install.sh"

@@ -1,43 +1,42 @@
-* MVX — a native compiler and runtime for Pick/MultiValue BASIC.
-* Copyright (C) 2026 Gordon Heydon.
+* mv_cmd — a command framework for MultiValue BASIC (cut-down copy bundled in
+* mvpkg so it runs standalone; the full mvx-lang/cmd overrides it when installed).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License, version 2, as
-* published by the Free Software Foundation.  There is NO WARRANTY, to
-* the extent permitted by law; see the LICENSE file for details.
-*
-* SPDX-License-Identifier: GPL-2.0-only
-* /**
-*  * @file CMD.RUN
-*  * @version 1.0
-*  */
-* CMD.RUN — parse the sentence, dispatch to the matching handler,
-* or print generated help.
-SUBROUTINE CMD.RUN
-COMMON /CMDPKG/ CNAME, CDESC, CSUBS, CDESCS, CHANDLERS
-S = TRIM(SENTENCE())
-W = FIELD(S, " ", 2)
-WU = OCONV(W, "MCU")
-IF WU = "" OR WU = "HELP" THEN
-   GOSUB 9100
+* CMD.RUN — parse the sentence, dispatch to the matching handler, or print
+* generated help.  One source for both platforms: the sentence token (SENTENCE()
+* on MVX, @SENTENCE on UniData) and the FMT justify mask (held in a runtime
+* variable — UniData's $DEFINE has no value-substitution form) are the only diffs.
+   SUBROUTINE CMD.RUN
+   COMMON /CMDPKG/ CNAME, CDESC, CSUBS, CDESCS, CHANDLERS
+$IFDEF MVX
+   S = TRIM(SENTENCE())
+   CMDFW = "L#12"
+$ELSE
+   S = TRIM(@SENTENCE)
+   CMDFW = "12L"
+$ENDIF
+   W = FIELD(S, " ", 2)
+   WU = OCONV(W, "MCU")
+   IF WU = "" OR WU = "HELP" THEN
+      GOSUB 9100
+      RETURN
+   END
+   LOCATE(WU, CSUBS; POS) THEN
+      H = CHANDLERS<POS>
+      CALL @H
+   END ELSE
+      PRINT CNAME : ": unknown command '" : W : "'"
+      GOSUB 9100
+   END
    RETURN
-END
-LOCATE(WU, CSUBS; POS) THEN
-   H = CHANDLERS<POS>
-   CALL @H
-END ELSE
-   PRINT CNAME:": unknown command '":W:"'"
-   GOSUB 9100
-END
-RETURN
 * generated help
 9100
-PRINT CNAME:" - ":CDESC
-PRINT "usage: ":CNAME:" <command>"
-PRINT "commands:"
-N = DCOUNT(CSUBS, @AM)
-FOR I = 1 TO N
-   PRINT "  ":FMT(OCONV(CSUBS<I>, "MCL"), "L#12"):" ":CDESCS<I>
-NEXT I
-PRINT "  ":FMT("help", "L#12"):" show this help"
-RETURN
+   PRINT CNAME : " - " : CDESC
+   PRINT "usage: " : CNAME : " <command>"
+   PRINT "commands:"
+   N = DCOUNT(CSUBS, @AM)
+   FOR I = 1 TO N
+      PRINT "  " : FMT(OCONV(CSUBS<I>, "MCL"), CMDFW) : " " : CDESCS<I>
+   NEXT I
+   PRINT "  " : FMT("help", CMDFW) : " show this help"
+   RETURN

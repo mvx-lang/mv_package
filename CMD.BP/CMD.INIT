@@ -1,22 +1,14 @@
-* MVX — a native compiler and runtime for Pick/MultiValue BASIC.
-* Copyright (C) 2026 Gordon Heydon.
+* mv_cmd — a command framework for MultiValue BASIC (cut-down copy bundled in
+* mvpkg so it runs standalone; the full mvx-lang/cmd overrides it when installed).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
-* This program is free software; you can redistribute it and/or modify
-* it under the terms of the GNU General Public License, version 2, as
-* published by the Free Software Foundation.  There is NO WARRANTY, to
-* the extent permitted by law; see the LICENSE file for details.
-*
-* SPDX-License-Identifier: GPL-2.0-only
-* /**
-*  * @file CMD.INIT
-*  * @version 1.0
-*  */
-* CMD.INIT(name, description) — begin defining a command.
-SUBROUTINE CMD.INIT(NAME, DESC)
-COMMON /CMDPKG/ CNAME, CDESC, CSUBS, CDESCS, CHANDLERS
-CNAME = NAME
-CDESC = DESC
-CSUBS = ""
-CDESCS = ""
-CHANDLERS = ""
-RETURN
+* CMD.INIT(name, description) — begin defining a command.  Platform-neutral (no
+* idiom diff), so this one source compiles for both MVX and UniData.
+   SUBROUTINE CMD.INIT(NAME, DESC)
+   COMMON /CMDPKG/ CNAME, CDESC, CSUBS, CDESCS, CHANDLERS
+   CNAME = NAME
+   CDESC = DESC
+   CSUBS = ""
+   CDESCS = ""
+   CHANDLERS = ""
+   RETURN
