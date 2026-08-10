@@ -125,6 +125,16 @@ done
 ( cd "$HERE" && printf 'MVPKG register mvx-lang/mvpkg %s\nQUIT\n' "$MVVER" | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
   | grep -iE "registered|error|not found|msgq" | sed 's/^/  /' || true
 
+# Everything above ran as root (this whole script runs under sudo — for the
+# $UDTHOME writes) and so created root-owned files in the operator account and the
+# store: the compiled BP/_* objects, the MVPKG.STORE inventory + this account's
+# MVPKG.LOCK/MVPKG.MANIFEST, and the downloaded package sources under $STORE.  Hand
+# them all back to the operator so MVPKG — run as that user — can write the store
+# and its records (else register/install fail: "File is readonly, permission
+# denied" on MVPKG.STORE).  Step 4 chowned only the store dir, before these writes.
+say "handing the operator account + store to $OWNER:$GROUP"
+sudo chown -R "$OWNER:$GROUP" "$HERE" "$STORE"
+
 cat <<EOF
 mvpkg-install: done.
   * operator account:   $HERE   (type MVPKG here)

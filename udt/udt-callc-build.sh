@@ -30,6 +30,12 @@
 set -e
 
 : "${UDTHOME:?set UDTHOME to your UniData home (e.g. /usr/ud83)}"
+# The UniData generators this runs (gencdef/genefs/genfunc) and the other udt
+# tools it relies on live in $UDTHOME/bin.  A UniData LOGIN shell has that on
+# PATH, but MVPKG's MVPKGOS "CALLC" op invokes this from a piped, NON-login udt
+# session (EXECUTE '!udt-callc-build ...') whose PATH may not — so put it on PATH
+# here rather than trust the caller's environment (else: "gencdef: not found").
+PATH="$UDTHOME/bin:$PATH"; export PATH
 SUDO=${SUDO-sudo}
 CALLCD="${UDT_CALLCD:-$UDTHOME/callc.d}"   # one subdir per contributing package
 WORK="$UDTHOME/bin/work"                   # UniData's generators + efsdef + libuvic.a
