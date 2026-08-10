@@ -1,22 +1,37 @@
 * mv_package — MVPKG subcommand: setup.
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
-* MVPKG setup <url> — set (and persist) the registry base URL for this
-* account, written to mvpkg.conf.
+* MVPKG setup <url> — set (and persist) the registry base URL, written to the
+* account's mvpkg.conf (where MVPKG.REG reads it back).  The conf location and
+* the OSWRITE form are the only platform diffs: MVX writes account-relative with
+* the function form (STATUS via the returned flag); UniData writes ~/mvpkg.conf
+* with the statement form.
    SUBROUTINE MVPKG.SETUP
-   S = SENTENCE()
+$IFDEF MVX
+$DEFINE GETENV ENV
+$DEFINE ARGV SENTENCE()
+$ELSE
+$DEFINE ARGV @SENTENCE
+$ENDIF
+   S = ARGV
    A1 = FIELD(S, " ", 3)
    IF A1 = "" THEN
       PRINT "usage: MVPKG setup <registry-url>"
       RETURN
    END
-   CONF = ENV("MVXACCOUNT")
+$IFDEF MVX
+   CONF = GETENV("MVXACCOUNT")
    IF CONF = "" THEN CONF = "."
    CONF = CONF : "/mvpkg.conf"
    * OSWRITE -> 1 on success, 0 on failure.
    IF OSWRITE(A1, CONF) THEN
-      PRINT "registry set to ":A1
+      PRINT "registry set to " : A1
    END ELSE
-      PRINT "cannot write config ":CONF
+      PRINT "cannot write config " : CONF
    END
+$ELSE
+   CONF = GETENV("HOME") : "/mvpkg.conf"
+   OSWRITE A1 ON CONF
+   PRINT "registry set to " : A1
+$ENDIF
    RETURN

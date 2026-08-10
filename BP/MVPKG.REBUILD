@@ -2,8 +2,9 @@
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
 * MVPKG rebuild — rebuild the host's shared native (CallC) library from every
-* installed contribution (recovery, or after a manual add/remove).  A no-op
-* where the platform has no such library (e.g. MVX).
+* installed contribution (recovery, or after a manual add/remove).  What that
+* means is the platform's business (MVPKGOS "REBUILD"): UniData relinks
+* libu2callc.so; MVX has no aggregated library, so it is a no-op there.
    SUBROUTINE MVPKG.REBUILD
    CALL MVPKGOS("REBUILD", "", "", ERR)
    IF ERR # "" THEN PRINT ERR ; RETURN

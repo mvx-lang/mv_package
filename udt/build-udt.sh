@@ -15,10 +15,25 @@ ROOT="$(cd "$HERE/.." && pwd)"               # repo root (PKG, mvpkg.json, LICEN
 ACCT="$STAGE/mvpkg"
 mkdir -p "$ACCT/BP"
 
-# The client programs, probes, and cmd framework -> BP (each a plain record).
-# MVPKG* covers MVPKG, MVPKG.*, MVPKGOS, MVPKGDEP, MVPKG.HAS.
-cp "$HERE"/MVPKG* "$HERE"/SEMVER "$HERE"/HTTPGET "$HERE"/HTTPGETFILE \
-   "$HERE"/JSONDECODE "$HERE"/MAPFIELD "$HERE"/CALLC.EXISTS "$ACCT/BP/"
+# Shared client programs live canonically in the repo BP/ as a single $IFDEF
+# source compiled for BOTH mvx and udt.  While the mvx<->udt merge is in flight a
+# program may still carry a udt-specific copy under udt/; prefer that if present,
+# else take the unified BP/ source.  Deleting udt/<prog> is what promotes it to
+# canonical — this build then picks it up from BP/ with no further change here.
+SHARED="MVPKG MVPKG.CONFIG MVPKG.HAS MVPKG.INFO MVPKG.INIT MVPKG.INSTALL \
+        MVPKG.LIST MVPKG.META MVPKG.ONE MVPKG.REBUILD MVPKG.REG MVPKG.REGISTER \
+        MVPKG.REMOVE MVPKG.SEARCH MVPKG.SETUP MVPKG.UPDATE SEMVER"
+for p in $SHARED; do
+   if [ -f "$HERE/$p" ]; then cp "$HERE/$p" "$ACCT/BP/"; else cp "$ROOT/BP/$p" "$ACCT/BP/"; fi
+done
+
+# udt-only records: the per-platform OS seam (MVPKGOS — mvx has its own in BP/),
+# the udt deploy helper, the login notifier, the record include files, the
+# bundled deps (native intrinsics on mvx), and the cmd framework.
+cp "$HERE"/MVPKGOS "$HERE"/MVPKGDEP "$HERE"/MVPKG.NOTIFY \
+   "$HERE"/MVPKG.LOCK.H "$HERE"/MVPKG.MANIFEST.H \
+   "$HERE"/HTTPGET "$HERE"/HTTPGETFILE "$HERE"/JSONDECODE "$HERE"/MAPFIELD \
+   "$HERE"/CALLC.EXISTS "$ACCT/BP/"
 cp "$HERE"/CMD.BP/CMD.INIT "$HERE"/CMD.BP/CMD.ADD "$HERE"/CMD.BP/CMD.RUN "$ACCT/BP/"
 
 # The self-installer, the CallC aggregator it deploys, and the package metadata.

@@ -2,17 +2,30 @@
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
 * MVPKG.REG(REG) — RESULT REG is the registry base URL, taken from
-* $MVPKG_REGISTRY, then the account's persisted mvpkg.conf, then the
-* built-in default.  Shared by every subcommand that talks to the registry.
+* $MVPKG_REGISTRY, then the account's persisted mvpkg.conf, then the built-in
+* default.  Shared by every subcommand that talks to the registry.  One source
+* for both platforms: a $DEFINE prelude aliases the token diff (GETENV) and
+* $IFDEF handles the structural ones (the conf location, the OSREAD form).
    SUBROUTINE MVPKG.REG(REG)
+$IFDEF MVX
+$DEFINE GETENV ENV
+$ENDIF
    DEFURL = "https://mv-package.heydon.io"
-   CONF = ENV("MVXACCOUNT")
+$IFDEF MVX
+   CONF = GETENV("MVXACCOUNT")
    IF CONF = "" THEN CONF = "."
    CONF = CONF : "/mvpkg.conf"
-   REG = ENV("MVPKG_REGISTRY")
+$ELSE
+   CONF = GETENV("HOME") : "/mvpkg.conf"
+$ENDIF
+   REG = GETENV("MVPKG_REGISTRY")
    IF REG = "" THEN
+$IFDEF MVX
       REG = OSREAD(CONF)
       IF STATUS() # 0 THEN REG = ""
+$ELSE
+      OSREAD REG FROM CONF ELSE REG = ""
+$ENDIF
       REG = TRIM(REG, CHAR(10), "T")
    END
    IF REG = "" THEN REG = DEFURL
@@ -25,7 +38,7 @@
       HOST = FIELD(FIELD(REG[LEN(SCHEME) + 4, LEN(REG)], "/", 1), ":", 1)
       OK = 0
       IF HOST = "localhost" OR HOST = "127.0.0.1" OR HOST = "::1" THEN OK = 1
-      IF ENV("MVPKG_INSECURE") # "" THEN OK = 1
+      IF GETENV("MVPKG_INSECURE") # "" THEN OK = 1
       IF OK = 0 THEN
          PRINT "mvpkg: refusing insecure registry (need https): " : REG
          PRINT "  fix it with:  MVPKG setup https://<host>"

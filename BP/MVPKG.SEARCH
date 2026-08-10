@@ -1,9 +1,22 @@
 * mv_package — MVPKG subcommand: search.
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
-* MVPKG search <term> — list packages whose name or description matches.
+* MVPKG search <term> — list packages whose name or description matches.  The
+* registry's /search returns an array of {name,version,description} objects; the
+* "packages" association in the spec decodes it into three parallel multivalued
+* attributes (R<1>=names, R<2>=versions, R<3>=descriptions).  HTTP/JSON/MAPFIELD
+* are MVX intrinsics; UniData reaches them as the cataloged seam functions, so
+* declare those only off MVX.  The output format mask is the other platform diff.
    SUBROUTINE MVPKG.SEARCH
-   S = SENTENCE()
+$IFDEF MVX
+$DEFINE ARGV SENTENCE()
+$ELSE
+$DEFINE ARGV @SENTENCE
+   DEFFUN HTTPGET(A)
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B, C, D, E)
+$ENDIF
+   S = ARGV
    A1 = FIELD(S, " ", 3)
    CALL MVPKG.REG(REG)
    SPEC = ""
@@ -11,17 +24,15 @@
    SPEC<-1> = MAPFIELD("version", 2, "", "TEXT", "packages")
    SPEC<-1> = MAPFIELD("description", 3, "", "TEXT", "packages")
    BODY = HTTPGET(REG : "/search?q=" : A1)
-   IF BODY = "" THEN
-      PRINT "no packages match """:A1:""""
-      RETURN
-   END
+   IF BODY = "" THEN PRINT "no packages match " : '"' : A1 : '"' ; RETURN
    R = JSONDECODE(BODY, SPEC)
    N = DCOUNT(R<1>, @VM)
-   IF N = 0 OR R<1> = "" THEN
-      PRINT "no packages match """:A1:""""
-      RETURN
-   END
+   IF N = 0 OR R<1> = "" THEN PRINT "no packages match " : '"' : A1 : '"' ; RETURN
    FOR I = 1 TO N
+$IFDEF MVX
       PRINT R<1,I> "L#16" : R<2,I> "L#10" : R<3,I>
+$ELSE
+      PRINT FMT(R<1,I>, "16L") : FMT(R<2,I>, "10L") : R<3,I>
+$ENDIF
    NEXT I
    RETURN
