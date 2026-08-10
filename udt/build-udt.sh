@@ -20,9 +20,9 @@ mkdir -p "$ACCT/BP"
 # program may still carry a udt-specific copy under udt/; prefer that if present,
 # else take the unified BP/ source.  Deleting udt/<prog> is what promotes it to
 # canonical — this build then picks it up from BP/ with no further change here.
-SHARED="MVPKG MVPKG.CONFIG MVPKG.HAS MVPKG.INFO MVPKG.INIT MVPKG.INSTALL \
-        MVPKG.LIST MVPKG.META MVPKG.ONE MVPKG.REBUILD MVPKG.REG MVPKG.REGISTER \
-        MVPKG.REMOVE MVPKG.SEARCH MVPKG.SETUP MVPKG.UPDATE SEMVER"
+SHARED="MVPKG MVPKG.CONFIG MVPKG.FIXPERMS MVPKG.HAS MVPKG.INFO MVPKG.INIT \
+        MVPKG.INSTALL MVPKG.LIST MVPKG.META MVPKG.ONE MVPKG.REBUILD MVPKG.REG \
+        MVPKG.REGISTER MVPKG.REMOVE MVPKG.SEARCH MVPKG.SETUP MVPKG.UPDATE SEMVER"
 for p in $SHARED; do
    if [ -f "$HERE/$p" ]; then cp "$HERE/$p" "$ACCT/BP/"; else cp "$ROOT/BP/$p" "$ACCT/BP/"; fi
 done

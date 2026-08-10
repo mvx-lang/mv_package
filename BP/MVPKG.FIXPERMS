@@ -1,0 +1,112 @@
+* mv_package — MVPKG subcommand: fixperms.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG fixperms [<user>] — hand every artifact MVPKG manages back to the
+* operator, repairing an install whose files ended up ROOT-owned (e.g. installed
+* with `sudo ./install.sh` before the installer re-execed as the operator) so
+* MVPKG can catalog + upgrade again — or, with a <user>, MOVE the install to a
+* NEW operator.  It reassigns, for the operator AND every managed package (read
+* from MVPKG.STORE): the operator account, the package store, the CallC library +
+* its staged fragments, and the GLOBAL catalog entries.  Idempotent.
+*
+* It shells out (chown) through the MVPKGOS CHOWN seam, which on UniData sudo's —
+* the global catalog + CallC library are DBA-owned, the same privilege install
+* carries.  On MVX there is no DBA-owned global catalog to repair, so this only
+* re-owns the account + store (for changing the operator).
+   SUBROUTINE MVPKG.FIXPERMS
+$IFDEF MVX
+$DEFINE GETENV ENV
+   S = SENTENCE()
+   ACCT = GETENV("MVXACCOUNT") ; IF ACCT = "" THEN ACCT = "."
+$ELSE
+   S = @SENTENCE
+   ACCT = @PATH
+$ENDIF
+   NEWOP = TRIM(FIELD(S, " ", 3))
+   * fixperms is a HOST-ADMIN task — above what a developer does: it chowns the
+   * DBA-owned global catalog + CallC library and can reassign the operator.  Run
+   * it ONLY from the MVPKG operator/package account, never a connected account a
+   * package was merely deployed into (cataloged LOCAL for the same reason).
+   * Identify the package account by its own PKG manifest (line 1 = the name).
+$IFDEF MVX
+   SELFPKG = OSREAD("PKG") ; IF STATUS() # 0 THEN SELFPKG = ""
+$ELSE
+   OSREAD SELFPKG FROM "PKG" ELSE SELFPKG = ""
+$ENDIF
+   IF TRIM(FIELD(SELFPKG, CHAR(10), 1)) # "mvpkg" THEN
+      PRINT "fixperms: run this only from the MVPKG operator account — it is a"
+      PRINT "  host-admin task, not available from accounts packages deploy into."
+      RETURN
+   END
+   * target operator: the arg, else the current owner of this account (ls -ld's
+   * 3rd column, once TRIM squeezes the padding to single spaces)
+   OPU = NEWOP
+   IF OPU = "" THEN
+      EXECUTE '!ls -ld "' : ACCT : '"' CAPTURING OWNL
+      OWNL = TRIM(CONVERT(@AM : @FM : CHAR(10) : CHAR(13), "    ", OWNL))
+      OPU = FIELD(TRIM(OWNL), " ", 3)
+   END
+   IF OPU = "" THEN
+      PRINT "fixperms: cannot determine the operator — name one: MVPKG fixperms <user>"
+      RETURN
+   END
+   * the target must be a real user; take its primary group so files land
+   * user:group (id -gn is empty for a non-existent user, which we reject).
+   EXECUTE '!id -gn "' : OPU : '" 2>/dev/null' CAPTURING GRP
+   GRP = FIELD(TRIM(TRIM(CONVERT(@AM : @FM : CHAR(10) : CHAR(13), "    ", GRP))), " ", 1)
+   IF GRP = "" THEN
+      PRINT "fixperms: no such user '" : OPU : "'"
+      RETURN
+   END
+   TGT = OPU : ":" : GRP
+   PRINT "fixperms: handing MVPKG's files to operator '" : TGT : "' ..."
+   * the operator account + the shared package store
+   CALL MVPKGOS("CHOWN", ACCT, TGT, E)
+   CALL MVPKGOS("STORE", "", "", STORE)
+   IF STORE # "" THEN CALL MVPKGOS("CHOWN", STORE, TGT, E)
+$IFNDEF MVX
+   * the CallC library + every staged fragment, and the GLOBAL catalog entries of
+   * the mvpkg client AND every managed package.  MVPKG itself is a LOCAL verb
+   * (its CATALOG entry lives under the account, already re-owned above).
+   UDT = GETENV("UDTHOME")
+   IF UDT # "" THEN
+      CALL MVPKGOS("CHOWN", UDT : "/bin/libu2callc.so", TGT, E)
+      CALL MVPKGOS("CHOWN", UDT : "/callc.d", TGT, E)
+      * mvpkg's own globally-cataloged client (the probes + helpers install.sh lists)
+      GLB = "MVPKGOS MVPKGDEP HTTPGET HTTPGETFILE JSONDECODE MAPFIELD SEMVER"
+      GLB := " CMD.INIT CMD.ADD CMD.RUN CALLC.EXISTS MVPKG.HAS"
+      GLB := " MVPKG.REG MVPKG.META MVPKG.ONE MVPKG.INSTALL MVPKG.INFO MVPKG.LIST"
+      GLB := " MVPKG.UPDATE MVPKG.REMOVE MVPKG.REGISTER MVPKG.SEARCH MVPKG.SETUP"
+      GLB := " MVPKG.CONFIG MVPKG.REBUILD MVPKG.INIT MVPKG.NOTIFY MVPKG.FIXPERMS"
+      FOR GI = 1 TO DCOUNT(GLB, " ")
+         V = FIELD(GLB, " ", GI)
+         IF V # "" THEN GOSUB CTLG1
+      NEXT GI
+      * every managed package's deployed verbs (its mvpkg.json deploy block)
+      CALL MVPKGOS("STOREREAD", "installed", "", SREC)
+      FOR PI = 1 TO DCOUNT(SREC<2>, @VM)
+         NM = TRIM(SREC<2,PI>)
+         IF NM # "" THEN
+            PKGKEY = CHANGE(NM, "/", "_")
+            OSREAD PJ FROM STORE : "/" : PKGKEY : "/mvpkg.json" ELSE PJ = ""
+            IF PJ # "" THEN
+               CALL MVPKGDEP(PJ, DVERBS, DFILES, DFALL)
+               FOR VI = 1 TO DCOUNT(DVERBS, " ")
+                  V = FIELD(DVERBS, " ", VI)
+                  IF V # "" THEN GOSUB CTLG1
+               NEXT VI
+            END
+         END
+      NEXT PI
+   END
+$ENDIF
+   PRINT "fixperms: done — MVPKG can catalog + upgrade as '" : OPU : "' now"
+   RETURN
+
+$IFNDEF MVX
+* CTLG1 — chown verb V's GLOBAL catalog entry to the operator.  UniData files a
+* global verb at CTLG/<lowercased-first-char>/<VERB>.
+CTLG1:
+   CALL MVPKGOS("CHOWN", UDT : "/sys/CTLG/" : OCONV(V[1, 1], "MCL") : "/" : V, TGT, E)
+   RETURN
+$ENDIF

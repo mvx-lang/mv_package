@@ -27,6 +27,7 @@
    CALL CMD.ADD("CONFIG", "show the current registry URL", "MVPKG.CONFIG")
    CALL CMD.ADD("REBUILD", "rebuild the host's native library", "MVPKG.REBUILD")
    CALL CMD.ADD("INIT", "provision this account for package management ({url})", "MVPKG.INIT")
+   CALL CMD.ADD("FIXPERMS", "hand MVPKG's files to the operator, or move to a new one ({user})", "MVPKG.FIXPERMS")
 $IFNDEF MVX
    CALL CMD.ADD("NOTIFY", "login-proc check: modal if a deployed package is behind the store", "MVPKG.NOTIFY")
 $ENDIF

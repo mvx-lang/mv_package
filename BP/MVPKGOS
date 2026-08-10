@@ -140,6 +140,13 @@
          * P1 = record id.  Remove a system-inventory record.
          GOSUB STOREOPEN
          IF STFOK THEN DELETE STF, P1
+      CASE OP = "CHOWN"
+         * P1 = path, P2 = user.  Re-assign / repair ownership — MVX installs as
+         * the invoking user (no DBA-owned global catalog to repair), so this is
+         * mainly for CHANGING the operator (a new owner of the store + account),
+         * which needs privilege to cross users.  It shells out, so MVPKG's declared
+         * command surface must permit chown (vendor permit in .mvx; see FIXPERMS).
+         IF P1 # "" AND P2 # "" THEN EXECUTE '!chown -R "' : P2 : '" "' : P1 : '" 2>/dev/null'
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE

@@ -82,14 +82,31 @@ CMD.INIT CMD.ADD CMD.RUN MVPKG.REG MVPKG.META MVPKG.ONE \
 MVPKG.INSTALL MVPKG.INFO MVPKG.LIST MVPKG.UPDATE MVPKG.REMOVE \
 MVPKG.REGISTER MVPKG.SEARCH MVPKG.SETUP MVPKG.CONFIG MVPKG.REBUILD MVPKG.INIT \
 MVPKG.NOTIFY"
+
+# Auto-repair: an earlier `sudo ./install.sh` (before the installer re-execed as
+# the operator) may have left this account or our GLOBAL catalog entries
+# root-owned — a re-catalog below would then fail with 'Copy catalog file error'.
+# We run as the operator now (post re-exec) but still have sudo, so hand any such
+# stragglers to the operator first.  A fresh install is a harmless no-op.  This is
+# the install-time half of `MVPKG fixperms`; the store + callc.d are re-owned by
+# their own steps (below / udt-callc-build).
+sudo chown -R "$OWNER:$GROUP" "$HERE" 2>/dev/null || true
+for v in $PROBES $GLOBAL; do
+  sudo chown "$OWNER:$GROUP" "$UDTHOME"/sys/CTLG/*/"$v" 2>/dev/null || true
+done
+
 say "compiling + cataloging the client (globals + probes) and the MVPKG verb"
 # One BASIC per program, not one BASIC with a long arg list: `BASIC BP <many
 # args>` segfaults udt on this UniData (it still writes the objects, but the
 # session dies before the CATALOGs run).  Per-program compile is clean.
 {
-  for p in $PROBES $GLOBAL MVPKG; do echo "BASIC BP $p"; done
+  for p in $PROBES $GLOBAL MVPKG MVPKG.FIXPERMS; do echo "BASIC BP $p"; done
   for p in $PROBES $GLOBAL; do echo "CATALOG BP $p FORCE"; done
+  # MVPKG + fixperms are LOCAL to this operator account: fixperms is a host-admin
+  # task (chowns the DBA-owned catalog, reassigns the operator) and must not be
+  # reachable from accounts a package was merely deployed into.
   echo "CATALOG BP MVPKG LOCAL FORCE"
+  echo "CATALOG BP MVPKG.FIXPERMS LOCAL FORCE"
   echo "QUIT"
 } | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) >/dev/null 2>&1 || true
 ls "$UDTHOME"/sys/CTLG/*/MVPKGOS >/dev/null 2>&1 \

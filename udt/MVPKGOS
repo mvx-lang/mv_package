@@ -212,6 +212,13 @@
       CASE OP = "RMDIR"
          * P1 = directory.  Remove it (the store copy on uninstall).
          EXECUTE '!rm -rf "':P1:'"'
+      CASE OP = "CHOWN"
+         * P1 = path, P2 = user (or user:group).  Hand ownership to the operator —
+         * repair a root-owned install so MVPKG can catalog/upgrade again, or move
+         * the install to a new operator.  Needs sudo ($UDTHOME/sys/CTLG + the CallC
+         * library are DBA-owned).  Recursive, so a dir + its records go together; a
+         * missing path is silently skipped (2>/dev/null).  FIXPERMS drives it.
+         IF P1 # "" AND P2 # "" THEN EXECUTE '!sudo chown -R "' : P2 : '" "' : P1 : '" 2>/dev/null'
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE
