@@ -121,7 +121,39 @@
          * P1 = record id.  Remove an account state record.
          OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open VOC" ; RETURN
          DELETE MDF, P1
+      CASE OP = "STOREREAD"
+         * Read a record from the shared SYSTEM store MVPKG.STORE — the
+         * per-system inventory of installed packages (record "installed": <2>
+         * names / <3> versions; "SRC.<key>": a source working-copy path).  On
+         * MVX the store is a directory file inside the global store dir, opened
+         * by absolute path, so every account on this host reaches the same one
+         * (MVX has no Q-pointers — the shared path IS the sharing).  P1 = record
+         * id; RESULT = the record, or "" when absent.
+         GOSUB STOREOPEN
+         RESULT = ""
+         IF STFOK THEN READ SREC FROM STF, P1 THEN RESULT = SREC
+      CASE OP = "STOREWRITE"
+         * P1 = record id, P2 = the record.  Persist the system inventory.
+         GOSUB STOREOPEN
+         IF STFOK THEN WRITE P2 ON STF, P1 ELSE RESULT = "MVPKGOS STOREWRITE: cannot open MVPKG.STORE"
+      CASE OP = "STOREDELETE"
+         * P1 = record id.  Remove a system-inventory record.
+         GOSUB STOREOPEN
+         IF STFOK THEN DELETE STF, P1
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE
+   RETURN
+*
+* STOREOPEN — open the shared system store file MVPKG.STORE, STFOK = 1 when STF
+* is usable.  The store is a directory file (dir driver) inside the global store
+* dir ($MVPKG_STORE or $HOME/.mvxpkg); an absolute-path OPEN reaches it from any
+* account, and creating the dir is all the "provisioning" a dir file needs.
+STOREOPEN:
+   STFOK = 0
+   SP = ENV("MVPKG_STORE")
+   IF SP = "" THEN SP = ENV("HOME") : "/.mvxpkg"
+   SF = SP : "/MVPKG.STORE"
+   EXECUTE '!mkdir -p "' : SF : '"'
+   OPEN SF TO STF THEN STFOK = 1
    RETURN

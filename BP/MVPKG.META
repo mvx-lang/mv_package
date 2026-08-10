@@ -6,20 +6,32 @@
 * (to satisfy a dependency constraint) asks for that one (?version=).
 * META<1>=name <2>=version <3>=tarball <4>=description <5>=dependencies
 * <6>=versions (space-separated, newest-first) <7>=provides (virtual names this
-* package satisfies, space-separated); META = "" on a miss.
+* package satisfies, space-separated) <8>=source (repo URL, for --source clones)
+* <9>=clibs (OS C libraries the package's CallC needs, space-separated sonames);
+* META = "" on a miss.  (Client code uses META<20> for a --source working-copy
+* path override — a high slot the registry never fills.)
 *
 * The request carries this client's platform as a query string
 * (?system=&arch=&os=&endian=), resolved through the MVPKGOS seam, so the
 * registry can serve the matching prebuilt binary artifact — else source.
+* HTTP/JSON/MAPFIELD are MVX intrinsics; UniData reaches them as the cataloged
+* seam functions, so declare those only off MVX.
    SUBROUTINE MVPKG.META(NAME, VER, REG, META)
+$IFNDEF MVX
+   DEFFUN HTTPGET(A)
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B, C, D, E)
+$ENDIF
    SPEC = ""
-   SPEC<-1> = MAPFIELD("name", 1)
-   SPEC<-1> = MAPFIELD("version", 2)
-   SPEC<-1> = MAPFIELD("tarball", 3)
-   SPEC<-1> = MAPFIELD("description", 4)
-   SPEC<-1> = MAPFIELD("dependencies", 5)
-   SPEC<-1> = MAPFIELD("versions", 6)
-   SPEC<-1> = MAPFIELD("provides", 7)
+   SPEC<-1> = MAPFIELD("name", 1, "", "", "")
+   SPEC<-1> = MAPFIELD("version", 2, "", "", "")
+   SPEC<-1> = MAPFIELD("tarball", 3, "", "", "")
+   SPEC<-1> = MAPFIELD("description", 4, "", "", "")
+   SPEC<-1> = MAPFIELD("dependencies", 5, "", "", "")
+   SPEC<-1> = MAPFIELD("versions", 6, "", "", "")
+   SPEC<-1> = MAPFIELD("provides", 7, "", "", "")
+   SPEC<-1> = MAPFIELD("srcrepo", 8, "", "", "")
+   SPEC<-1> = MAPFIELD("clibs", 9, "", "", "")
    PLATQ = ""
    CALL MVPKGOS("PLATFORM", "", "", PLAT)
    IF PLAT # "" AND INDEX(PLAT, ":", 1) THEN
@@ -46,5 +58,10 @@
       META = ""
    END ELSE
       META = JSONDECODE(BODY, SPEC)
+      * A miss returns a JSON error object ({"error":"not found"}) with no
+      * "name" — treat any response without a resolved name as a miss (META="").
+      * Otherwise the caller "installs" an empty package: blank name -> blank
+      * store dir -> it rm's/untars the whole store root and catalogs nothing.
+      IF META<1> = "" THEN META = ""
    END
    RETURN

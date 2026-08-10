@@ -2,38 +2,35 @@
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
 * CALL MVPKG.HAS(NAME, FOUND) — FOUND = 1 if the package NAME is installed in
-* this account (recorded in mvpkg.installed), else 0.  The runtime complement of
-* an optional dependency: a package that declares "?other" guards its use of
-* other at run time, so it works whether or not the optional add-on was present
-* at install:
+* this account (recorded in the MVPKG.LOCK record), else 0.  The runtime
+* complement of an optional dependency: a package that declares "?other" guards
+* its use of other at run time, so it works whether or not the optional add-on
+* was present at install:
 *
-*    DEFFUN MVPKG.HAS(N, F)          ;* or  CALL MVPKG.HAS("other", OK)
 *    CALL MVPKG.HAS("mvx-lang/other", OK)
 *    IF OK THEN GOSUB USE.OTHER ELSE GOSUB WITHOUT.OTHER
 *
 * NAME matches either the full registry name (owner/pkg) or the bare package
-* name (after the last "/"), so both "cmd" and "mvx-lang/cmd" resolve.
+* name (after the last "/"), so both "cmd" and "mvx-lang/cmd" resolve.  Reads the
+* lock through the MVPKGOS MD* seam, so this one source runs on every platform.
    SUBROUTINE MVPKG.HAS(NAME, FOUND)
    FOUND = 0
-   MFILE = ENV("MVXACCOUNT")
-   IF MFILE = "" THEN MFILE = "."
-   MFILE = MFILE : "/mvpkg.installed"
-   MTEXT = OSREAD(MFILE)
-   IF STATUS() # 0 THEN MTEXT = ""
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
 
-   IN = NAME ; GOSUB BNAME ; WANTBN = BN
-   NL = DCOUNT(MTEXT, CHAR(10))
+   PN = NAME ; GOSUB BNAME ; WANTBN = BN
+   NL = DCOUNT(IREC<2>, @VM)
    FOR I = 1 TO NL
-      L = TRIM(FIELD(MTEXT, CHAR(10), I))
+      L = TRIM(IREC<2,I>)
       IF L # "" THEN
          IF L = NAME THEN FOUND = 1
-         IN = L ; GOSUB BNAME
+         PN = L ; GOSUB BNAME
          IF BN = WANTBN THEN FOUND = 1
       END
    NEXT I
    RETURN
 
-* BN = the bare package name in IN: the field after the last "/".
+* BN = the bare package name in PN: the field after the last "/".
+* (PN, not IN — IN is a reserved word in UniData BASIC.)
 BNAME:
-   BN = FIELD(IN, "/", COUNT(IN, "/") + 1)
+   BN = FIELD(PN, "/", COUNT(PN, "/") + 1)
    RETURN
