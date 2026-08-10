@@ -41,7 +41,10 @@
    SELFNAME = "" ; SELFDESC = ""
    IF SELFJ # "" THEN SM = JSONDECODE(SELFJ, SELFSPEC) ; SELFNAME = TRIM(SM<1>) ; SELFDESC = TRIM(SM<2>)
    INDENT = SPACE(41)          ;* 22 + 9 + 10 — aligns wrapped lines under DESCRIPTION
-   WRAPW = 50                  ;* description column width for --long wrapping
+   * DESCRIPTION fills the rest of the terminal instead of a fixed column, so the
+   * table uses the real window width (SYSTEM(2) = page width; fall back to 80).
+   WID = SYSTEM(2) ; IF WID < 61 THEN WID = 80
+   WRAPW = WID - 41            ;* description column = window width minus the 3 fixed cols
    PRINT FMT("PACKAGE", "22L") : FMT("VERSION", "9L") : FMT("STATUS", "10L") : "DESCRIPTION"
    FOR GI = 1 TO NL
       LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
@@ -72,7 +75,7 @@
          IF LONG THEN
             GOSUB WRAPDESC
          END ELSE
-            IF LEN(DESC) > 48 THEN DESC = DESC[1, 47] : ">"
+            IF LEN(DESC) > WRAPW THEN DESC = DESC[1, WRAPW - 1] : ">"
             PRINT PREFIX : DESC
          END
       END
