@@ -1,58 +1,51 @@
 * mv_package — MVPKG subcommand: register.
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
-* MVPKG register <name> [<version>] — adopt an ALREADY-installed package (e.g.
-* one installed standalone before MVPKG was present) as installed, so MVPKG
-* manages it: it is not reinstalled as another package's dependency, and a
-* later `MVPKG install <name>` of the same version is a no-op (a newer version
-* still upgrades).  Marks the global store manifest ("name version") and this
-* account's manifest ("name"); it downloads and builds nothing — the package is
-* assumed already present.
+* MVPKG register <name> [<version>] — record an ALREADY-installed package
+* (e.g. one installed standalone before MVPKG was present) as installed, so
+* MVPKG manages it: it is not reinstalled as another package's dependency, and
+* a later `MVPKG install <name>` of the SAME version is a no-op (a newer
+* version still upgrades).  Marks the system store inventory (MVPKG.STORE
+* "installed") and this account's lock (MVPKG.LOCK); it does NOT download or
+* build anything — the package is assumed already present.
    SUBROUTINE MVPKG.REGISTER
-   S = SENTENCE()
+$IFDEF MVX
+$DEFINE ARGV SENTENCE()
+$ELSE
+$DEFINE ARGV @SENTENCE
+$ENDIF
+   S = ARGV
    A1 = FIELD(S, " ", 3)
    A2 = FIELD(S, " ", 4)
    IF A1 = "" THEN PRINT "usage: MVPKG register <name> [<version>]" ; RETURN
    CALL MVPKG.REG(REG)
    CALL MVPKG.META(A1, "", REG, META)
-   IF META = "" THEN
-      PRINT A1:": not found in registry ":REG
-      RETURN
-   END
+   IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
    NM = META<1>
    VER = A2 ; IF VER = "" THEN VER = META<2>
-
-   * global store manifest: "name version"
-   CALL MVPKGOS("STORE", "", "", STORE)
-   GMAN = STORE : "/installed"
-   GKEY = NM : " " : VER
-   GTEXT = OSREAD(GMAN)
-   IF STATUS() # 0 THEN GTEXT = ""
-   FND = 0
-   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-      IF TRIM(FIELD(GTEXT, CHAR(10), GI)) = GKEY THEN FND = 1
-   NEXT GI
-   IF FND = 0 THEN
-      IF GTEXT # "" AND GTEXT[LEN(GTEXT), 1] # CHAR(10) THEN GTEXT := CHAR(10)
-      GTEXT := GKEY : CHAR(10)
-      X = OSWRITE(GTEXT, GMAN)
+   * system store inventory: add/update NM at version VER in MVPKG.STORE "installed"
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
+   IF SREC = "" THEN SREC = "MVPKG-STORE"
+   LOCATE(NM, SREC, 2; SPOS) THEN
+      SREC<3,SPOS> = VER
+   END ELSE
+      SAN = DCOUNT(SREC<2>, @VM) + 1
+      SREC<2,SAN> = NM
+      SREC<3,SAN> = VER
    END
-
-   * account manifest: "name"
-   MFILE = ENV("MVXACCOUNT")
-   IF MFILE = "" THEN MFILE = "."
-   MFILE = MFILE : "/mvpkg.installed"
-   MTEXT = OSREAD(MFILE)
-   IF STATUS() # 0 THEN MTEXT = ""
+   CALL MVPKGOS("STOREWRITE", "installed", SREC, SERR)
+   * account lock: the MVPKG.LOCK record (name in <2>, version in <3>)
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
    AFND = 0
-   FOR I = 1 TO DCOUNT(MTEXT, CHAR(10))
-      IF TRIM(FIELD(MTEXT, CHAR(10), I)) = NM THEN AFND = 1
+   FOR I = 1 TO DCOUNT(IREC<2>, @VM)
+      IF TRIM(IREC<2,I>) = NM THEN AFND = 1 ; IREC<3,I> = VER   ;* refresh version
    NEXT I
    IF AFND = 0 THEN
-      IF MTEXT # "" AND MTEXT[LEN(MTEXT), 1] # CHAR(10) THEN MTEXT := CHAR(10)
-      MTEXT := NM : CHAR(10)
-      X = OSWRITE(MTEXT, MFILE)
+      IF IREC = "" THEN IREC = "MVPKG-LOCK"
+      AN = DCOUNT(IREC<2>, @VM) + 1
+      IREC<2,AN> = NM
+      IREC<3,AN> = VER
    END
-
-   PRINT "registered ":NM:" ":VER:" (managed by MVPKG)"
+   CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", IREC, IERR)
+   PRINT "registered " : NM : " " : VER : " (managed by MVPKG)"
    RETURN
