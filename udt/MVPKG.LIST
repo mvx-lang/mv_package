@@ -1,25 +1,29 @@
 * mv_package — MVPKG subcommand: list (UniData port).
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
-* MVPKG list [--long] — show the packages MVPKG manages on this system as a
-* table: PACKAGE  VERSION  STATUS  DESCRIPTION.
-*   name + version : the global store manifest ("name version" per line).
+* MVPKG list [--long] [--all] — show packages as a table:
+*   PACKAGE  VERSION  STATUS  DESCRIPTION.
+* By default only packages DEPLOYED in the current account are listed; --all/-a
+* lists every package installed on the SYSTEM (the MVPKG.STORE inventory).
+*   name + version : the MVPKG.STORE "installed" record (the system inventory).
 *   description    : read from each package's stored mvpkg.json (local; blank
 *                    for a package adopted via `register`, which has no store copy).
 *                    Truncated to one line unless --long, which wraps the full
 *                    text over multiple lines, aligned under the DESCRIPTION column.
 *   status         : per the CURRENT account — "deployed" when this account's
-*                    MVPKG.LOCK record lists it, else "system" (installed
-*                    in the shared store but not deployed into this account).
+*                    MVPKG.LOCK record lists it, else "system" (in the shared store
+*                    but not deployed into this account; shown only with --all).
    SUBROUTINE MVPKG.LIST
    DEFFUN JSONDECODE(A, B)
    DEFFUN MAPFIELD(A, B, C, D, E)
-   * --long / -l : wrap the full description instead of truncating it
-   LONG = 0
+   * flags: --long/-l wraps the full description; --all/-a lists every package on
+   * the SYSTEM (the store), not just the ones deployed in THIS account.
+   LONG = 0 ; ALLP = 0
    SENT = @SENTENCE
    FOR FI = 1 TO DCOUNT(SENT, " ")
       W = FIELD(SENT, " ", FI)
       IF W = "--long" OR W = "-l" THEN LONG = 1
+      IF W = "--all" OR W = "-a" THEN ALLP = 1
    NEXT FI
    CALL MVPKGOS("STORE", "", "", STORE)
    * the SYSTEM inventory — the MVPKG.STORE "installed" record (<2> names,
@@ -47,20 +51,12 @@
    WID = SYSTEM(2) ; IF WID < 61 THEN WID = 80
    WRAPW = WID - 41            ;* description column = window width minus the 3 fixed cols
    PRINT FMT("PACKAGE", "22L") : FMT("VERSION", "9L") : FMT("STATUS", "10L") : "DESCRIPTION"
+   SHOWN = 0
    FOR GI = 1 TO NL
       NM = TRIM(SREC<2,GI>)
       IF NM # "" THEN
          VER = TRIM(SREC<3,GI>)
-         * description from the package's stored manifest (local, no network)
-         PKGKEY = CHANGE(NM, "/", "_")
-         OSREAD J FROM STORE : "/" : PKGKEY : "/mvpkg.json" ELSE J = ""
-         DESC = ""
-         IF J # "" THEN
-            M = JSONDECODE(J, SPEC) ; DESC = TRIM(M<1>)
-         END ELSE
-            IF NM = SELFNAME THEN DESC = SELFDESC
-         END
-         * status for the current account.  The account manifest may list a
+         * deployed status for the current account.  The account lock may list a
          * package by its full name (a direct install) or by its short/virtual
          * name (a transitive or provides-resolved dep, e.g. "mapfield" for
          * mvx-lang/mapfield), so match either.
@@ -71,15 +67,31 @@
             AN = TRIM(IREC<2,MI>)
             IF AN # "" AND (AN = NM OR AN = LAST) THEN STAT = "deployed"
          NEXT MI
-         PREFIX = FMT(NM, "22L") : FMT(VER, "9L") : FMT(STAT, "10L")
-         IF LONG THEN
-            GOSUB WRAPDESC
-         END ELSE
-            IF LEN(DESC) > WRAPW THEN DESC = DESC[1, WRAPW - 1] : ">"
-            PRINT PREFIX : DESC
+         * default lists only what is deployed HERE; --all lists the whole system
+         IF ALLP OR STAT = "deployed" THEN
+            SHOWN = SHOWN + 1
+            * description from the package's stored manifest (local, no network)
+            PKGKEY = CHANGE(NM, "/", "_")
+            OSREAD J FROM STORE : "/" : PKGKEY : "/mvpkg.json" ELSE J = ""
+            DESC = ""
+            IF J # "" THEN
+               M = JSONDECODE(J, SPEC) ; DESC = TRIM(M<1>)
+            END ELSE
+               IF NM = SELFNAME THEN DESC = SELFDESC
+            END
+            PREFIX = FMT(NM, "22L") : FMT(VER, "9L") : FMT(STAT, "10L")
+            IF LONG THEN
+               GOSUB WRAPDESC
+            END ELSE
+               IF LEN(DESC) > WRAPW THEN DESC = DESC[1, WRAPW - 1] : ">"
+               PRINT PREFIX : DESC
+            END
          END
       END
    NEXT GI
+   IF SHOWN = 0 AND ALLP = 0 THEN
+      PRINT "  (nothing deployed in this account — use  MVPKG list -a  for all system packages)"
+   END
    RETURN
 *
 * WRAPDESC — print DESC word-wrapped at WRAPW: the first line follows PREFIX (the
