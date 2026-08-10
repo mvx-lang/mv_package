@@ -16,23 +16,24 @@
 * JSON/MAPFIELD are MVX intrinsics (declared as the cataloged seam off MVX); the
 * @SENTENCE token, the FMT justify masks, and the OSREAD form are the other diffs.
    SUBROUTINE MVPKG.LIST
+* FMT justify masks differ by platform (mvx L#n vs udt nL); hold them in runtime
+* variables — UniData's $DEFINE has no value-substitution form, so a per-platform
+* assignment (not a macro) is what ports.
 $IFDEF MVX
-$DEFINE ARGV SENTENCE()
-$DEFINE FMTL22 "L#22"
-$DEFINE FMTL9 "L#9"
-$DEFINE FMTL10 "L#10"
+   FMTL22 = "L#22" ; FMTL9 = "L#9" ; FMTL10 = "L#10"
 $ELSE
-$DEFINE ARGV @SENTENCE
-$DEFINE FMTL22 "22L"
-$DEFINE FMTL9 "9L"
-$DEFINE FMTL10 "10L"
    DEFFUN JSONDECODE(A, B)
    DEFFUN MAPFIELD(A, B, C, D, E)
+   FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
 $ENDIF
    * flags: --long/-l wraps the full description; --all/-a lists every package on
    * the SYSTEM (the store), not just the ones deployed in THIS account.
    LONG = 0 ; ALLP = 0
-   SENT = ARGV
+$IFDEF MVX
+   SENT = SENTENCE()
+$ELSE
+   SENT = @SENTENCE
+$ENDIF
    FOR FI = 1 TO DCOUNT(SENT, " ")
       W = FIELD(SENT, " ", FI)
       IF W = "--long" OR W = "-l" THEN LONG = 1

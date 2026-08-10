@@ -9,11 +9,10 @@
 * mvpkg.json verbs, decatalogs the code and unstages any CallC contribution.
    SUBROUTINE MVPKG.REMOVE
 $IFDEF MVX
-$DEFINE ARGV SENTENCE()
+   S = SENTENCE()
 $ELSE
-$DEFINE ARGV @SENTENCE
+   S = @SENTENCE
 $ENDIF
-   S = ARGV
    A1 = FIELD(S, " ", 3)
    IF A1 = "" THEN PRINT "usage: MVPKG remove <name>" ; RETURN
    NM = A1

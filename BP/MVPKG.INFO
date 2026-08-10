@@ -4,11 +4,10 @@
 * MVPKG info <name> — show a package's registry metadata.
    SUBROUTINE MVPKG.INFO
 $IFDEF MVX
-$DEFINE ARGV SENTENCE()
+   S = SENTENCE()
 $ELSE
-$DEFINE ARGV @SENTENCE
+   S = @SENTENCE
 $ENDIF
-   S = ARGV
    A1 = FIELD(S, " ", 3)
    IF A1 = "" THEN PRINT "usage: MVPKG info <name>" ; RETURN
    CALL MVPKG.REG(REG)

@@ -16,11 +16,10 @@
    SUBROUTINE MVPKG.INSTALL
 $IFDEF MVX
 $DEFINE GETENV ENV
-$DEFINE ARGV SENTENCE()
+   S = SENTENCE()
 $ELSE
-$DEFINE ARGV @SENTENCE
+   S = @SENTENCE
 $ENDIF
-   S = ARGV
    * args after "MVPKG install": the package name (first non-flag word), an
    * optional target dir, and flags.  --source / -s selects source mode: clone
    * the package's account-repo into a git working copy instead of unpacking a

@@ -13,11 +13,10 @@
    SUBROUTINE MVPKG.INIT
 $IFDEF MVX
 $DEFINE GETENV ENV
-$DEFINE ARGV SENTENCE()
+   S = SENTENCE()
 $ELSE
-$DEFINE ARGV @SENTENCE
+   S = @SENTENCE
 $ENDIF
-   S = ARGV
    A1 = FIELD(S, " ", 3)
 
    * record the registry if a URL was supplied (persisted where MVPKG.REG reads

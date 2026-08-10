@@ -10,11 +10,10 @@
 * build anything — the package is assumed already present.
    SUBROUTINE MVPKG.REGISTER
 $IFDEF MVX
-$DEFINE ARGV SENTENCE()
+   S = SENTENCE()
 $ELSE
-$DEFINE ARGV @SENTENCE
+   S = @SENTENCE
 $ENDIF
-   S = ARGV
    A1 = FIELD(S, " ", 3)
    A2 = FIELD(S, " ", 4)
    IF A1 = "" THEN PRINT "usage: MVPKG register <name> [<version>]" ; RETURN

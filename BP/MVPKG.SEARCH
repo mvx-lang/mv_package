@@ -9,14 +9,13 @@
 * declare those only off MVX.  The output format mask is the other platform diff.
    SUBROUTINE MVPKG.SEARCH
 $IFDEF MVX
-$DEFINE ARGV SENTENCE()
+   S = SENTENCE()
 $ELSE
-$DEFINE ARGV @SENTENCE
    DEFFUN HTTPGET(A)
    DEFFUN JSONDECODE(A, B)
    DEFFUN MAPFIELD(A, B, C, D, E)
+   S = @SENTENCE
 $ENDIF
-   S = ARGV
    A1 = FIELD(S, " ", 3)
    CALL MVPKG.REG(REG)
    SPEC = ""
