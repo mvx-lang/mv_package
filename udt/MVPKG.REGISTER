@@ -18,20 +18,17 @@
    IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
    NM = META<1>
    VER = A2 ; IF VER = "" THEN VER = META<2>
-   * global store manifest: "name version"
-   CALL MVPKGOS("STORE", "", "", STORE)
-   GMAN = STORE : "/installed"
-   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
-   GKEY = NM : " " : VER
-   FND = 0
-   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-      IF TRIM(FIELD(GTEXT, CHAR(10), GI)) = GKEY THEN FND = 1
-   NEXT GI
-   IF FND = 0 THEN
-      IF GTEXT # "" AND GTEXT[LEN(GTEXT), 1] # CHAR(10) THEN GTEXT := CHAR(10)
-      GTEXT := GKEY : CHAR(10)
-      OSWRITE GTEXT ON GMAN
+   * system store inventory: add/update NM at version VER in MVPKG.STORE "installed"
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
+   IF SREC = "" THEN SREC = "MVPKG-STORE"
+   LOCATE(NM, SREC, 2; SPOS) THEN
+      SREC<3,SPOS> = VER
+   END ELSE
+      SAN = DCOUNT(SREC<2>, @VM) + 1
+      SREC<2,SAN> = NM
+      SREC<3,SAN> = VER
    END
+   CALL MVPKGOS("STOREWRITE", "installed", SREC, SERR)
    * account lock: the MVPKG.LOCK record (name in <2>, version in <3>)
    CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
    AFND = 0

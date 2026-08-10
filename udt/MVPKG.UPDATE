@@ -11,27 +11,23 @@
    A1 = FIELD(S, " ", 3)
    CALL MVPKG.REG(REG)
    CALL MVPKGOS("STORE", "", "", STORE)
-   GMAN = STORE : "/installed"
-   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+   * SYSTEM inventory — MVPKG.STORE "installed" (<2> names / <3> versions)
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
    NAMES = ""
    IF A1 # "" THEN
       NAMES = A1
    END ELSE
-      FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-         LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
-         IF LN # "" THEN NAMES<-1> = FIELD(LN, " ", 1)
+      FOR GI = 1 TO DCOUNT(SREC<2>, @VM)
+         IF TRIM(SREC<2,GI>) # "" THEN NAMES<-1> = TRIM(SREC<2,GI>)
       NEXT GI
    END
    NN = DCOUNT(NAMES, @AM)
    IF NN = 0 OR NAMES<1> = "" THEN PRINT "no packages installed" ; RETURN
    FOR NI = 1 TO NN
       NM = NAMES<NI>
-      OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+      CALL MVPKGOS("STOREREAD", "installed", "", SREC)
       INSTVER = ""
-      FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-         LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
-         IF FIELD(LN, " ", 1) = NM THEN INSTVER = FIELD(LN, " ", 2)
-      NEXT GI
+      LOCATE(NM, SREC, 2; SPOS) THEN INSTVER = TRIM(SREC<3,SPOS>)
       BEGIN CASE
          CASE INSTVER = ""
             PRINT NM : ": not installed (use MVPKG install)"
@@ -46,12 +42,8 @@
                   PRINT NM : " " : INSTVER : " is up to date"
                CASE 1
                   PRINT "updating " : NM : " " : INSTVER : " -> " : META<2>
-                  NEW = ""
-                  FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-                     LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
-                     IF LN # "" AND FIELD(LN, " ", 1) # NM THEN NEW := LN : CHAR(10)
-                  NEXT GI
-                  OSWRITE NEW ON GMAN
+                  * MVPKG.ONE re-fetches the new version and updates the store
+                  * inventory's version in place (LOCATE on <2>).
                   CALL MVPKG.ONE(META, REG, OERR)
                   IF OERR # "" THEN PRINT NM : ": update failed — " : OERR
             END CASE
@@ -65,7 +57,7 @@
 * are never clobbered — resolve those by hand.
 SRCUPDATE:
    PKGKEY = CHANGE(NM, "/", "_")
-   OSREAD WCDIR FROM STORE : "/src/" : PKGKEY ELSE WCDIR = ""
+   CALL MVPKGOS("STOREREAD", "SRC." : PKGKEY, "", WCDIR)
    WCDIR = TRIM(WCDIR)
    IF WCDIR = "" THEN PRINT NM : ": source working-copy path not recorded" ; RETURN
    PRINT "updating " : NM : " (git pull in " : WCDIR : ") ..."

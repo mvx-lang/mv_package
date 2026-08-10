@@ -176,6 +176,24 @@
          * P1 = record id.  Remove an account state record.
          OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open VOC" ; RETURN
          DELETE MDF, P1
+      CASE OP = "STOREREAD"
+         * Read a record from the shared SYSTEM store file MVPKG.STORE — the
+         * per-system inventory of installed packages (record "installed": <2>
+         * names / <3> versions; "SRC.<key>": a source working-copy path).  The
+         * file lives in the operator account; other accounts reach it through a
+         * VOC pointer the seam adds (STOREHEAL).  P1 = record id; RESULT = the
+         * record, or "" when absent.
+         GOSUB STOREOPEN
+         RESULT = ""
+         IF STFOK THEN READ SREC FROM STF, P1 THEN RESULT = SREC
+      CASE OP = "STOREWRITE"
+         * P1 = record id, P2 = the record.  Persist the system inventory.
+         GOSUB STOREOPEN
+         IF STFOK THEN WRITE P2 ON STF, P1 ELSE RESULT = "MVPKGOS STOREWRITE: cannot open MVPKG.STORE"
+      CASE OP = "STOREDELETE"
+         * P1 = record id.  Remove a system-inventory record.
+         GOSUB STOREOPEN
+         IF STFOK THEN DELETE STF, P1
       CASE OP = "DECAT"
          * P1 = package dir, P2 = source subdir.  The inverse of CATALOG: remove
          * every program's global catalog entry so it no longer resolves.
@@ -275,4 +293,46 @@ HAVECHK:
       GP = UDT : "/sys/CTLG/" : OCONV(NCK[1,1], "MCL") : "/" : NCK
       OPENSEQ GP TO HSF THEN HAV = "1" ; CLOSESEQ HSF
    END
+   RETURN
+
+* STOREOPEN — open the shared system store file MVPKG.STORE, self-healing the
+* account's access first if it does not open.  STFOK = 1 when STF is usable.
+STOREOPEN:
+   STFOK = 0
+   OPEN "MVPKG.STORE" TO STF THEN
+      STFOK = 1
+   END ELSE
+      GOSUB STOREHEAL
+      OPEN "MVPKG.STORE" TO STF THEN STFOK = 1
+   END
+   RETURN
+
+* STOREHEAL — make MVPKG.STORE reachable from this account.  The store's OS dir
+* ($MVPKG_STORE or $UDTHOME/mvpkg) carries an "operator" marker: <line1> the
+* owning account's UD.ACCOUNT name, <line2> its @PATH.  First use ever: this
+* account becomes the owner (create the file + write the marker).  The owner with
+* a missing file: recreate it.  Any other account: add a VOC Q-pointer to the
+* owner's copy by account name (the operator account is registered in UD.ACCOUNT).
+* Deploying MVPKG to a NEW account therefore sets this pointer up automatically,
+* not just the cataloging of programs.
+STOREHEAL:
+   SP = GETENV("MVPKG_STORE")
+   IF SP = "" THEN SP = UDT : "/mvpkg"
+   OMARK = SP : "/operator"
+   OSREAD OINFO FROM OMARK ELSE OINFO = ""
+   ONAME = TRIM(FIELD(OINFO, CHAR(10), 1))
+   OPATH = TRIM(FIELD(OINFO, CHAR(10), 2))
+   MYPATH = @PATH
+   MYNAME = FIELD(MYPATH, "/", DCOUNT(MYPATH, "/"))   ;* account name = dir basename
+   BEGIN CASE
+      CASE OINFO = ""
+         EXECUTE "CREATE.FILE MVPKG.STORE 7"
+         OSWRITE MYNAME : CHAR(10) : MYPATH ON OMARK
+      CASE OPATH = MYPATH
+         EXECUTE "CREATE.FILE MVPKG.STORE 7"
+      CASE 1
+         OPEN "VOC" TO SVF THEN
+            WRITE ("Q" : @FM : ONAME : @FM : "MVPKG.STORE") ON SVF, "MVPKG.STORE"
+         END
+   END CASE
    RETURN

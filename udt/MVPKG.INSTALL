@@ -268,22 +268,20 @@ SRCINSTALL:
    IF OERR # "" THEN PRINT META<1> : ": source build failed — " : OERR : " (working copy left at " : TGTDIR : ")" ; RETURN
    * record the source install: a store-manifest line ("name source") so it shows
    * in MVPKG LIST, plus a marker holding the working-copy path for MVPKG update.
-   CALL MVPKGOS("STORE", "", "", STORE)
    PKGKEY = CHANGE(META<1>, "/", "_")
-   EXECUTE '!mkdir -p "' : STORE : '/src"'
-   OSWRITE TGTDIR ON STORE : "/src/" : PKGKEY
-   GMAN = STORE : "/installed"
-   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
-   GKEY = META<1> : " source"
-   FND = 0
-   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-      IF TRIM(FIELD(GTEXT, CHAR(10), GI)) = GKEY THEN FND = 1
-   NEXT GI
-   IF FND = 0 THEN
-      IF GTEXT # "" AND GTEXT[LEN(GTEXT), 1] # CHAR(10) THEN GTEXT := CHAR(10)
-      GTEXT := GKEY : CHAR(10)
-      OSWRITE GTEXT ON GMAN
+   * record the working-copy path + a system-inventory entry (version "source")
+   * in MVPKG.STORE — the SRC.<key> record replaces the OS src/<key> marker.
+   CALL MVPKGOS("STOREWRITE", "SRC." : PKGKEY, TGTDIR, SERR)
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
+   IF SREC = "" THEN SREC = "MVPKG-STORE"
+   LOCATE(META<1>, SREC, 2; SPOS) THEN
+      SREC<3,SPOS> = "source"
+   END ELSE
+      SAN = DCOUNT(SREC<2>, @VM) + 1
+      SREC<2,SAN> = META<1>
+      SREC<3,SAN> = "source"
    END
+   CALL MVPKGOS("STOREWRITE", "installed", SREC, SERR)
    * record it in this account's lock too (version "source"), so LIST shows it
    * deployed here and MVPKG.HAS finds it.
    CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", LREC)

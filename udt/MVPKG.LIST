@@ -22,14 +22,15 @@
       IF W = "--long" OR W = "-l" THEN LONG = 1
    NEXT FI
    CALL MVPKGOS("STORE", "", "", STORE)
-   GMAN = STORE : "/installed"
-   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+   * the SYSTEM inventory — the MVPKG.STORE "installed" record (<2> names,
+   * <3> versions): everything downloaded + globally cataloged on this system
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
    * this account's deployed set — the native MVPKG.LOCK record (names in <2>)
    CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
-   NL = DCOUNT(GTEXT, CHAR(10))
+   NL = DCOUNT(SREC<2>, @VM)
    NG = 0
    FOR GI = 1 TO NL
-      IF TRIM(FIELD(GTEXT, CHAR(10), GI)) # "" THEN NG = NG + 1
+      IF TRIM(SREC<2,GI>) # "" THEN NG = NG + 1
    NEXT GI
    IF NG = 0 THEN PRINT "no packages installed" ; RETURN
    SPEC = MAPFIELD("description", 1, "", "", "")
@@ -47,10 +48,9 @@
    WRAPW = WID - 41            ;* description column = window width minus the 3 fixed cols
    PRINT FMT("PACKAGE", "22L") : FMT("VERSION", "9L") : FMT("STATUS", "10L") : "DESCRIPTION"
    FOR GI = 1 TO NL
-      LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
-      IF LN # "" THEN
-         NM = FIELD(LN, " ", 1)
-         VER = FIELD(LN, " ", 2)
+      NM = TRIM(SREC<2,GI>)
+      IF NM # "" THEN
+         VER = TRIM(SREC<3,GI>)
          * description from the package's stored manifest (local, no network)
          PKGKEY = CHANGE(NM, "/", "_")
          OSREAD J FROM STORE : "/" : PKGKEY : "/mvpkg.json" ELSE J = ""

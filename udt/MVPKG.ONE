@@ -52,14 +52,14 @@
       RETURN
    END
    DEST = STORE : "/" : PKGKEY
-   GMAN = STORE : "/installed"
-   GKEY = META<1> : " " : META<2>
-   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+   * is this package already in the SYSTEM store at this version?  MVPKG.STORE
+   * "installed" is the per-system inventory (<2> names / <3> parallel versions)
+   * of everything downloaded + globally cataloged on this machine.
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
    GINST = 0
-   NG = DCOUNT(GTEXT, CHAR(10))
-   FOR GI = 1 TO NG
-      IF TRIM(FIELD(GTEXT, CHAR(10), GI)) = GKEY THEN GINST = 1
-   NEXT GI
+   LOCATE(META<1>, SREC, 2; SPOS) THEN
+      IF TRIM(SREC<3,SPOS>) = META<2> THEN GINST = 1
+   END
    IF GINST = 0 THEN
       TMP = "/tmp/mvpkg_" : PKGKEY : ".tar.gz"
       PRINT "fetching " : META<1> : " " : META<2> : " ..."
@@ -81,9 +81,18 @@
       IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
       GOSUB PARSEDEPLOY
       GOSUB CATGLOBAL
-      IF GTEXT # "" AND GTEXT[LEN(GTEXT), 1] # CHAR(10) THEN GTEXT := CHAR(10)
-      GTEXT := GKEY : CHAR(10)
-      OSWRITE GTEXT ON GMAN
+      * record it in the system inventory (add, or update its version)
+      CALL MVPKGOS("STOREREAD", "installed", "", SREC)
+      IF SREC = "" THEN SREC = "MVPKG-STORE"
+      LOCATE(META<1>, SREC, 2; SPOS) THEN
+         SREC<3,SPOS> = META<2>
+      END ELSE
+         SAN = DCOUNT(SREC<2>, @VM) + 1
+         SREC<2,SAN> = META<1>
+         SREC<3,SAN> = META<2>
+      END
+      CALL MVPKGOS("STOREWRITE", "installed", SREC, SERR)
+      IF SERR # "" THEN PRINT "mvpkg: " : SERR
       PRINT "installed " : META<1> : " " : META<2> : " (globally cataloged)"
    END ELSE
       GOSUB PARSEDEPLOY

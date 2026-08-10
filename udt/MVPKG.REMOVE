@@ -13,12 +13,10 @@
    CALL MVPKGOS("STORE", "", "", STORE)
    PKGKEY = CHANGE(NM, "/", "_")
    DEST = STORE : "/" : PKGKEY
-   GMAN = STORE : "/installed"
-   OSREAD GTEXT FROM GMAN ELSE GTEXT = ""
+   * is it in the SYSTEM store? (MVPKG.STORE "installed" <2> names)
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
    INST = 0
-   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-      IF FIELD(TRIM(FIELD(GTEXT, CHAR(10), GI)), " ", 1) = NM THEN INST = 1
-   NEXT GI
+   LOCATE(NM, SREC, 2; SPOS) THEN INST = 1
    IF INST = 0 THEN PRINT NM : " is not installed" ; RETURN
    PRINT "removing " : NM : " ..."
    * verbs to un-deploy (from the store copy's mvpkg.json deploy block)
@@ -36,13 +34,15 @@
    OSREAD CCF FROM DEST : "/udt-callc/funcs" THEN HASCC = 1 ELSE HASCC = 0
    IF HASCC THEN CALL MVPKGOS("CALLCRM", PKGKEY, "", ERR) ; IF ERR # "" THEN PRINT ERR
    CALL MVPKGOS("RMDIR", DEST, "", ERR)
-   * drop it from the global store manifest
-   NEW = ""
-   FOR GI = 1 TO DCOUNT(GTEXT, CHAR(10))
-      LN = TRIM(FIELD(GTEXT, CHAR(10), GI))
-      IF LN # "" AND FIELD(LN, " ", 1) # NM THEN NEW := LN : CHAR(10)
-   NEXT GI
-   OSWRITE NEW ON GMAN
+   * drop it from the SYSTEM store inventory (name + parallel version)
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
+   LOCATE(NM, SREC, 2; SPOS) THEN
+      SREC = DELETE(SREC, 2, SPOS, 0)
+      SREC = DELETE(SREC, 3, SPOS, 0)
+      CALL MVPKGOS("STOREWRITE", "installed", SREC, SERR)
+   END
+   * drop the source working-copy marker too, if any
+   CALL MVPKGOS("STOREDELETE", "SRC." : PKGKEY, "", SERR)
    * drop it from this account's lock (the MVPKG.LOCK record), name + version
    CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
    NREC = "MVPKG-LOCK"
