@@ -75,7 +75,14 @@ SRCUPDATE:
    RC = TRIM(CONVERT(CHAR(10) : CHAR(13), "  ", RC))
    IF RC # "0" THEN
       PRINT NM : ": git pull failed (exit " : RC : ") — resolve local changes in " : WCDIR
-   END ELSE
-      PRINT NM : ": pulled (rebuild with the account's install.sh if needed)"
+      RETURN
+   END
+   * rebuild + redeploy the working copy through the standard declarative path,
+   * so the pulled (or locally edited) source goes live.
+   PRINT NM : ": pulled — rebuilding ..."
+   CALL MVPKG.META(NM, "", REG, MB)
+   IF MB # "" THEN
+      MB<9> = WCDIR
+      CALL MVPKG.ONE(MB, REG)
    END
    RETURN

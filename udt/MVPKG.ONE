@@ -20,6 +20,22 @@
    * caught a registry miss (MVPKG.META returns "" for one), but guard here too.
    IF TRIM(META<1>) = "" THEN PRINT "mvpkg: empty package metadata — skipping" ; RETURN
    PKGKEY = CHANGE(META<1>, "/", "_")
+   * --source: build + deploy directly from a git working copy (its path in
+   * META<9>) through the SAME declarative path as a binary install — fold the
+   * native CallC contribution, globally catalog the code, deploy the mvpkg.json
+   * verbs + files.  No download, no store manifest (MVPKG install --source
+   * records the working copy), and NO package script — the fixed set of MVPKGOS
+   * operations is the one trusted install path everything goes through.
+   SRCDIR = TRIM(META<9>)
+   IF SRCDIR # "" THEN
+      DEST = SRCDIR
+      CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
+      IF ERR # "" THEN PRINT ERR ; RETURN
+      GOSUB PARSEDEPLOY
+      GOSUB CATGLOBAL
+      GOSUB DEPLOYACCT
+      RETURN
+   END
    DEST = STORE : "/" : PKGKEY
    GMAN = STORE : "/installed"
    GKEY = META<1> : " " : META<2>

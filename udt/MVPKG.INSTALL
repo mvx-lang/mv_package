@@ -179,15 +179,13 @@
    OSWRITE MTEXT ON MFILE
    RETURN
 
-* SRCINSTALL — source mode: clone the package's account-repo into a git working
-* copy (via udt-git), so the installed account IS an editable checkout you can
-* develop, commit, and push from.  Gated on git as an optional capability
-* (CALLC.EXISTS) — binary/release mode stays the default.  `MVPKG update` then
-* pulls + re-materialises (needs udt-git pull; tracked in mv_git remotes).
+* SRCINSTALL — source mode: git-clone the package's SOURCE repo into an editable
+* working copy, then build + deploy it through the SAME declarative install path
+* as a binary release (MVPKG.ONE, driven by mvpkg.json) — no per-package script.
+* `MVPKG update` git-pulls + rebuilds.  Plain `git clone`, not udt-git clone,
+* because the package repos are normal source trees (plain BP/*), not record-git
+* DATA accounts.
 SRCINSTALL:
-   * Source mode clones the package's SOURCE repo (plain BP/* files) into an
-   * editable working copy with a plain `git clone` — udt-git clone is for
-   * record-git DATA accounts, not source repos, so it materialises nothing here.
    CALL MVPKG.META(A1, "", REG, META)
    IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
    REPO = TRIM(META<8>)
@@ -202,6 +200,11 @@ SRCINSTALL:
    EXECUTE '!rm -f "' : TMPF : '"'
    RC = TRIM(CONVERT(CHAR(10) : CHAR(13), "  ", RC))
    IF RC # "0" THEN PRINT "mvpkg: clone failed (git exit " : RC : ") — is git installed? (sudo dnf install -y git)" ; RETURN
+   * build + deploy the working copy through the standard declarative path
+   * (MVPKG.ONE source mode): fold native CallC, globally catalog, deploy verbs +
+   * files — the SAME path a binary install uses, no package script.
+   META<9> = TGTDIR
+   CALL MVPKG.ONE(META, REG)
    * record the source install: a store-manifest line ("name source") so it shows
    * in MVPKG LIST, plus a marker holding the working-copy path for MVPKG update.
    CALL MVPKGOS("STORE", "", "", STORE)
@@ -220,9 +223,9 @@ SRCINSTALL:
       GTEXT := GKEY : CHAR(10)
       OSWRITE GTEXT ON GMAN
    END
-   PRINT "source install: " : TGTDIR : " is a git working copy of " : META<1>
-   PRINT "  edit / commit / push there; provision + build it with its install.sh"
-   PRINT "  (or build.sh); 'MVPKG update' git-pulls it."
+   PRINT "source install: " : TGTDIR : " is an editable working copy of " : META<1>
+   PRINT "  (built + deployed).  Edit BP/*, then  MVPKG update " : META<1>
+   PRINT "  to git-pull + rebuild; commit / push from " : TGTDIR : "."
    RETURN
 
 * OPTMISS — dependency P could not be resolved (reason MISSWHY).  If it is
