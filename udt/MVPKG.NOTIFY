@@ -1,0 +1,66 @@
+* mv_package — MVPKG subcommand: notify (UniData port).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG notify — meant for an account's LOGIN paragraph.  If any package
+* DEPLOYED in this account is behind the SYSTEM store (it was upgraded in
+* another account, so MVPKG.STORE's version is newer than this account's
+* MVPKG.LOCK version), pop up a modal listing them; the user presses OK to
+* acknowledge and login continues.
+*
+* It is a silent no-op in any NON-interactive session — @USER.TYPE # 0 covers
+* RedBack/U2-web, phantom, batch, and piped sessions (no terminal to draw a
+* modal on).  @USER.TYPE is the portable session-type test: 0 = interactive on
+* UniData/UniVerse and mvx alike (D3 would map its user-vs-phantom PIB onto it).
+   SUBROUTINE MVPKG.NOTIFY
+   IF @USER.TYPE # 0 THEN RETURN          ;* not a terminal (web/phantom/batch/pipe)
+
+   * find packages deployed here that the system store has a newer version of
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", LREC)
+   CALL MVPKGOS("STOREREAD", "installed", "", SREC)
+   UPG = "" ; UFROM = "" ; UTO = ""
+   FOR I = 1 TO DCOUNT(LREC<2>, @VM)
+      NM = TRIM(LREC<2,I>) ; LV = TRIM(LREC<3,I>)
+      IF NM # "" AND LV # "" AND LV # "source" THEN
+         LOCATE(NM, SREC, 2; SP) THEN
+            SV = TRIM(SREC<3,SP>)
+            IF SV # "" AND SV # "source" THEN
+               CALL SEMVER("CMP", SV, LV, CR)
+               IF CR > 0 THEN UPG<-1> = NM ; UFROM<-1> = LV ; UTO<-1> = SV
+            END
+         END
+      END
+   NEXT I
+   IF DCOUNT(UPG, @AM) = 0 OR UPG<1> = "" THEN RETURN   ;* nothing behind — silent
+
+   * the message the modal shows
+   MSG = "Package updates are available in this account:"
+   FOR I = 1 TO DCOUNT(UPG, @AM)
+      MSG<-1> = "   " : UPG<I> : "   " : UFROM<I> : "  ->  " : UTO<I>
+   NEXT I
+   MSG<-1> = ""
+   MSG<-1> = "Run  MVPKG update  to upgrade this account."
+
+   * draw it: a boxed curses modal when the curses package is deployed here,
+   * else a plain terminal prompt (no dependency).  MVPKG.HAS is the runtime probe.
+   CALL MVPKG.HAS("mvx-lang/curses", HASCURS)
+   IF HASCURS THEN GOSUB CURSMODAL ELSE GOSUB STDMODAL
+   RETURN
+
+* STDMODAL — a plain prompt that works on any terminal; OK = the RETURN key.
+STDMODAL:
+   PRINT
+   PRINT STR("=", 64)
+   FOR I = 1 TO DCOUNT(MSG, @AM)
+      PRINT MSG<I>
+   NEXT I
+   PRINT STR("=", 64)
+   PRINT "[ Press RETURN to continue ] " :
+   INPUT DUMMY
+   RETURN
+
+* CURSMODAL — a boxed modal via the curses package (an OK button read with its
+* named KEYIN).  TODO: draw with the curses primitives; for now it falls back to
+* the standard prompt so notify is fully functional without curses drawing yet.
+CURSMODAL:
+   GOSUB STDMODAL
+   RETURN
