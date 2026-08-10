@@ -5,6 +5,7 @@
   "license": "GPL-2.0-only",
   "systems": ["mvx", "udt"],
   "dependencies": ["mvx-lang/http@mvx", "curl@!mvx", "mvx-lang/json@!mvx", "?mvx-lang/cmd"],
+  "shell": ["mkdir", "rm", "tar", "uname", "od", "sed", "grep", "sort", "wc", "tr", "ldconfig", "mkpkg", "udt-callc-build", "git", "sudo", "chown", "ls", "id"],
   "deploy": {
     "verbs": ["MVPKG"],
     "fallback": { "cmd": ["CMD.BP"] }
