@@ -26,8 +26,13 @@ set -e
 UDTHOME="${UDTHOME:-/usr/ud83}"
 HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 LANG_OK="${LANG:-en_US.UTF-8}"; case "$LANG_OK" in C.UTF-8|POSIX|C) LANG_OK=en_US.UTF-8 ;; esac
-OWNER="${UDT_OWNER:-${SUDO_USER:-$(id -un)}}"
-GROUP="${UDT_GROUP:-$(id -gn "$OWNER" 2>/dev/null || id -gn)}"
+# The operator: an explicit UDT_OWNER, else whoever owns this unpacked release
+# (they unpacked it as themselves).  Robust whether we were started with sudo, su,
+# or a plain root login — unlike $SUDO_USER, which is unset under `su -`/a root
+# shell.  Fall back to the current user only if the dir owner is unreadable/root.
+OWNER="${UDT_OWNER:-$(ls -ld "$HERE" 2>/dev/null | awk 'NR==1{print $3}')}"
+[ -n "$OWNER" ] && [ "$OWNER" != root ] || OWNER="$(id -un)"
+GROUP="${UDT_GROUP:-$(id -gn "$OWNER" 2>/dev/null || echo "$OWNER")}"
 UDT="$UDTHOME/bin/udt"
 
 say() { printf 'mvpkg-install: %s\n' "$1"; }
@@ -38,6 +43,22 @@ command -v sudo >/dev/null 2>&1 || die "sudo not found — needed for \$UDTHOME 
 # doesn't reliably reach github + follow redirects), so curl is a prerequisite.
 command -v curl >/dev/null 2>&1 || die "curl not found — MVPKG downloads packages over HTTP with curl: sudo dnf install -y curl"
 [ -d "$HERE/BP" ] || die "no BP/ here — run this from the unpacked mvpkg udt account"
+
+# Do the operator-level work (newacct, the GLOBAL catalog, MVPKG init + the store)
+# AS THE OPERATOR, not root: root is needed only for the $UDTHOME/bin writes, which
+# the steps below elevate with sudo themselves.  This matters because a native
+# `MVPKG install` catalogs GLOBALLY as the operator, and a later `MVPKG update`
+# re-catalogs the same way — if install left the CTLG entries root-owned, that
+# update fails with 'Copy catalog file error'.  So if we are root ("am I root" is
+# `id -u`, NOT $SUDO_USER) but the operator is someone else, re-exec as them; the
+# operator's sudo then elevates only the few $UDTHOME writes (the same it would if
+# invoked as `./install.sh` directly — no new requirement).
+if [ "$(id -u)" = 0 ] && [ "$OWNER" != root ]; then
+  id "$OWNER" >/dev/null 2>&1 || die "operator '$OWNER' is not a user — set UDT_OWNER"
+  say "root invocation: re-running as the operator '$OWNER' (root elevates only \$UDTHOME writes)"
+  exec sudo -u "$OWNER" UDTHOME="$UDTHOME" LANG="$LANG_OK" MVPKG_STORE="${MVPKG_STORE:-}" \
+    UDT_OWNER="$OWNER" UDT_GROUP="$GROUP" -- "$HERE/$(basename -- "$0")" "$@"
+fi
 
 # 1) make this dir a real UniData account (idempotent) — the operator account
 if [ -e "$HERE/VOC" ]; then
@@ -125,15 +146,15 @@ done
 ( cd "$HERE" && printf 'MVPKG register mvx-lang/mvpkg %s\nQUIT\n' "$MVVER" | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
   | grep -iE "registered|error|not found|msgq" | sed 's/^/  /' || true
 
-# Everything above ran as root (this whole script runs under sudo — for the
-# $UDTHOME writes) and so created root-owned files in the operator account and the
-# store: the compiled BP/_* objects, the MVPKG.STORE inventory + this account's
-# MVPKG.LOCK/MVPKG.MANIFEST, and the downloaded package sources under $STORE.  Hand
-# them all back to the operator so MVPKG — run as that user — can write the store
-# and its records (else register/install fail: "File is readonly, permission
-# denied" on MVPKG.STORE).  Step 4 chowned only the store dir, before these writes.
-say "handing the operator account + store to $OWNER:$GROUP"
-sudo chown -R "$OWNER:$GROUP" "$HERE" "$STORE"
+# Safety net: the re-exec above means the operator work already ran as $OWNER, so
+# the account, catalog and store are operator-owned.  But a $UDTHOME write elevated
+# with sudo, or a pre-existing store dir from an earlier root install, could still
+# leave a root-owned file the operator's MVPKG must later overwrite — so reassert
+# operator ownership of the account + store (a no-op when it already holds).  This
+# only covers $HERE/$STORE; global catalog ownership comes from cataloging as the
+# operator, which the re-exec guarantees (a chown of $UDTHOME/sys/CTLG would fight
+# UniData's own catalog bookkeeping).
+sudo chown -R "$OWNER:$GROUP" "$HERE" "$STORE" 2>/dev/null || true
 
 cat <<EOF
 mvpkg-install: done.
