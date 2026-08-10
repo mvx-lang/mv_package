@@ -106,6 +106,21 @@
          EW = CONVERT(@AM:@FM:CHAR(10):CHAR(13), "    ", EW)
          IF INDEX(EW, "0102", 1) THEN ENDIAN = "be" ELSE ENDIAN = "le"
          RESULT = "mvx:" : OSN : ":" : ARCH : ":" : ENDIAN
+      CASE OP = "MDREAD"
+         * Read a record from the account master dictionary (VOC/MD) — the
+         * portable home for account state (manifest / lock / installed set).
+         * P1 = record id; RESULT = the record, or "" when it is not on file.
+         OPEN "VOC" TO MDF ELSE RESULT = "" ; RETURN
+         READ MDR FROM MDF, P1 THEN RESULT = MDR ELSE RESULT = ""
+      CASE OP = "MDWRITE"
+         * P1 = record id, P2 = the record.  Persist account state as a native
+         * master-dictionary record.
+         OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDWRITE: cannot open VOC" ; RETURN
+         WRITE P2 ON MDF, P1
+      CASE OP = "MDDELETE"
+         * P1 = record id.  Remove an account state record.
+         OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open VOC" ; RETURN
+         DELETE MDF, P1
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE
