@@ -24,7 +24,7 @@ $ENDIF
    * optional target dir, and flags.  --source / -s selects source mode: clone
    * the package's account-repo into a git working copy instead of unpacking a
    * release tar.
-   SRCMODE = 0 ; A1 = "" ; TGTDIR = ""
+   SRCMODE = 0 ; A1 = "" ; TGTDIR = "" ; REF = ""
    FOR FI = 3 TO DCOUNT(S, " ")
       W = FIELD(S, " ", FI)
       IF W = "--source" OR W = "-s" THEN
@@ -36,9 +36,39 @@ $ENDIF
       END
    NEXT FI
    CALL MVPKG.REG(REG)
+
+   * "name@ref" on the command line selects a git ref (dev branch / tag) to build
+   * from source (latest unreleased work, or a released source point).  On the
+   * command line "@" is a ref — the "@system" filter is a manifest-dependency
+   * concern (DEPAPPLY), never typed here — so this is unambiguous.
+   IF A1 # "" AND INDEX(A1, "@", 1) THEN
+      REF = FIELD(A1, "@", 2, 99)
+      A1 = FIELD(A1, "@", 1)
+      SRCMODE = 1
+   END
+
    IF SRCMODE THEN
-      IF A1 = "" THEN PRINT "usage: MVPKG install <name> --source [<dir>]" ; RETURN
+      IF A1 = "" THEN PRINT "usage: MVPKG install <name>[@ref] [--source [<dir>]]" ; RETURN
       GOSUB SRCINSTALL ; RETURN
+   END
+
+   * Automatic source fallback: no --source, no @ref, but if the registry serves no
+   * binary for this system+machine (META<10> selected # "binary") and the package
+   * names a srcrepo, build from source — the git package (its GIT verb) is the one
+   * requirement.  No binary AND no git -> a clear per-platform error, not a silent
+   * "installed nothing".
+   IF A1 # "" THEN
+      CALL MVPKG.META(A1, "", REG, FBMETA)
+      IF FBMETA # "" AND TRIM(FBMETA<10>) # "binary" AND TRIM(FBMETA<8>) # "" THEN
+         GOSUB HASGIT
+         IF GITOK THEN
+            SRCMODE = 1 ; GOSUB SRCINSTALL ; RETURN
+         END ELSE
+            CALL MVPKGOS("PLATFORM", "", "", PL)
+            PRINT "mvpkg: no compatible release for " : FIELD(PL, ":", 1) : "/" : FIELD(PL, ":", 3) : " — install the git package to build from source"
+            RETURN
+         END
+      END
    END
 
    * this client's system, for platform-gated deps + manifest parsing (DEPAPPLY)
@@ -244,13 +274,28 @@ WRITELOCK:
    IF WERR # "" THEN PRINT "mvpkg: " : WERR
    RETURN
 
-* SRCINSTALL — source mode: git-clone the package's SOURCE repo into an editable
+* HASGIT — GITOK = 1 when the git engine's clone is reachable (source mode clones
+* with it).  mvx: is GITCLONE cataloged (the git package linked); udt: udt-git
+* ships with the udt mvpkg install, so assume present.
+HASGIT:
+   GITOK = 0
+$IFDEF MVX
+   IF CATALOGED("GITCLONE") THEN GITOK = 1
+$ELSE
+   GITOK = 1
+$ENDIF
+   RETURN
+
+* SRCINSTALL — source mode: clone the package's SOURCE repo into an editable
 * working copy, then build + deploy it through the SAME declarative install path
 * as a binary release (MVPKG.ONE, driven by mvpkg.json) — no per-package script.
-* `MVPKG update` git-pulls + rebuilds.  Plain `git clone`, not udt-git clone,
-* because the package repos are normal source trees (plain BP/*), not record-git
-* DATA accounts.
+* `MVPKG update` GIT PULLs + rebuilds.  The clone goes through the git engine
+* (GITCLONE, libgit2) — no shell, any tier, and the same call works on mvx-git and
+* udt-git; the package repos are normal source trees (plain BP/*), which a plain
+* working-tree clone materialises directly.
 SRCINSTALL:
+   GOSUB HASGIT
+   IF NOT(GITOK) THEN PRINT "mvpkg: source installs need the git package — MVPKG install mvx-lang/git" ; RETURN
    CALL MVPKG.META(A1, "", REG, META)
    IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
    REPO = TRIM(META<8>)
@@ -258,17 +303,14 @@ SRCINSTALL:
    * default target: the package's short name, under $HOME so it is writable
    IF TGTDIR = "" THEN TGTDIR = FIELD(META<1>, "/", DCOUNT(META<1>, "/"))
    IF TGTDIR[1, 1] # "/" THEN TGTDIR = GETENV("HOME") : "/" : TGTDIR
-   PRINT "cloning " : META<1> : " from " : REPO : " -> " : TGTDIR : " ..."
-   TMPF = "/tmp/mvpkg_clone_" : @USERNO
-   EXECUTE '!git clone "' : REPO : '" "' : TGTDIR : '"; echo $? > "' : TMPF : '"'
-$IFDEF MVX
-   RC = OSREAD(TMPF) ; IF STATUS() # 0 THEN RC = "1"
-$ELSE
-   OSREAD RC FROM TMPF ELSE RC = "1"
-$ENDIF
-   EXECUTE '!rm -f "' : TMPF : '"'
-   RC = TRIM(CONVERT(CHAR(10) : CHAR(13), "  ", RC))
-   IF RC # "0" THEN PRINT "mvpkg: clone failed (git exit " : RC : ") — is git installed? (sudo dnf install -y git)" ; RETURN
+   RD = "" ; IF REF # "" THEN RD = " @ " : REF
+   PRINT "cloning " : META<1> : RD : " from " : REPO : " -> " : TGTDIR : " ..."
+   * Clone (and check REF out) through the git engine — libgit2, no shell, runs at
+   * any tier, portable across mvx-git / udt-git; the clone sets up the working
+   * tree + origin, so `MVPKG update` can GIT PULL it later.
+   CLOUT = ""
+   CALL GITCLONE(REPO, TGTDIR, REF, CLOUT)
+   IF INDEX(CLOUT, "cloned ", 1) = 0 THEN PRINT "mvpkg: clone failed — " : CLOUT ; RETURN
    * build + deploy the working copy through the standard declarative path
    * (MVPKG.ONE source mode): fold native CallC, globally catalog, deploy verbs +
    * files — the SAME path a binary install uses, no package script.

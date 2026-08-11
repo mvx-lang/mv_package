@@ -32,6 +32,7 @@ $ENDIF
    SPEC<-1> = MAPFIELD("provides", 7, "", "", "")
    SPEC<-1> = MAPFIELD("srcrepo", 8, "", "", "")
    SPEC<-1> = MAPFIELD("clibs", 9, "", "", "")
+   SPEC<-1> = MAPFIELD("selected", 10, "", "", "")
    PLATQ = ""
    CALL MVPKGOS("PLATFORM", "", "", PLAT)
    IF PLAT # "" AND INDEX(PLAT, ":", 1) THEN
