@@ -1,6 +1,9 @@
 * Portable semver for MVPKG dependency resolution.  GPL-2.0-only.
 *   OP="CMP"  RESULT = -1/0/1  comparing VER and CONS as versions
 *   OP="SAT"  RESULT = 1/0     does VER satisfy the constraint CONS
+*   OP="STABILITY"  RESULT = dev|alpha|beta|rc|stable  the build's stability, read
+*                   from its pre-release tag (mv_package#30 part 1).  Ranked
+*                   dev < alpha < beta < rc < stable for a later minimum-stability.
 * Versions: major.minor.patch[-prerelease].  A prerelease (1.2.0-beta.1) sorts
 * BEFORE its release and is EXCLUDED by default (stable-only) unless the
 * constraint itself names a prerelease.  Constraints: "" / "*" (any), exact
@@ -9,7 +12,25 @@
    BEGIN CASE
       CASE OP = "CMP" ; A = VER ; B = CONS ; GOSUB VCMP ; RESULT = CMP
       CASE OP = "SAT" ; GOSUB SATISFY ; RESULT = SAT
+      CASE OP = "STABILITY" ; GOSUB STABILITY ; RESULT = STB
       CASE 1 ; RESULT = ""
+   END CASE
+   RETURN
+* STABILITY — classify VER's build stability from its pre-release tag: no
+* pre-release is stable; otherwise the first dotted segment names the level
+* (rc, beta/b, alpha/a, dev), any other pre-release treated as dev (least stable).
+STABILITY:
+   PVIN = VER ; GOSUB PARSE
+   IF PPRE = "" THEN STB = "stable" ; RETURN
+   FST = OCONV(FIELD(PPRE, ".", 1), "MCL")
+   BEGIN CASE
+      CASE FST[1, 2] = "rc"    ; STB = "rc"
+      CASE FST[1, 4] = "beta"  ; STB = "beta"
+      CASE FST[1, 5] = "alpha" ; STB = "alpha"
+      CASE FST[1, 3] = "dev"   ; STB = "dev"
+      CASE FST[1, 1] = "b"     ; STB = "beta"
+      CASE FST[1, 1] = "a"     ; STB = "alpha"
+      CASE 1                   ; STB = "dev"
    END CASE
    RETURN
 PARSE:
