@@ -31,25 +31,27 @@
 *                   objects + data files).
 *
 * RESULT is returned "" on success or an error message.  On MVX these run
-* through EXECUTE "!...", so the caller needs the unrestricted privilege tier
-* (installing software is inherently privileged); other ports may differ.
+* through the runtime's native primitives (MKDIR/RMTREE/UNTAR/UNAME) and OSEXEC
+* — argv-style, no shell — so MVPKG runs at the RESTRICTED tier with only the
+* vendor permit its .mvx declares (mkdir rmtree untar mkpkg chown), not the
+* whole-shell unrestricted tier; other ports may differ.
    SUBROUTINE MVPKGOS(OP, P1, P2, RESULT)
    RESULT = ""
    OP = OCONV(OP, "MCU")
    BEGIN CASE
       CASE OP = "MKDIR"
-         EXECUTE '!mkdir -p "':P1:'"'
+         IF MKDIR(P1) < 1 THEN RESULT = "MVPKGOS MKDIR: cannot create " : P1
       CASE OP = "RMRF"
-         * P1 = path.  Remove it and its contents (a stale store checkout
-         * before a fresh untar).  Shell escapes live here in the OS seam, not
-         * in the portable client.
-         EXECUTE '!rm -rf "':P1:'"'
+         * P1 = path.  Remove it and its contents (a stale store checkout before
+         * a fresh untar) with the native recursive-delete primitive — no shell,
+         * so nothing to escape.
+         IF RMTREE(P1) < 1 THEN RESULT = "MVPKGOS RMRF: cannot remove " : P1
       CASE OP = "UNTAR"
-         * Extract into P2.  Account-shaped packages wrap their tree in one named
-         * top dir (e.g. git/); contents-at-root packages do not.  Count the
-         * distinct top-level components and, when there is exactly one, strip it
-         * so the package's files land at the store root either way.
-         EXECUTE '!mkdir -p "':P2:'"; n=`tar -tzf "':P1:'" | sed "s#^\./##; s#/.*##" | grep -v "^$" | sort -u | wc -l | tr -d " "`; if [ "$n" = 1 ]; then tar -xzf "':P1:'" --strip-components=1 -C "':P2:'"; else tar -xzf "':P1:'" -C "':P2:'"; fi'
+         * Extract P1 into P2 with the native UNTAR primitive: it creates P2 and,
+         * when the archive is wrapped in a single top-level directory (the
+         * account-shaped-package convention, e.g. git/), unwraps it so the
+         * package's files land at the store root either way — no shell pipeline.
+         IF UNTAR(P1, P2) # 0 THEN RESULT = "MVPKGOS UNTAR: cannot extract " : P1
       CASE OP = "CALLC"
          * MVX has no shared CallC library to aggregate — nothing to do.
       CASE OP = "REBUILD"
@@ -60,7 +62,7 @@
          * each account.  $MVPKG_STORE overrides the default $HOME/.mvxpkg.
          SP = ENV("MVPKG_STORE")
          IF SP = "" THEN SP = ENV("HOME") : "/.mvxpkg"
-         EXECUTE '!mkdir -p "':SP:'"'
+         IF MKDIR(SP) < 1 THEN RESULT = "MVPKGOS STORE: cannot create " : SP ; RETURN
          RESULT = SP
       CASE OP = "BUILD"
          * P1 = package dir.  Build it (compile BP -> CATALOG/ verbs + LIB/
@@ -71,7 +73,11 @@
          * mkpkg shell build (which also handles *.BP fallback source dirs).
          EXECUTE 'BUILD-PKG ' : P1 CAPTURING BOUT
          IF INDEX(BOUT, "BUILD-PKG-NATIVE", 1) THEN
-            EXECUTE '!test -d "':P1:'/BP" && mkpkg "':P1:'" || true'
+            * C-extension package: BUILD-PKG can't compile it, so fall back to the
+            * mkpkg build, argv-style via OSEXEC (it locates BP/ and *.BP source
+            * dirs itself).  Best-effort — a missing build tool is the package's
+            * problem to report, not the seam's.
+            JUNK = OSEXEC('mkpkg' : @FM : P1, MOUT)
          END ELSE
             IF INDEX(BOUT, "failed", 1) THEN RESULT = BOUT
          END
@@ -88,8 +94,7 @@
          * os = uname -s (native code is OS-locked); arch = uname -m; endian
          * from a two-byte dump (0201 = little, 0102 = big — the axis for
          * compiled BASIC objects + data files).
-         EXECUTE '!uname -s' CAPTURING OSN
-         OSN = OCONV(TRIM(CONVERT(@AM:@FM:CHAR(10):CHAR(13), "    ", OSN)), "MCL")
+         OSN = OCONV(UNAME('s'), "MCL")
          BEGIN CASE
             CASE INDEX(OSN, "linux", 1) ; OSN = "linux"
             CASE INDEX(OSN, "aix", 1)   ; OSN = "aix"
@@ -99,12 +104,9 @@
             CASE INDEX(OSN, "windows", 1) OR INDEX(OSN, "cygwin", 1) OR INDEX(OSN, "mingw", 1) ; OSN = "windows"
             CASE OSN = "" ; OSN = "unknown"
          END CASE
-         EXECUTE '!uname -m' CAPTURING ARCH
-         ARCH = TRIM(CONVERT(@AM:@FM:CHAR(10):CHAR(13), "    ", ARCH))
+         ARCH = UNAME('m')
          IF ARCH = "" THEN ARCH = "unknown"
-         EXECUTE "!printf '\1\2' | od -An -tx2 | tr -d ' '" CAPTURING EW
-         EW = CONVERT(@AM:@FM:CHAR(10):CHAR(13), "    ", EW)
-         IF INDEX(EW, "0102", 1) THEN ENDIAN = "be" ELSE ENDIAN = "le"
+         ENDIAN = UNAME('e')
          RESULT = "mvx:" : OSN : ":" : ARCH : ":" : ENDIAN
       CASE OP = "MDREAD"
          * Read a record from the account master dictionary (VOC/MD) — the
@@ -144,9 +146,10 @@
          * P1 = path, P2 = user.  Re-assign / repair ownership — MVX installs as
          * the invoking user (no DBA-owned global catalog to repair), so this is
          * mainly for CHANGING the operator (a new owner of the store + account),
-         * which needs privilege to cross users.  It shells out, so MVPKG's declared
-         * command surface must permit chown (vendor permit in .mvx; see FIXPERMS).
-         IF P1 # "" AND P2 # "" THEN EXECUTE '!chown -R "' : P2 : '" "' : P1 : '" 2>/dev/null'
+         * which needs privilege to cross users.  Runs chown argv-style via OSEXEC,
+         * so MVPKG's declared command surface must permit chown (vendor permit in
+         * .mvx; see FIXPERMS).  Best-effort — captured, rc ignored.
+         IF P1 # "" AND P2 # "" THEN JUNK = OSEXEC('chown' : @FM : '-R' : @FM : P2 : @FM : P1, COUT)
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE
@@ -161,6 +164,6 @@ STOREOPEN:
    SP = ENV("MVPKG_STORE")
    IF SP = "" THEN SP = ENV("HOME") : "/.mvxpkg"
    SF = SP : "/MVPKG.STORE"
-   EXECUTE '!mkdir -p "' : SF : '"'
+   IF MKDIR(SF) < 1 THEN RETURN
    OPEN SF TO STF THEN STFOK = 1
    RETURN
