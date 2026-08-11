@@ -19,7 +19,7 @@
 * pointers + declared files (the mvpkg.json deploy block, walked by MVPKGDEP).
    SUBROUTINE MVPKG.ONE(META, REG, RESULT)
 $IFNDEF MVX
-   DEFFUN HTTPGETFILE(A, B)
+   DEFFUN HTTPGETFILE(A, B) CALLING "*MVPKG.HTTPGETFILE"
 $ENDIF
    RESULT = ""
    CALL MVPKGOS("STORE", "", "", STORE)

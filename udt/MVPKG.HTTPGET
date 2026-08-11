@@ -1,4 +1,4 @@
-FUNCTION HTTPGET(URL)
+FUNCTION MVPKG.HTTPGET(URL)
 * mv_package UniData seam — HTTP GET returning the response body.  On MVX
 * this is the `http` extension; on UniData it shells out to curl (like the
 * rest of the OS seam), so the portable client is unchanged.  GPL-2.0-only.

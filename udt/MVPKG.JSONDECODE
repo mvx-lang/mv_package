@@ -1,4 +1,4 @@
-FUNCTION JSONDECODE(JSON, SPEC)
+FUNCTION MVPKG.JSONDECODE(JSON, SPEC)
 * mv_package UniData seam — decode JSON per a MAPFIELD spec into an @AM array,
 * each value at its mapped attribute.  Handles the shapes the registry returns:
 *   - scalar fields (assoc empty): a flat "key":"value" in the object;
