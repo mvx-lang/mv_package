@@ -35,6 +35,26 @@ OWNER="${UDT_OWNER:-$(ls -ld "$HERE" 2>/dev/null | awk 'NR==1{print $3}')}"
 GROUP="${UDT_GROUP:-$(id -gn "$OWNER" 2>/dev/null || echo "$OWNER")}"
 UDT="$UDTHOME/bin/udt"
 
+# mv_package#34 — test/live isolation.  --local / --direct catalogs THIS install
+# LOCALly (a test env that must never overwrite the live global catalog); --global
+# (default) catalogs system-wide for production.  --prefix <p> namespaces the store
+# this env owns ($UDTHOME/<p>mvpkg), keeping a test install's store separate from
+# live.  Both propagate through the re-exec (via "$@") and on to `MVPKG init`.
+SCOPE=global; PREFIX=; _pfx_next=
+for a in "$@"; do
+  if [ -n "$_pfx_next" ]; then PREFIX="$a"; _pfx_next=; continue; fi
+  case "$a" in
+    --local|--direct) SCOPE=local ;;
+    --global)         SCOPE=global ;;
+    --prefix)         _pfx_next=1 ;;
+    --prefix=*)       PREFIX="${a#--prefix=}" ;;
+  esac
+done
+# The store this env owns: an explicit $MVPKG_STORE wins, else the prefixed default.
+# Export it so every udt session below (and the re-exec) resolves the same store,
+# matching what `MVPKG init` will record in MVPKG.CONF.
+export MVPKG_STORE="${MVPKG_STORE:-$UDTHOME/${PREFIX}mvpkg}"
+
 say() { printf 'mvpkg-install: %s\n' "$1"; }
 die() { printf 'mvpkg-install: %s\n' "$1" >&2; exit 1; }
 [ -d "$UDTHOME" ] && [ -x "$UDT" ] || die "UDTHOME=$UDTHOME is not a UniData install (set UDTHOME)"
@@ -95,37 +115,58 @@ for v in $PROBES $GLOBAL; do
   sudo chown "$OWNER:$GROUP" "$UDTHOME"/sys/CTLG/*/"$v" 2>/dev/null || true
 done
 
-say "compiling + cataloging the client (globals + probes) and the MVPKG verb"
+say "compiling + cataloging the client (scope: $SCOPE) and the MVPKG verb"
 # One BASIC per program, not one BASIC with a long arg list: `BASIC BP <many
 # args>` segfaults udt on this UniData (it still writes the objects, but the
 # session dies before the CATALOGs run).  Per-program compile is clean.
-{
-  for p in $PROBES $GLOBAL MVPKG MVPKG.FIXPERMS; do echo "BASIC BP $p"; done
-  for p in $PROBES $GLOBAL; do echo "CATALOG BP $p FORCE"; done
-  # MVPKG + fixperms are LOCAL to this operator account: fixperms is a host-admin
-  # task (chowns the DBA-owned catalog, reassigns the operator) and must not be
-  # reachable from accounts a package was merely deployed into.
-  echo "CATALOG BP MVPKG LOCAL FORCE"
-  echo "CATALOG BP MVPKG.FIXPERMS LOCAL FORCE"
-  echo "QUIT"
-} | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) >/dev/null 2>&1 || true
-ls "$UDTHOME"/sys/CTLG/*/MVPKGOS >/dev/null 2>&1 \
-  || die "catalog failed — check LANG (not C.UTF-8) and write access to $UDTHOME/sys/CTLG"
-say "cataloged (MVPKGOS -> $(ls "$UDTHOME"/sys/CTLG/*/MVPKGOS 2>/dev/null | head -1))"
+if [ "$SCOPE" = local ]; then
+  # #34 --local: catalog the WHOLE client LOCAL to this operator account, so a
+  # test env is self-contained and never overwrites the live global catalog.
+  {
+    for p in $PROBES $GLOBAL MVPKG MVPKG.FIXPERMS; do echo "BASIC BP $p"; done
+    for p in $PROBES $GLOBAL MVPKG MVPKG.FIXPERMS; do echo "CATALOG BP $p LOCAL FORCE"; done
+    echo "QUIT"
+  } | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) >/dev/null 2>&1 || true
+  # LOCAL catalog leaves no $UDTHOME/sys/CTLG entry — verify via the account VOC.
+  if printf 'CT VOC MVPKGOS\nQUIT\n' | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
+       | grep -qi 'not a record'; then
+    die "local catalog failed — check LANG (not C.UTF-8) and that CATALOG ... LOCAL is permitted"
+  fi
+  say "cataloged locally in $HERE (scope: local — not in the global catalog)"
+else
+  {
+    for p in $PROBES $GLOBAL MVPKG MVPKG.FIXPERMS; do echo "BASIC BP $p"; done
+    for p in $PROBES $GLOBAL; do echo "CATALOG BP $p FORCE"; done
+    # MVPKG + fixperms are LOCAL to this operator account: fixperms is a host-admin
+    # task (chowns the DBA-owned catalog, reassigns the operator) and must not be
+    # reachable from accounts a package was merely deployed into.
+    echo "CATALOG BP MVPKG LOCAL FORCE"
+    echo "CATALOG BP MVPKG.FIXPERMS LOCAL FORCE"
+    echo "QUIT"
+  } | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) >/dev/null 2>&1 || true
+  ls "$UDTHOME"/sys/CTLG/*/MVPKGOS >/dev/null 2>&1 \
+    || die "catalog failed — check LANG (not C.UTF-8) and write access to $UDTHOME/sys/CTLG"
+  say "cataloged (MVPKGOS -> $(ls "$UDTHOME"/sys/CTLG/*/MVPKGOS 2>/dev/null | head -1))"
+fi
 
-# 4) provision the MVPKG store.  It defaults to $UDTHOME/mvpkg (a system location
-#    so every operator account shares one package store), but $UDTHOME is
-#    DBA-owned — so create it and hand it to the operator, else MVPKG (running as
-#    that user) can't write the manifest and every list shows nothing.
-STORE="${MVPKG_STORE:-$UDTHOME/mvpkg}"
+# 4) provision the MVPKG store.  It defaults to $UDTHOME/<prefix>mvpkg (a system
+#    location so every operator account of this env shares one package store), but
+#    $UDTHOME is DBA-owned — so create it and hand it to the operator, else MVPKG
+#    (running as that user) can't write the manifest and every list shows nothing.
+STORE="$MVPKG_STORE"
 say "provisioning the MVPKG store $STORE (owner $OWNER:$GROUP)"
 sudo mkdir -p "$STORE"
 sudo chown "$OWNER:$GROUP" "$STORE"
 
-# 5) initialise MVPKG (registry + store + this account's manifest)
-say "MVPKG init"
-( cd "$HERE" && printf 'MVPKG init -y\nQUIT\n' | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
-  | grep -iE "initialised|registry|store|include" | sed 's/^/  /' || true
+# 5) initialise MVPKG (registry + store + this account's manifest + #34 the deploy
+#    config: catalog scope + store prefix, recorded in MVPKG.CONF so REMOVE/UPDATE
+#    reverse with the same scope this install used).
+INITFLAGS="-y"
+if [ "$SCOPE" = local ]; then INITFLAGS="$INITFLAGS --local"; fi
+if [ -n "$PREFIX" ]; then INITFLAGS="$INITFLAGS --prefix $PREFIX"; fi
+say "MVPKG init ($INITFLAGS)"
+( cd "$HERE" && printf 'MVPKG init %s\nQUIT\n' "$INITFLAGS" | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
+  | grep -iE "initialised|registry|store|include|catalog|prefix" | sed 's/^/  /' || true
 
 # 6) pull this account's managed deps down over curl, then self-register mvpkg.
 #    The bundled cut-down cmd/json bootstrap MVPKG; now that its HTTP seam works
@@ -176,6 +217,8 @@ sudo chown -R "$OWNER:$GROUP" "$HERE" "$STORE" 2>/dev/null || true
 cat <<EOF
 mvpkg-install: done.
   * operator account:   $HERE   (type MVPKG here)
+  * catalog scope:      $SCOPE$([ "$SCOPE" = local ] && echo "   (self-contained — packages catalog LOCAL in this account)")
+  * package store:      $STORE$([ -n "$PREFIX" ] && echo "   (prefix '$PREFIX' — separate from the live store)")
   * HTTP transport:     $HTTPWHICH
   * CallC aggregator:   $UDTHOME/bin/udt-callc-build
 Next, in this account:  MVPKG install <name>   |   MVPKG register mvx-lang/git

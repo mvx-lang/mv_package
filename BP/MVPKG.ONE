@@ -109,6 +109,11 @@ BUILDGLOBAL:
 $IFDEF MVX
    CALL MVPKGOS("BUILD", DEST, "", ERR) ; IF ERR # "" THEN PRINT ERR
 $ELSE
+   * #34: a "local" (test) account catalogs into its OWN account at deploy time
+   * (DEPLOYACCT), never system-wide — so it skips this shared global build.  The
+   * download + store inventory still happen once per system either way.
+   CALL MVPKGOS("CONF", "scope", "", MSCOPE)
+   IF MSCOPE = "local" THEN RETURN
    GOSUB PARSEDEPLOY
    PRINT "cataloging " : META<1> : " ..."
    CALL MVPKGOS("CATALOG", DEST, "BP", ERR) ; IF ERR # "" THEN PRINT ERR
@@ -132,11 +137,27 @@ $IFDEF MVX
    PRINT "linked " : META<1> : " into this account"
 $ELSE
    GOSUB PARSEDEPLOY
-   NV = DCOUNT(DVERBS, " ")
-   FOR I = 1 TO NV
-      V = FIELD(DVERBS, " ", I)
-      IF V # "" THEN CALL MVPKGOS("VERB", V, "", ERR) ; IF ERR # "" THEN PRINT ERR
-   NEXT I
+   CALL MVPKGOS("CONF", "scope", "", MSCOPE)
+   IF MSCOPE = "local" THEN
+      * #34 local scope: catalog the package INTO THIS ACCOUNT (CATALOG ... LOCAL,
+      * driven by MVPKGOS) — global build was skipped, and a LOCAL catalog also
+      * registers each program as a verb here, so no separate VOC-pointer step.
+      PRINT "cataloging " : META<1> : " (local) ..."
+      CALL MVPKGOS("CATALOG", DEST, "BP", ERR) ; IF ERR # "" THEN PRINT ERR
+      NF = DCOUNT(DFALL, " ")
+      FOR I = 1 TO NF
+         PR = FIELD(DFALL, " ", I) ; FBD = FIELD(PR, ":", 2)
+         IF FBD # "" THEN CALL MVPKGOS("CATIFNEW", DEST, FBD, ERR)
+      NEXT I
+   END ELSE
+      * global scope: the code is already globally cataloged; make each verb
+      * typeable in this account with a VOC pointer.
+      NV = DCOUNT(DVERBS, " ")
+      FOR I = 1 TO NV
+         V = FIELD(DVERBS, " ", I)
+         IF V # "" THEN CALL MVPKGOS("VERB", V, "", ERR) ; IF ERR # "" THEN PRINT ERR
+      NEXT I
+   END
    NFI = DCOUNT(DFILES, " ")
    FOR I = 1 TO NFI
       FT = FIELD(DFILES, " ", I)
