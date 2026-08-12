@@ -21,16 +21,17 @@ mkdir -p "$ACCT/BP"
 # else take the unified BP/ source.  Deleting udt/<prog> is what promotes it to
 # canonical — this build then picks it up from BP/ with no further change here.
 SHARED="MVPKG MVPKG.CONFIG MVPKG.FIXPERMS MVPKG.HAS MVPKG.INFO MVPKG.INIT \
-        MVPKG.INSTALL MVPKG.LIST MVPKG.META MVPKG.ONE MVPKG.REBUILD MVPKG.REG \
-        MVPKG.REGISTER MVPKG.REMOVE MVPKG.SEARCH MVPKG.SETUP MVPKG.UPDATE SEMVER"
+        MVPKG.INSTALL MVPKG.LIST MVPKG.META MVPKG.NOTIFY MVPKG.ONE MVPKG.REBUILD \
+        MVPKG.REG MVPKG.REGISTER MVPKG.REMOVE MVPKG.SEARCH MVPKG.SETUP MVPKG.UPDATE SEMVER"
 for p in $SHARED; do
    if [ -f "$HERE/$p" ]; then cp "$HERE/$p" "$ACCT/BP/"; else cp "$ROOT/BP/$p" "$ACCT/BP/"; fi
 done
 
 # udt-only records: the per-platform OS seam (MVPKGOS — mvx has its own in BP/),
-# the udt deploy helper, the login notifier, the record include files, the
-# bundled deps (native intrinsics on mvx), and the cmd framework.
-cp "$HERE"/MVPKGOS "$HERE"/MVPKGDEP "$HERE"/MVPKG.NOTIFY \
+# the udt deploy helper, the record include files, the bundled deps (native
+# intrinsics on mvx), and the cmd framework.  (MVPKG.NOTIFY is now shared — the
+# login update-notifier is platform-agnostic and builds for mvx too, issue #35.)
+cp "$HERE"/MVPKGOS "$HERE"/MVPKGDEP \
    "$HERE"/MVPKG.LOCK.H "$HERE"/MVPKG.MANIFEST.H "$HERE"/MVPKG.CONF.H \
    "$HERE"/MVPKG.HTTPGET "$HERE"/MVPKG.HTTPGETFILE "$HERE"/MVPKG.JSONDECODE "$HERE"/MVPKG.MAPFIELD \
    "$HERE"/CALLC.EXISTS "$ACCT/BP/"
