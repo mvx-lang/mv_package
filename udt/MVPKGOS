@@ -19,7 +19,13 @@
 *   OP = "CATIFNEW" P1 = pkgdir   P2 = subdir  -> CATALOG P2 only when its
 *                     programs are not already cataloged (a package's fallback)
 *   OP = "VERB"     P1 = verbname              -> deploy a per-account VOC
-*                     pointer to a globally cataloged verb (deploy)
+*                     pointer to a globally cataloged verb (deploy).  Global
+*                     scope only — a "local" account's LOCAL catalog is itself
+*                     the account verb, so the deploy skips this  (see CONF)
+*   OP = "CONF"     P1 = "scope"|"prefix"      -> RESULT = this account's deploy
+*                     config (catalog scope / store prefix), defaults applied
+*   OP = "CONFSET"  P1 = scope  P2 = prefix    -> persist the deploy config
+*                     (MVPKG init writes it; #34 test/live isolation)
 *   OP = "STORE"                               -> RESULT = the global package
 *                     store dir (created); download-once lives here
 *   OP = "HAVE"     P1 = progname              -> RESULT "1"/"0": would CALL P1
@@ -52,6 +58,7 @@
    OP = OCONV(OP, "MCU")
    UDT = GETENV("UDTHOME")
    BUILDER = UDT : "/bin/udt-callc-build"
+   GOSUB CONFLOAD                         ;* MSCOPE / MPREFIX (#34 test/live isolation)
    BEGIN CASE
       CASE OP = "MKDIR"
          EXECUTE '!mkdir -p "':P1:'"'
@@ -134,7 +141,7 @@
          * globally cataloged and deployed to any account.  $MVPKG_STORE
          * overrides the default $UDTHOME/mvpkg.
          SP = GETENV("MVPKG_STORE")
-         IF SP = "" THEN SP = UDT : "/mvpkg"
+         IF SP = "" THEN SP = UDT : "/" : MPREFIX : "mvpkg"
          EXECUTE '!mkdir -p "' : SP : '"'
          RESULT = SP
       CASE OP = "HAVE"
@@ -233,6 +240,23 @@
          END ELSE
             RESULT = "MVPKGOS INCSETUP: cannot open MVPKG.INC"
          END
+      CASE OP = "CONF"
+         * P1 = field ("scope" | "prefix").  RESULT = this account's deploy config
+         * value (loaded by CONFLOAD, with defaults).  The portable client reads
+         * the catalog scope through this so it deploys/undeploys consistently.
+         BEGIN CASE
+            CASE OCONV(P1, "MCL") = "scope"  ; RESULT = MSCOPE
+            CASE OCONV(P1, "MCL") = "prefix" ; RESULT = MPREFIX
+            CASE 1                           ; RESULT = ""
+         END CASE
+      CASE OP = "CONFSET"
+         * P1 = catalog scope ("global"|"local"), P2 = account prefix.  Persist the
+         * per-account deploy config (MVPKG init writes it).  An empty scope keeps
+         * the default "global".
+         CSC = OCONV(TRIM(P1), "MCL") ; IF CSC # "local" THEN CSC = "global"
+         CREC = "MVPKG-CONF" ; CREC<2> = CSC ; CREC<3> = TRIM(P2)
+         OPEN "VOC" TO CFW ELSE RESULT = "MVPKGOS CONFSET: cannot open VOC" ; RETURN
+         WRITE CREC ON CFW, "MVPKG.CONF"
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE
@@ -282,7 +306,13 @@ DOCAT:
          END
       NEXT CI
       IF NEEDBAS # "" THEN EXECUTE "BASIC MVPKG.SRC " : NEEDBAS
-      FOR CI = 1 TO NI ; EXECUTE "CATALOG MVPKG.SRC " : ITEMS<CI> : " FORCE" ; NEXT CI
+      * #34 scope: a "local" account catalogs into its OWN catalog (CATALOG ...
+      * LOCAL), so a test build never overwrites the live global catalog — and
+      * LOCAL cataloging also registers each program as a verb in THIS account, so
+      * the deploy needs no separate VOC pointer step.  "global" (default) catalogs
+      * system-wide, as before.
+      LOC = "" ; IF MSCOPE = "local" THEN LOC = "LOCAL "
+      FOR CI = 1 TO NI ; EXECUTE "CATALOG MVPKG.SRC " : ITEMS<CI> : " " : LOC : "FORCE" ; NEXT CI
    END
    GOSUB DROPPTR
    RETURN
@@ -290,6 +320,10 @@ DOCAT:
 * decatalog every listed program (remove its global catalog entry), then drop
 * the temp pointer.  The inverse of DOCAT.
 DODECAT:
+   * #34: plain DELETE.CATALOG resolves through THIS account's catalog view, so it
+   * removes a local account's own LOCAL entry (leaving any shared global copy
+   * that a live env cataloged untouched) and a global account's global entry —
+   * both scopes, one form.  A trailing LOCAL/GLOBAL keyword is a syntax error here.
    NI = DCOUNT(ITEMS, @AM)
    FOR CI = 1 TO NI
       EXECUTE "DELETE.CATALOG " : ITEMS<CI>
@@ -299,6 +333,20 @@ DODECAT:
 
 DROPPTR:
    DELETE LVF, "MVPKG.SRC"
+   RETURN
+
+* CONFLOAD — this account's deploy config (MVPKG.CONF), read once per call into
+* MSCOPE / MPREFIX with defaults, so CATALOG / DECAT pick the right catalog scope
+* and STORE resolves the right (prefixed) store.  Absent record = defaults:
+* global catalog, no prefix — the production behaviour, unchanged.   [#34]
+CONFLOAD:
+   MSCOPE = "global" ; MPREFIX = ""
+   OPEN "VOC" TO CLVF THEN
+      READ CLR FROM CLVF, "MVPKG.CONF" THEN
+         IF OCONV(TRIM(CLR<2>), "MCL") = "local" THEN MSCOPE = "local"
+         MPREFIX = TRIM(CLR<3>)
+      END
+   END
    RETURN
 
 * HAV = "1" if CALL NCK would resolve (a local VOC "C" pointer or the global
@@ -338,7 +386,7 @@ STOREOPEN:
 * not just the cataloging of programs.
 STOREHEAL:
    SP = GETENV("MVPKG_STORE")
-   IF SP = "" THEN SP = UDT : "/mvpkg"
+   IF SP = "" THEN SP = UDT : "/" : MPREFIX : "mvpkg"
    OMARK = SP : "/operator"
    OSREAD OINFO FROM OMARK ELSE OINFO = ""
    ONAME = TRIM(FIELD(OINFO, CHAR(10), 1))

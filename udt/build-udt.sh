@@ -31,7 +31,7 @@ done
 # the udt deploy helper, the login notifier, the record include files, the
 # bundled deps (native intrinsics on mvx), and the cmd framework.
 cp "$HERE"/MVPKGOS "$HERE"/MVPKGDEP "$HERE"/MVPKG.NOTIFY \
-   "$HERE"/MVPKG.LOCK.H "$HERE"/MVPKG.MANIFEST.H \
+   "$HERE"/MVPKG.LOCK.H "$HERE"/MVPKG.MANIFEST.H "$HERE"/MVPKG.CONF.H \
    "$HERE"/MVPKG.HTTPGET "$HERE"/MVPKG.HTTPGETFILE "$HERE"/MVPKG.JSONDECODE "$HERE"/MVPKG.MAPFIELD \
    "$HERE"/CALLC.EXISTS "$ACCT/BP/"
 cp "$ROOT"/CMD.BP/CMD.INIT "$ROOT"/CMD.BP/CMD.ADD "$ROOT"/CMD.BP/CMD.RUN "$ACCT/BP/"

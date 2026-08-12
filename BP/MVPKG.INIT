@@ -17,14 +17,26 @@ $DEFINE GETENV ENV
 $ELSE
    S = @SENTENCE
 $ENDIF
-   A1 = FIELD(S, " ", 3)
-
-   * INIT mutates THIS account (adds the store + MVPKG.INC pointers, the lock and
-   * composer, writes PLATFORM.H), so confirm before touching it.  -y / --yes
-   * skips the prompt for scripted installs.
-   YES = 0
-   IF INDEX(S, " -y", 1) # 0 OR INDEX(S, " --yes", 1) # 0 THEN YES = 1
-   IF A1 = "-y" OR A1 = "--yes" THEN A1 = ""
+   * Parse the sentence: the first non-flag word is an optional registry URL; the
+   * flags set the confirm-skip and (mv_package#34) the test/live isolation axes.
+   *   -y / --yes            skip the confirmation prompt (scripted installs)
+   *   --local / --direct    catalog this account's packages LOCALly (a test env
+   *                         that must not overwrite the live global catalog)
+   *   --global              catalog system-wide (the default; production)
+   *   --prefix <p>          namespace the store this env owns ($UDTHOME/<p>mvpkg)
+   A1 = "" ; YES = 0 ; SCOPE = "global" ; PREFIX = ""
+   NW = DCOUNT(S, " ") ; FI = 3
+   LOOP WHILE FI <= NW DO
+      W = FIELD(S, " ", FI)
+      BEGIN CASE
+         CASE W = "-y" OR W = "--yes"         ; YES = 1
+         CASE W = "--local" OR W = "--direct" ; SCOPE = "local"
+         CASE W = "--global"                  ; SCOPE = "global"
+         CASE W = "--prefix"                  ; FI = FI + 1 ; PREFIX = FIELD(S, " ", FI)
+         CASE W # ""                          ; IF A1 = "" THEN A1 = W
+      END CASE
+      FI = FI + 1
+   REPEAT
    IF NOT(YES) THEN
 $IFDEF MVX
       HEREACC = GETENV("MVXACCOUNT") ; IF HEREACC = "" THEN HEREACC = "."
@@ -34,6 +46,11 @@ $ENDIF
       PRINT "Initialise mvpkg in this account?"
       PRINT "  " : HEREACC
       PRINT "This adds the store + MVPKG.INC pointers, the lock, and PLATFORM.H here."
+$IFNDEF MVX
+      IF SCOPE = "local" OR PREFIX # "" THEN
+         PRINT "  catalog scope: " : SCOPE : "   store prefix: " : PREFIX : " (test/live isolation)"
+      END
+$ENDIF
       PRINT "Continue? (y/N) " :
       INPUT ANS
       IF OCONV(ANS[1, 1], "MCU") # "Y" THEN
@@ -41,6 +58,15 @@ $ENDIF
          RETURN
       END
    END
+
+$IFNDEF MVX
+   * #34: persist this account's deploy config (catalog scope + store prefix)
+   * BEFORE resolving the store, so STORE returns the prefixed path and every
+   * later deploy/undeploy in this account uses the same scope.  (No meaning on
+   * MVX, which links whole packages — no shared catalog, no store prefix.)
+   CALL MVPKGOS("CONFSET", SCOPE, PREFIX, CFERR)
+   IF CFERR # "" THEN PRINT CFERR
+$ENDIF
 
    * record the registry if a URL was supplied (persisted where MVPKG.REG reads
    * it back): MVX writes account-relative with the function OSWRITE, UniData
@@ -74,5 +100,11 @@ $ENDIF
    PRINT "  registry: " : REG
    PRINT "  store:    " : STORE
    PRINT "  include:  MVPKG.INC/PLATFORM.H"
+$IFNDEF MVX
+   IF SCOPE = "local" OR PREFIX # "" THEN
+      PRINT "  catalog:  " : SCOPE : "   (packages cataloged " : SCOPE : " in this account)"
+      IF PREFIX # "" THEN PRINT "  prefix:   " : PREFIX : "   (store namespaced apart from the live one)"
+   END
+$ENDIF
    PRINT "install packages with:  MVPKG install <name>"
    RETURN
