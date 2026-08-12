@@ -219,6 +219,20 @@
          * library are DBA-owned).  Recursive, so a dir + its records go together; a
          * missing path is silently skipped (2>/dev/null).  FIXPERMS drives it.
          IF P1 # "" AND P2 # "" THEN EXECUTE '!sudo chown -R "' : P2 : '" "' : P1 : '" 2>/dev/null'
+      CASE OP = "INCSETUP"
+         * Create the MVPKG.INC directory file (+ its VOC pointer) and write the
+         * PLATFORM.H record with the UniData platform defines, so a managed
+         * package can $INCLUDE MVPKG.INC PLATFORM.H.  Idempotent — CREATE.FILE on
+         * an existing file is captured and ignored.
+         EXECUTE "CREATE.FILE DIR MVPKG.INC" CAPTURING JUNK
+         OPEN "MVPKG.INC" TO INCF THEN
+            PH = "* PLATFORM.H - UniData (UDT) platform defines."
+            PH<-1> = "$DEFINE MV"
+            PH<-1> = "$DEFINE UDT"
+            WRITE PH ON INCF, "PLATFORM.H"
+         END ELSE
+            RESULT = "MVPKGOS INCSETUP: cannot open MVPKG.INC"
+         END
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE

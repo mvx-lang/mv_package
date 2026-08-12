@@ -19,6 +19,29 @@ $ELSE
 $ENDIF
    A1 = FIELD(S, " ", 3)
 
+   * INIT mutates THIS account (adds the store + MVPKG.INC pointers, the lock and
+   * composer, writes PLATFORM.H), so confirm before touching it.  -y / --yes
+   * skips the prompt for scripted installs.
+   YES = 0
+   IF INDEX(S, " -y", 1) # 0 OR INDEX(S, " --yes", 1) # 0 THEN YES = 1
+   IF A1 = "-y" OR A1 = "--yes" THEN A1 = ""
+   IF NOT(YES) THEN
+$IFDEF MVX
+      HEREACC = GETENV("MVXACCOUNT") ; IF HEREACC = "" THEN HEREACC = "."
+$ELSE
+      HEREACC = @PATH
+$ENDIF
+      PRINT "Initialise mvpkg in this account?"
+      PRINT "  " : HEREACC
+      PRINT "This adds the store + MVPKG.INC pointers, the lock, and PLATFORM.H here."
+      PRINT "Continue? (y/N) " :
+      INPUT ANS
+      IF OCONV(ANS[1, 1], "MCU") # "Y" THEN
+         PRINT "aborted — nothing changed"
+         RETURN
+      END
+   END
+
    * record the registry if a URL was supplied (persisted where MVPKG.REG reads
    * it back): MVX writes account-relative with the function OSWRITE, UniData
    * writes ~/mvpkg.conf with the statement form.
@@ -42,8 +65,14 @@ $ENDIF
    CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
    IF IREC = "" THEN CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", "MVPKG-LOCK", IERR)
 
+   * provision MVPKG.INC / PLATFORM.H — the platform-defines include every managed
+   * package compiles against ($INCLUDE MVPKG.INC PLATFORM.H): getopt, cmd, …
+   CALL MVPKGOS("INCSETUP", "", "", INCERR)
+   IF INCERR # "" THEN PRINT INCERR
+
    PRINT "mvpkg initialised"
    PRINT "  registry: " : REG
    PRINT "  store:    " : STORE
+   PRINT "  include:  MVPKG.INC/PLATFORM.H"
    PRINT "install packages with:  MVPKG install <name>"
    RETURN

@@ -150,6 +150,18 @@
          * so MVPKG's declared command surface must permit chown (vendor permit in
          * .mvx; see FIXPERMS).  Best-effort — captured, rc ignored.
          IF P1 # "" AND P2 # "" THEN JUNK = OSEXEC('chown' : @FM : '-R' : @FM : P2 : @FM : P1, COUT)
+      CASE OP = "INCSETUP"
+         * Provision the account's MVPKG.INC include + PLATFORM.H, so a managed
+         * package can $INCLUDE MVPKG.INC PLATFORM.H for its platform defines.  The
+         * MVX compiler resolves the include by directory layout under the account
+         * (no VOC pointers on MVX), and MVX is a builtin compiler define, so
+         * PLATFORM.H is comment-only here.  Idempotent — MVPKG INIT reruns it.
+         AC = ENV("MVXACCOUNT") ; IF AC = "" THEN AC = "."
+         INCD = AC : "/MVPKG.INC"
+         IF MKDIR(INCD) < 1 THEN RESULT = "MVPKGOS INCSETUP: cannot create " : INCD ; RETURN
+         PH = "* PLATFORM.H - platform compile-time defines." : CHAR(10)
+         PH = PH : "* MVX is a builtin compiler define; nothing to declare here." : CHAR(10)
+         IF NOT(OSWRITE(PH, INCD : "/PLATFORM.H")) THEN RESULT = "MVPKGOS INCSETUP: cannot write " : INCD : "/PLATFORM.H"
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE
