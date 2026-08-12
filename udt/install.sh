@@ -124,8 +124,8 @@ sudo chown "$OWNER:$GROUP" "$STORE"
 
 # 5) initialise MVPKG (registry + store + this account's manifest)
 say "MVPKG init"
-( cd "$HERE" && printf 'MVPKG init\nQUIT\n' | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
-  | grep -iE "initialised|registry|store" | sed 's/^/  /' || true
+( cd "$HERE" && printf 'MVPKG init -y\nQUIT\n' | LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
+  | grep -iE "initialised|registry|store|include" | sed 's/^/  /' || true
 
 # 6) pull this account's managed deps down over curl, then self-register mvpkg.
 #    The bundled cut-down cmd/json bootstrap MVPKG; now that its HTTP seam works
