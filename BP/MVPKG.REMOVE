@@ -30,9 +30,27 @@ $IFDEF MVX
    CALL MVPKGOS("UNLINK", DEST, "", ERR) ; IF ERR # "" THEN PRINT ERR
    CALL MVPKGOS("RMRF", DEST, "", ERR)
 $ELSE
-   * verbs to un-deploy (from the store copy's mvpkg.json deploy block)
-   OSREAD MJ FROM DEST : "/mvpkg.json" ELSE MJ = ""
-   CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL)
+   * #33: un-deploy exactly the verbs THIS install laid down here, from the pinned
+   * footprint in MVPKG.LOCK<7> (an @SM list of "V <verb>" / "F <name>:<type>") —
+   * not whatever the store manifest now says, which a version change may have
+   * altered.  Fall back to the store manifest deploy block for a package installed
+   * before the footprint was recorded (an empty <7>).  Files are recorded but not
+   * removed — they hold account data.
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", LREC)
+   FTP = "" ; LOCATE(NM, LREC, 2; LPOS) THEN FTP = LREC<7,LPOS>
+   DVERBS = ""
+   IF FTP # "" THEN
+      FOR I = 1 TO DCOUNT(FTP, @SM)
+         ART = FTP<1,1,I>
+         IF ART[1,1] = "V" THEN
+            VN = TRIM(ART[3, LEN(ART)])
+            IF VN # "" THEN DVERBS := VN : " "
+         END
+      NEXT I
+   END ELSE
+      OSREAD MJ FROM DEST : "/mvpkg.json" ELSE MJ = ""
+      CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL)
+   END
    FOR I = 1 TO DCOUNT(DVERBS, " ")
       V = FIELD(DVERBS, " ", I)
       IF V # "" THEN CALL MVPKGOS("UNVERB", V, "", ERR) ; IF ERR # "" THEN PRINT ERR

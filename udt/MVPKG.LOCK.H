@@ -25,20 +25,30 @@
 *   SOURCE      4   origin:  "" released | "git" (git-ref install; reserved, #23)
 *   REF         5   git ref (dev/branch/tag) an install came from ("")   [#23]
 *   COMMIT      6   resolved commit SHA of a git install ("")            [#23]
+*   FOOTPRINT   7   the account artifacts THIS install deployed here, pinned so
+*                   REMOVE/UPDATE reverse exactly what was laid down — never
+*                   what a later manifest happens to say.  One VM per package
+*                   (parallel to NAMES); within it an @SM list of artifacts,
+*                   each "<KIND> <arg>":  "V <verb>" a VOC verb pointer,
+*                   "F <name>:<type>" a deployed account file (recorded, not
+*                   auto-removed — files hold data).  Empty on MVX, where the
+*                   whole package is linked/unlinked as a unit.             [#33]
 *
-   DIM LOCK.REC(6)
+   DIM LOCK.REC(7)
 *  --- attribute numbers (dynamic array:  REC<LOCK$FIELD> ) ---
-   EQUATE LOCK$MARKER   TO 1
-   EQUATE LOCK$NAMES    TO 2
-   EQUATE LOCK$VERSIONS TO 3
-   EQUATE LOCK$SOURCE   TO 4
-   EQUATE LOCK$REF      TO 5
-   EQUATE LOCK$COMMIT   TO 6
+   EQUATE LOCK$MARKER    TO 1
+   EQUATE LOCK$NAMES     TO 2
+   EQUATE LOCK$VERSIONS  TO 3
+   EQUATE LOCK$SOURCE    TO 4
+   EQUATE LOCK$REF       TO 5
+   EQUATE LOCK$COMMIT    TO 6
+   EQUATE LOCK$FOOTPRINT TO 7
 *  --- dimensioned-array element aliases (MAT:  LOCK.REC ), subscripted by the
 *      $ constants so the position lives in exactly one place ---
-   EQUATE LOCK.MARKER   TO LOCK.REC(LOCK$MARKER)
-   EQUATE LOCK.NAMES    TO LOCK.REC(LOCK$NAMES)
-   EQUATE LOCK.VERSIONS TO LOCK.REC(LOCK$VERSIONS)
-   EQUATE LOCK.SOURCE   TO LOCK.REC(LOCK$SOURCE)
-   EQUATE LOCK.REF      TO LOCK.REC(LOCK$REF)
-   EQUATE LOCK.COMMIT   TO LOCK.REC(LOCK$COMMIT)
+   EQUATE LOCK.MARKER    TO LOCK.REC(LOCK$MARKER)
+   EQUATE LOCK.NAMES     TO LOCK.REC(LOCK$NAMES)
+   EQUATE LOCK.VERSIONS  TO LOCK.REC(LOCK$VERSIONS)
+   EQUATE LOCK.SOURCE    TO LOCK.REC(LOCK$SOURCE)
+   EQUATE LOCK.REF       TO LOCK.REC(LOCK$REF)
+   EQUATE LOCK.COMMIT    TO LOCK.REC(LOCK$COMMIT)
+   EQUATE LOCK.FOOTPRINT TO LOCK.REC(LOCK$FOOTPRINT)
