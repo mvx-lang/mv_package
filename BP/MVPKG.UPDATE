@@ -49,12 +49,85 @@ $ENDIF
                   PRINT "updating " : NM : " " : INSTVER : " -> " : META<2>
                   * MVPKG.ONE re-fetches the new version and updates the store
                   * inventory's version in place (LOCATE on <2>).
+$IFNDEF MVX
+                  * #33: capture the OLD account footprint before redeploying, so
+                  * the diff below can reverse any verb the new version drops.
+                  GOSUB OLDFEET
+$ENDIF
                   CALL MVPKG.ONE(META, REG, OERR)
-                  IF OERR # "" THEN PRINT NM : ": update failed — " : OERR
+                  IF OERR # "" THEN
+                     PRINT NM : ": update failed — " : OERR
+                  END ELSE
+$IFNDEF MVX
+                     GOSUB NEWFEET   ;* UNVERB (old - new), refresh the account lock
+$ENDIF
+                  END
             END CASE
       END CASE
    NEXT NI
    RETURN
+
+$IFNDEF MVX
+* #33 upgrade footprint (UniData).  An upgrade redeploys the new version's verbs
+* over the old, but a verb the new version DROPPED would be left orphaned.  So we
+* record the old footprint (OLDFEET) before MVPKG.ONE, compute the new one from the
+* upgraded store manifest, UNVERB the difference, and refresh the account lock's
+* version + footprint (NEWFEET) — the lock now tracks what is actually deployed.
+* (MVX links/unlinks the whole package as a unit, so it needs none of this.)
+OLDFEET:
+   OLDV = ""
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", ULREC)
+   LOCATE(NM, ULREC, 2; ULPOS) THEN
+      OFP = ULREC<7,ULPOS>
+      FOR UI = 1 TO DCOUNT(OFP, @SM)
+         ART = OFP<1,1,UI>
+         IF ART[1,1] = "V" THEN
+            VN = TRIM(ART[3, LEN(ART)])
+            IF VN # "" THEN OLDV<-1> = VN
+         END
+      NEXT UI
+   END
+   RETURN
+
+NEWFEET:
+   CALL MVPKGOS("STORE", "", "", USTORE)
+   UKEY = CHANGE(NM, "/", "_")
+   OSREAD UMJ FROM USTORE : "/" : UKEY : "/mvpkg.json" ELSE UMJ = ""
+   NEWV = "" ; NFP = ""
+   IF UMJ # "" THEN
+      CALL MVPKGDEP(UMJ, UVERBS, UFILES, UFB)
+      FOR UI = 1 TO DCOUNT(UVERBS, " ")
+         VV = FIELD(UVERBS, " ", UI)
+         IF VV # "" THEN NEWV<-1> = VV ; NFP<1,1,-1> = "V " : VV
+      NEXT UI
+      FOR UI = 1 TO DCOUNT(UFILES, " ")
+         FF = FIELD(UFILES, " ", UI)
+         IF FF # "" THEN NFP<1,1,-1> = "F " : FF
+      NEXT UI
+   END
+   * reverse verbs present in the OLD footprint but not the NEW (the upgrade
+   * dropped them) — files are left alone, they hold account data.
+   FOR UI = 1 TO DCOUNT(OLDV, @AM)
+      OV = OLDV<UI>
+      KEEP = 0
+      FOR UJ = 1 TO DCOUNT(NEWV, @AM)
+         IF NEWV<UJ> = OV THEN KEEP = 1
+      NEXT UJ
+      IF KEEP = 0 AND OV # "" THEN
+         CALL MVPKGOS("UNVERB", OV, "", UVERR)
+         PRINT "  dropped verb " : OV : " (gone in " : META<2> : ")"
+      END
+   NEXT UI
+   * refresh the account lock in place: new version + new footprint
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", ULREC)
+   LOCATE(NM, ULREC, 2; ULPOS) THEN
+      ULREC<3,ULPOS> = META<2>
+      ULREC<7,ULPOS> = NFP
+      CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", ULREC, UERR)
+      IF UERR # "" THEN PRINT "mvpkg: " : UERR
+   END
+   RETURN
+$ENDIF
 
 * SRCUPDATE — a package installed with --source is a plain git working copy, so
 * "update" is a fast-forward `git pull` in that directory (the path was recorded

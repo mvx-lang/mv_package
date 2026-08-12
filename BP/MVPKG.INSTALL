@@ -270,6 +270,36 @@ WRITELOCK:
          END
       END
    NEXT I
+$IFNDEF MVX
+   * #33 footprint: pin each released package's deployed ACCOUNT artifacts — the
+   * VOC verbs and files its install laid down here — read from the package's own
+   * store manifest (its mvpkg.json deploy block, the same MVPKGDEP the deploy
+   * walked).  REMOVE/UPDATE reverse exactly this, so a later version whose
+   * manifest drops a verb still cleans the one this version deployed.  <7> is one
+   * VM per package (parallel to <2>): an @SM list of "V <verb>" / "F <name>:<type>".
+   CALL MVPKGOS("STORE", "", "", FSTORE)
+   FN = DCOUNT(IREC<2>, @VM)
+   FOR FI = 1 TO FN
+      FNM = TRIM(IREC<2,FI>) ; FVER = TRIM(IREC<3,FI>)
+      IF FNM # "" AND FVER # "" AND FVER # "source" THEN
+         FKEY = CHANGE(FNM, "/", "_")
+         OSREAD FMJ FROM FSTORE : "/" : FKEY : "/mvpkg.json" ELSE FMJ = ""
+         IF FMJ # "" THEN
+            CALL MVPKGDEP(FMJ, FVERBS, FFILES, FFB)
+            FPK = ""
+            FOR FVI = 1 TO DCOUNT(FVERBS, " ")
+               VV = FIELD(FVERBS, " ", FVI)
+               IF VV # "" THEN FPK<1,1,-1> = "V " : VV
+            NEXT FVI
+            FOR FFI = 1 TO DCOUNT(FFILES, " ")
+               FF = FIELD(FFILES, " ", FFI)
+               IF FF # "" THEN FPK<1,1,-1> = "F " : FF
+            NEXT FFI
+            IREC<7,FI> = FPK
+         END
+      END
+   NEXT FI
+$ENDIF
    CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", IREC, WERR)
    IF WERR # "" THEN PRINT "mvpkg: " : WERR
    RETURN
