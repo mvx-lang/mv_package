@@ -22,8 +22,8 @@
 $IFDEF MVX
    FMTL22 = "L#22" ; FMTL9 = "L#9" ; FMTL10 = "L#10"
 $ELSE
-   DEFFUN JSONDECODE(A, B)
-   DEFFUN MAPFIELD(A, B, C, D, E)
+   DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
    FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
 $ENDIF
    * flags: --long/-l wraps the full description; --all/-a lists every package on

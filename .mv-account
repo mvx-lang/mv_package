@@ -3,4 +3,4 @@ name = mv_package
 version = 1
 openaccount = 1
 hash = lmdb
-permit prog:MVPKG = mkdir rm tar uname od sed grep sort wc tr ldconfig mkpkg udt-callc-build git sudo chown ls id
+permit prog:MVPKG = mkdir rmtree untar mkpkg chown

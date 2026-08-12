@@ -1,4 +1,4 @@
-FUNCTION HTTPGETFILE(URL, PATH)
+FUNCTION MVPKG.HTTPGETFILE(URL, PATH)
 * mv_package UniData seam — download URL to PATH, return the HTTP status.
 * GPL-2.0-only.
    CF = "/tmp/mvpkg_code.tmp"

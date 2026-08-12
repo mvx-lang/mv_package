@@ -15,6 +15,20 @@
 * which read the invocation sentence themselves.  A cut-down copy of cmd is
 * bundled in CMD.BP so MVPKG runs standalone; the full mv_cmd overrides it when
 * installed.
+*
+* INIT is the account bootstrap: it lays down MVPKG.INC/PLATFORM.H, the store and
+* lock pointers, and whatever else a fresh account needs — the very things the
+* rest of the toolchain (cmd, getopt) relies on.  So it must run WITHOUT the cmd
+* framework; hand-dispatch it here, ahead of CMD.
+$IFDEF MVX
+   BSENT = SENTENCE()
+$ELSE
+   BSENT = @SENTENCE
+$ENDIF
+   IF OCONV(FIELD(BSENT, " ", 2), "MCU") = "INIT" THEN
+      CALL MVPKG.INIT
+      STOP
+   END
    CALL CMD.INIT("MVPKG", "MultiValue package manager")
    CALL CMD.ADD("INSTALL", "install a package (name); --source [<dir>] git-clones an editable working copy", "MVPKG.INSTALL")
    CALL CMD.ADD("INFO", "show a package's registry metadata (name)", "MVPKG.INFO")
