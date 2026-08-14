@@ -341,6 +341,11 @@ SRCINSTALL:
    CLOUT = ""
    CALL GITCLONE(REPO, TGTDIR, REF, CLOUT)
    IF INDEX(CLOUT, "cloned ", 1) = 0 THEN PRINT "mvpkg: clone failed — " : CLOUT ; RETURN
+   * A source install COMPILES the package, so its build dependencies have to be
+   * here first — mvpkg itself, say, supplies the shared PLATFORM.H that managed
+   * packages $INCLUDE.  They are declared in the manifest's "devDependencies"
+   * (and marked '+' in PKG); a binary install needs none of them.
+   GOSUB DEVDEPS
    * build + deploy the working copy through the standard declarative path
    * (MVPKG.ONE source mode): fold native CallC, globally catalog, deploy verbs +
    * files — the SAME path a binary install uses, no package script.
@@ -530,6 +535,66 @@ PROJECTSEED:
       NEXT MDI
       IF NEED # "" THEN PRINT "resolving " : DCOUNT(NEED, @AM) : " declared dependency(ies) ..."
    END
+   RETURN
+
+* DEVDEPS — install the BUILD dependencies of the working copy at TGTDIR before
+* it is compiled.  They are the manifest's "devDependencies" array: packages
+* needed to BUILD this one (mvpkg supplies the shared PLATFORM.H that managed
+* packages $INCLUDE) but not to run it, so only a source install pulls them —
+* a binary install gets a package that is already compiled.
+*
+* The flat JSON seam reads only "key":"value" pairs, so walk the array here the
+* same way MVPKGDEP walks the deploy block: take the quoted strings between the
+* brackets that follow the key.  Anything already in this account's lock is left
+* alone; the rest install through the normal single-package path.
+DEVDEPS:
+$IFDEF MVX
+   DJ = OSREAD(TGTDIR : "/mvpkg.json") ; IF STATUS() # 0 THEN DJ = ""
+$ELSE
+   OSREAD DJ FROM TGTDIR : "/mvpkg.json" ELSE DJ = ""
+$ENDIF
+   IF DJ = "" THEN RETURN
+   DQ = CHAR(34)
+   DKP = INDEX(DJ, DQ : "devDependencies" : DQ, 1)
+   IF DKP = 0 THEN RETURN
+   DTAIL = DJ[DKP, LEN(DJ) - DKP + 1]
+   DOB = INDEX(DTAIL, "[", 1) ; DCB = INDEX(DTAIL, "]", 1)
+   IF DOB = 0 OR DCB <= DOB THEN RETURN
+   DSEG = DTAIL[DOB, DCB - DOB + 1]
+   * the account's installed set — a dev dep already here is not reinstalled
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", DLK)
+   DDONE = 0
+   LOOP UNTIL DDONE DO
+      DA = INDEX(DSEG, DQ, 1)
+      IF DA = 0 THEN
+         DDONE = 1
+      END ELSE
+         DSEG = DSEG[DA + 1, LEN(DSEG) - DA]
+         DB = INDEX(DSEG, DQ, 1)
+         IF DB = 0 THEN
+            DDONE = 1
+         END ELSE
+            DNM = DSEG[1, DB - 1]
+            DSEG = DSEG[DB + 1, LEN(DSEG) - DB]
+            IF DNM # "" THEN
+               DHAVE = 0
+               LOCATE(DNM, DLK, 2; DPOS) THEN DHAVE = 1
+               IF DHAVE THEN
+                  PRINT "build dependency " : DNM : " is already installed"
+               END ELSE
+                  PRINT "installing build dependency " : DNM : " ..."
+                  CALL MVPKG.META(DNM, "", REG, DMETA)
+                  IF DMETA = "" THEN
+                     PRINT "mvpkg: build dependency " : DNM : " not found in registry " : REG
+                  END ELSE
+                     CALL MVPKG.ONE(DMETA, REG, DERR)
+                     IF DERR # "" THEN PRINT "mvpkg: build dependency " : DNM : " failed — " : DERR
+                  END
+               END
+            END
+         END
+      END
+   REPEAT
    RETURN
 
 * SPECNAME — SN = the bare package name of dependency spec SP: strip a leading
