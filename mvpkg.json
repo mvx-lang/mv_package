@@ -1,13 +1,47 @@
 {
   "name": "mvx-lang/mvpkg",
-  "version": "1.15.0",
-  "description": "MVPKG — the MultiValue package manager client",
+  "version": "1.16.0",
+  "description": "MVPKG \u2014 the MultiValue package manager client",
   "license": "GPL-2.0-only",
-  "systems": ["mvx", "udt"],
-  "dependencies": ["mvx-lang/http@mvx", "curl@!mvx", "mvx-lang/json@!mvx", "?mvx-lang/cmd", "?mvx-lang/git"],
-  "shell": ["mkdir", "rm", "tar", "uname", "od", "sed", "grep", "sort", "wc", "tr", "ldconfig", "mkpkg", "udt-callc-build", "git", "sudo", "chown", "ls", "id"],
+  "systems": [
+    "mvx",
+    "udt"
+  ],
+  "dependencies": [
+    "mvx-lang/http@mvx",
+    "curl@!mvx",
+    "mvx-lang/json@!mvx",
+    "?mvx-lang/cmd",
+    "?mvx-lang/git"
+  ],
+  "shell": [
+    "mkdir",
+    "rm",
+    "tar",
+    "uname",
+    "od",
+    "sed",
+    "grep",
+    "sort",
+    "wc",
+    "tr",
+    "ldconfig",
+    "mkpkg",
+    "udt-callc-build",
+    "git",
+    "sudo",
+    "chown",
+    "ls",
+    "id"
+  ],
   "deploy": {
-    "verbs": ["MVPKG"],
-    "fallback": { "cmd": ["CMD.BP"] }
+    "verbs": [
+      "MVPKG"
+    ],
+    "fallback": {
+      "cmd": [
+        "CMD.BP"
+      ]
+    }
   }
 }
