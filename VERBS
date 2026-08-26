@@ -1,0 +1,5 @@
+# Verbs this package registers.  One name per line.
+#
+# The VOC record (V + CATALOG/<name>) is DERIVED from this at build time by
+# mkpkg.sh (mvx#136), so it is not tracked here.
+MVPKG
