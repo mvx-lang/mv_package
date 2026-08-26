@@ -21,3 +21,6 @@ VOC/LIB
 # The VOC's own dictionary is the platform's, not the account's - every
 # account is born with it, and a clone gets its own (mv_git#95).
 VOC.DICT/
+
+# Derived verb registration: mkpkg writes these from VERBS (mvx#136).
+/VOC/MVPKG
