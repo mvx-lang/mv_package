@@ -1,0 +1,7 @@
+* MVPKG.SH.RM - delete MVPKG.SH's temp files.  Separate because the obvious way
+* to clean up is a shell command, and this is the one place that cannot use one
+* without recursing into the routine doing the cleaning.
+   SUBROUTINE MVPKG.SH.RM(F1, F2)
+   OSDELETE F1
+   OSDELETE F2
+   RETURN

@@ -42,7 +42,7 @@ $ENDIF
    * 3rd column, once TRIM squeezes the padding to single spaces)
    OPU = NEWOP
    IF OPU = "" THEN
-      EXECUTE '!ls -ld "' : ACCT : '"' CAPTURING OWNL
+      CALL MVPKG.SH('ls -ld "' : ACCT : '"', OWNL, MVSHST)
       OWNL = TRIM(CONVERT(@AM : @FM : CHAR(10) : CHAR(13), "    ", OWNL))
       OPU = FIELD(TRIM(OWNL), " ", 3)
    END
@@ -52,7 +52,7 @@ $ENDIF
    END
    * the target must be a real user; take its primary group so files land
    * user:group (id -gn is empty for a non-existent user, which we reject).
-   EXECUTE '!id -gn "' : OPU : '" 2>/dev/null' CAPTURING GRP
+   CALL MVPKG.SH('id -gn "' : OPU : '" 2>/dev/null', GRP, MVSHST)
    GRP = FIELD(TRIM(TRIM(CONVERT(@AM : @FM : CHAR(10) : CHAR(13), "    ", GRP))), " ", 1)
    IF GRP = "" THEN
       PRINT "fixperms: no such user '" : OPU : "'"
