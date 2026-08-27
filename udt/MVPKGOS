@@ -51,7 +51,7 @@
 * gencdef/genefs/genfunc, relink, install) lives in the udt-callc-build
 * helper, installed at $UDTHOME/bin/udt-callc-build by the mv_package
 * UniData setup; MVPKGOS just drives it.  RESULT is "" on success or an
-* error message.  These shell out through EXECUTE "!...", so the caller
+* error message.  These reach the OS through MVPKG.SH, so the caller
 * needs the unrestricted privilege tier — installing software is privileged.
    SUBROUTINE MVPKGOS(OP, P1, P2, RESULT)
 $INCLUDE MVPKG.INC PLATFORM.H
