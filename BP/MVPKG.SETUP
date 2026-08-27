@@ -7,8 +7,8 @@
 * the function form (STATUS via the returned flag); UniData writes ~/mvpkg.conf
 * with the statement form.
    SUBROUTINE MVPKG.SETUP
+$INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
-$DEFINE GETENV ENV
    S = SENTENCE()
 $ELSE
    S = @SENTENCE

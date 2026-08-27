@@ -7,9 +7,7 @@
 * for both platforms: a $DEFINE prelude aliases the token diff (GETENV) and
 * $IFDEF handles the structural ones (the conf location, the OSREAD form).
    SUBROUTINE MVPKG.REG(REG)
-$IFDEF MVX
-$DEFINE GETENV ENV
-$ENDIF
+$INCLUDE MVPKG.INC PLATFORM.H
    DEFURL = "https://mv-package.heydon.io"
 $IFDEF MVX
    CONF = GETENV("MVXACCOUNT")

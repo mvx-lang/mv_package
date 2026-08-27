@@ -11,8 +11,8 @@
 * this.  Initial availability comes from the global/bootstrap install (or a
 * manual LINK-PKG); init prepares an account to use it.
    SUBROUTINE MVPKG.INIT
+$INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
-$DEFINE GETENV ENV
    S = SENTENCE()
 $ELSE
    S = @SENTENCE

@@ -14,8 +14,8 @@
 * carries.  On MVX there is no DBA-owned global catalog to repair, so this only
 * re-owns the account + store (for changing the operator).
    SUBROUTINE MVPKG.FIXPERMS
+$INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
-$DEFINE GETENV ENV
    S = SENTENCE()
    ACCT = GETENV("MVXACCOUNT") ; IF ACCT = "" THEN ACCT = "."
 $ELSE

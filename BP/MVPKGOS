@@ -167,6 +167,12 @@ $INCLUDE MVPKG.INC PLATFORM.H
          * jBASE, which has an MD -- and naming it here is what makes that a
          * one-line difference rather than a $IFDEF at every call site.
          PH = PH : 'EQUATE MVMASTER TO "VOC"' : CHAR(10)
+         * MVX spells the environment ENV(); every other MV system spells it
+         * GETENV().  Declared HERE rather than behind a $IFDEF MVX in each
+         * caller, because on jBASE a $DEFINE inside a FALSE $IFDEF still takes
+         * effect -- so a guarded rename leaks and rewrites GETENV to a function
+         * jBASE does not have.  A per-platform generated file cannot leak.
+         PH = PH : "$DEFINE GETENV ENV" : CHAR(10)
          IF NOT(OSWRITE(PH, INCD : "/PLATFORM.H")) THEN RESULT = "MVPKGOS INCSETUP: cannot write " : INCD : "/PLATFORM.H"
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP

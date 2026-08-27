@@ -14,8 +14,8 @@
 *   MVPKG.MANIFEST  <1> marker  <2> declared dep specs ("[?]name[@sys][:cons]")
 *   MVPKG.LOCK      <1> marker  <2> resolved names     <3> parallel versions
    SUBROUTINE MVPKG.INSTALL
+$INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
-$DEFINE GETENV ENV
    S = SENTENCE()
 $ELSE
    S = @SENTENCE
