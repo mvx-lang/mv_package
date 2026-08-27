@@ -1,0 +1,37 @@
+# mvpkg — CI.  Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+#
+# WHAT CAN RUN ON A PLAIN RUNNER.  mvpkg's hard bugs are cross-platform ones --
+# source that compiles on UniData and fails on jBASE, or worse, compiles on both
+# and behaves differently.  Most of those are visible in the SOURCE, so they can
+# be checked here without a licensed MV system anywhere near the runner.
+#
+# The runtime suite (tests/mvpkg-tests.sh) needs a built account and is run
+# against the real systems by hand; see tests/README.md.  When self-hosted udt /
+# uv / jbase runners are available it belongs here too, as one job per port.
+name: ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source:
+    name: source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # ORDER MATTERS.  self-check proves the checks can fail; running it first
+      # means a green "source" line below is worth something.  Four of those
+      # checks were once decoration -- matching nothing and passing always --
+      # and only this step could tell the difference.
+      - name: The checks can actually fail
+        run: sh tests/self-check.sh
+
+      - name: Portability rules
+        run: sh tests/source-checks.sh
