@@ -18,8 +18,19 @@
 * UniData compiles+globally-catalogs the code and deploys per-account VOC verb
 * pointers + declared files (the mvpkg.json deploy block, walked by MVPKGDEP).
    SUBROUTINE MVPKG.ONE(META, REG, RESULT)
+   $INCLUDE MVPKG.INC PLATFORM.H
 $IFNDEF MVX
+* jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
+* at a cataloged one, and mvpkg uses it to reach its own seam wrappers.  jBASE
+* resolves a DEFFUN by NAME against the catalog instead -- and the names are
+* already there, because the packages mvpkg depends on catalog them: HTTPGET and
+* HTTPGETFILE from curl (curl-cmd), JSONDECODE from json, MAPFIELD from mapfield.
+* So the indirection is not needed there; the dependency IS the seam.
+   $IFDEF JBASE
+      DEFFUN HTTPGETFILE(A, B)
+   $ELSE
    DEFFUN HTTPGETFILE(A, B) CALLING "*MVPKG.HTTPGETFILE"
+   $ENDIF
 $ENDIF
    RESULT = ""
    CALL MVPKGOS("STORE", "", "", STORE)

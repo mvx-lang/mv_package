@@ -17,10 +17,29 @@
 * HTTP/JSON/MAPFIELD are MVX intrinsics; UniData reaches them as the cataloged
 * seam functions, so declare those only off MVX.
    SUBROUTINE MVPKG.META(NAME, VER, REG, META)
+   $INCLUDE MVPKG.INC PLATFORM.H
 $IFNDEF MVX
+* jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
+* at a cataloged one, and mvpkg uses it to reach its own seam wrappers.  jBASE
+* resolves a DEFFUN by NAME against the catalog instead -- and the names are
+* already there, because the packages mvpkg depends on catalog them: HTTPGET and
+* HTTPGETFILE from curl (curl-cmd), JSONDECODE from json, MAPFIELD from mapfield.
+* So the indirection is not needed there; the dependency IS the seam.
+   $IFDEF JBASE
+      DEFFUN HTTPGET(A)
+   $ELSE
    DEFFUN HTTPGET(A) CALLING "*MVPKG.HTTPGET"
+   $ENDIF
+   $IFDEF JBASE
+      DEFFUN JSONDECODE(A, B)
+   $ELSE
    DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
+   $ENDIF
+   $IFDEF JBASE
+      DEFFUN MAPFIELD(A, B, C, D, E)
+   $ELSE
    DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
+   $ENDIF
 $ENDIF
    SPEC = ""
    SPEC<-1> = MAPFIELD("name", 1, "", "", "")

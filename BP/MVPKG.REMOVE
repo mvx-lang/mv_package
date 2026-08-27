@@ -78,10 +78,10 @@ $ENDIF
    NREC = "MVPKG-LOCK"
    NJ = 0
    FOR I = 1 TO DCOUNT(IREC<2>, @VM)
-      LN = TRIM(IREC<2,I>)
-      IF LN # "" AND LN # NM THEN
+      MLN = TRIM(IREC<2,I>)
+      IF MLN # "" AND MLN # NM THEN
          NJ = NJ + 1
-         NREC<2,NJ> = LN
+         NREC<2,NJ> = MLN
          NREC<3,NJ> = IREC<3,I>
       END
    NEXT I

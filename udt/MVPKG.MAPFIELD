@@ -1,4 +1,4 @@
-FUNCTION MVPKG.MAPFIELD(KEY, POS, CONV, TYPE, ASSOC)
+FUNCTION MVPKG.MAPFIELD(MKEY, POS, CONV, TYPE, ASSOC)
 * mv_package UniData seam — build one %MAP% field spec entry, matching the MVX
 * MAPFIELD builtin:  name<VM>attr<VM>conv<VM>type<VM>assoc .  Pairs with
 * JSONDECODE (and any future spec-driven decoder — YAML, a dict projection).
@@ -17,4 +17,4 @@ FUNCTION MVPKG.MAPFIELD(KEY, POS, CONV, TYPE, ASSOC)
          CASE 1              ; T = "TEXT"
       END CASE
    END
-   RETURN KEY : @VM : POS : @VM : CONV : @VM : T : @VM : ASSOC
+   RETURN MKEY : @VM : POS : @VM : CONV : @VM : T : @VM : ASSOC

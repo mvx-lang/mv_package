@@ -16,14 +16,29 @@
 * JSON/MAPFIELD are MVX intrinsics (declared as the cataloged seam off MVX); the
 * @SENTENCE token, the FMT justify masks, and the OSREAD form are the other diffs.
    SUBROUTINE MVPKG.LIST
+   $INCLUDE MVPKG.INC PLATFORM.H
 * FMT justify masks differ by platform (mvx L#n vs udt nL); hold them in runtime
 * variables — UniData's $DEFINE has no value-substitution form, so a per-platform
 * assignment (not a macro) is what ports.
 $IFDEF MVX
    FMTL22 = "L#22" ; FMTL9 = "L#9" ; FMTL10 = "L#10"
 $ELSE
+* jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
+* at a cataloged one, and mvpkg uses it to reach its own seam wrappers.  jBASE
+* resolves a DEFFUN by NAME against the catalog instead -- and the names are
+* already there, because the packages mvpkg depends on catalog them: HTTPGET and
+* HTTPGETFILE from curl (curl-cmd), JSONDECODE from json, MAPFIELD from mapfield.
+* So the indirection is not needed there; the dependency IS the seam.
+   $IFDEF JBASE
+      DEFFUN JSONDECODE(A, B)
+   $ELSE
    DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
+   $ENDIF
+   $IFDEF JBASE
+      DEFFUN MAPFIELD(A, B, C, D, E)
+   $ELSE
    DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
+   $ENDIF
    FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
 $ENDIF
    * flags: --long/-l wraps the full description; --all/-a lists every package on
@@ -128,7 +143,7 @@ $ENDIF
 * name/version/status columns), each continuation line is indented so it sits
 * under the DESCRIPTION column.  A word longer than WRAPW takes its own line.
 WRAPDESC:
-   OUT = ""
+   MOUT = ""
    LINE = ""
    FOR WI = 1 TO DCOUNT(DESC, " ")
       W = FIELD(DESC, " ", WI)
@@ -139,18 +154,18 @@ WRAPDESC:
             IF LEN(LINE) + 1 + LEN(W) <= WRAPW THEN
                LINE = LINE : " " : W
             END ELSE
-               OUT<-1> = LINE ; LINE = W
+               MOUT<-1> = LINE ; LINE = W
             END
          END
       END
    NEXT WI
-   IF LINE # "" THEN OUT<-1> = LINE
-   NLN = DCOUNT(OUT, @AM)
+   IF LINE # "" THEN MOUT<-1> = LINE
+   NLN = DCOUNT(MOUT, @AM)
    IF NLN = 0 THEN
       PRINT PREFIX
    END ELSE
       FOR LI = 1 TO NLN
-         IF LI = 1 THEN PRINT PREFIX : OUT<LI> ELSE PRINT INDENT : OUT<LI>
+         IF LI = 1 THEN PRINT PREFIX : MOUT<LI> ELSE PRINT INDENT : MOUT<LI>
       NEXT LI
    END
    RETURN
