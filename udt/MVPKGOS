@@ -54,6 +54,7 @@
 * error message.  These shell out through EXECUTE "!...", so the caller
 * needs the unrestricted privilege tier — installing software is privileged.
    SUBROUTINE MVPKGOS(OP, P1, P2, RESULT)
+$INCLUDE MVPKG.INC PLATFORM.H
    RESULT = ""
    OP = OCONV(OP, "MCU")
    UDT = GETENV("UDTHOME")
@@ -133,7 +134,7 @@
          * cataloged object so the verb is typeable in THIS account (a global
          * object alone is not a verb).  Subroutines need no such entry.
          GOBJ = UDT : "/sys/CTLG/" : OCONV(P1[1,1], "MCL") : "/" : P1
-         OPEN "VOC" TO VVF ELSE RESULT = "MVPKGOS VERB: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO VVF ELSE RESULT = "MVPKGOS VERB: cannot open " : MVMASTER ; RETURN
          WRITE ("C" : @FM : GOBJ : @FM : "mvpkg " : P1) ON VVF, P1
       CASE OP = "STORE"
          * RESULT = the global package store (created if absent) — where a
@@ -160,7 +161,7 @@
          END ELSE
             IF OCONV(P2, "MCL") = "dir" THEN
                EXECUTE '!mkdir -p "' : P1 : '" "D_' : P1 : '"'
-               OPEN "VOC" TO MFV ELSE RESULT = "MVPKGOS MKFILE: cannot open VOC" ; RETURN
+               OPEN MVMASTER TO MFV ELSE RESULT = "MVPKGOS MKFILE: cannot open " : MVMASTER ; RETURN
                WRITE ("DIR" : @FM : P1 : @FM : "D_" : P1) ON MFV, P1
             END ELSE
                EXECUTE "CREATE.FILE " : P1 : " 1"
@@ -172,16 +173,16 @@
          * RESULT = the record (a dynamic array), or "" when it is not on file.
          * This is how MVPKG keeps its manifest / lock / installed set the Pick
          * way — native MV records, not OS-level files.
-         OPEN "VOC" TO MDF ELSE RESULT = "" ; RETURN
+         OPEN MVMASTER TO MDF ELSE RESULT = "" ; RETURN
          READ MDR FROM MDF, P1 THEN RESULT = MDR ELSE RESULT = ""
       CASE OP = "MDWRITE"
          * P1 = record id, P2 = the record (a dynamic array).  Persist account
          * state as a native master-dictionary record.
-         OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDWRITE: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO MDF ELSE RESULT = "MVPKGOS MDWRITE: cannot open " : MVMASTER ; RETURN
          WRITE P2 ON MDF, P1
       CASE OP = "MDDELETE"
          * P1 = record id.  Remove an account state record.
-         OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open " : MVMASTER ; RETURN
          DELETE MDF, P1
       CASE OP = "STOREREAD"
          * Read a record from the shared SYSTEM store file MVPKG.STORE — the
@@ -210,7 +211,7 @@
       CASE OP = "UNVERB"
          * P1 = verb name.  Remove this account's VOC pointer for the verb
          * (the inverse of VERB).
-         OPEN "VOC" TO VVF ELSE RESULT = "MVPKGOS UNVERB: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO VVF ELSE RESULT = "MVPKGOS UNVERB: cannot open " : MVMASTER ; RETURN
          DELETE VVF, P1
       CASE OP = "CALLCRM"
          * P1 = package key (name '/'->'_').  Unstage its CallC contribution and
@@ -236,6 +237,8 @@
             PH = "* PLATFORM.H - UniData (UDT) platform defines."
             PH<-1> = "$DEFINE MV"
             PH<-1> = "$DEFINE UDT"
+            * MVMASTER names the account's master dictionary -- see the mvx arm.
+            PH<-1> = 'EQUATE MVMASTER TO "VOC"' 
             WRITE PH ON INCF, "PLATFORM.H"
          END ELSE
             RESULT = "MVPKGOS INCSETUP: cannot open MVPKG.INC"
@@ -255,7 +258,7 @@
          * the default "global".
          CSC = OCONV(TRIM(P1), "MCL") ; IF CSC # "local" THEN CSC = "global"
          CREC = "MVPKG-CONF" ; CREC<2> = CSC ; CREC<3> = TRIM(P2)
-         OPEN "VOC" TO CFW ELSE RESULT = "MVPKGOS CONFSET: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO CFW ELSE RESULT = "MVPKGOS CONFSET: cannot open " : MVMASTER ; RETURN
          WRITE CREC ON CFW, "MVPKG.CONF"
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
@@ -267,7 +270,7 @@
 * (skipping compiled _objects and dotfiles) natively via SELECT — no shell.
 LISTSRC:
    ITEMS = ""
-   OPEN "VOC" TO LVF ELSE RESULT = "MVPKGOS: cannot open VOC" ; RETURN
+   OPEN MVMASTER TO LVF ELSE RESULT = "MVPKGOS: cannot open " : MVMASTER ; RETURN
    WRITE ("DIR" : @FM : SDIR : @FM : "D_BP") ON LVF, "MVPKG.SRC"
    OPEN "MVPKG.SRC" TO LSF ELSE RESULT = "MVPKGOS: cannot open " : SDIR ; RETURN
    SELECT LSF TO LLIST
@@ -341,7 +344,7 @@ DROPPTR:
 * global catalog, no prefix — the production behaviour, unchanged.   [#34]
 CONFLOAD:
    MSCOPE = "global" ; MPREFIX = ""
-   OPEN "VOC" TO CLVF THEN
+   OPEN MVMASTER TO CLVF THEN
       READ CLR FROM CLVF, "MVPKG.CONF" THEN
          IF OCONV(TRIM(CLR<2>), "MCL") = "local" THEN MSCOPE = "local"
          MPREFIX = TRIM(CLR<3>)
@@ -353,7 +356,7 @@ CONFLOAD:
 * catalog file), else "0".
 HAVECHK:
    HAV = "0"
-   OPEN "VOC" TO HVF THEN
+   OPEN MVMASTER TO HVF THEN
       READ HR FROM HVF, NCK THEN
          IF HR<1> = "C" THEN HAV = "1"
       END
@@ -400,7 +403,7 @@ STOREHEAL:
       CASE OPATH = MYPATH
          EXECUTE "CREATE.FILE MVPKG.STORE 7"
       CASE 1
-         OPEN "VOC" TO SVF THEN
+         OPEN MVMASTER TO SVF THEN
             WRITE ("Q" : @FM : ONAME : @FM : "MVPKG.STORE") ON SVF, "MVPKG.STORE"
          END
    END CASE
