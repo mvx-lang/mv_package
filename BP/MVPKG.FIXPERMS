@@ -17,7 +17,7 @@
 $INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
    S = SENTENCE()
-   ACCT = GETENV("MVXACCOUNT") ; IF ACCT = "" THEN ACCT = "."
+   CALL MVPKG.ENV("MVXACCOUNT", ACCT) ; IF ACCT = "" THEN ACCT = "."
 $ELSE
    S = @SENTENCE
    ACCT = @PATH
@@ -28,11 +28,7 @@ $ENDIF
    * it ONLY from the MVPKG operator/package account, never a connected account a
    * package was merely deployed into (cataloged LOCAL for the same reason).
    * Identify the package account by its own PKG manifest (line 1 = the name).
-$IFDEF MVX
-   SELFPKG = OSREAD("PKG") ; IF STATUS() # 0 THEN SELFPKG = ""
-$ELSE
-   OSREAD SELFPKG FROM "PKG" ELSE SELFPKG = ""
-$ENDIF
+   CALL MVPKG.FILE("READ", "PKG", SELFPKG, MVFOK)
    IF TRIM(FIELD(SELFPKG, CHAR(10), 1)) # "mvpkg" THEN
       PRINT "fixperms: run this only from the MVPKG operator account — it is a"
       PRINT "  host-admin task, not available from accounts packages deploy into."
@@ -68,7 +64,7 @@ $IFNDEF MVX
    * the CallC library + every staged fragment, and the GLOBAL catalog entries of
    * the mvpkg client AND every managed package.  MVPKG itself is a LOCAL verb
    * (its CATALOG entry lives under the account, already re-owned above).
-   UDT = GETENV("UDTHOME")
+   CALL MVPKG.ENV("UDTHOME", UDT)
    IF UDT # "" THEN
       CALL MVPKGOS("CHOWN", UDT : "/bin/libu2callc.so", TGT, E)
       CALL MVPKGOS("CHOWN", UDT : "/callc.d", TGT, E)
@@ -88,7 +84,7 @@ $IFNDEF MVX
          NM = TRIM(SREC<2,PI>)
          IF NM # "" THEN
             PKGKEY = CHANGE(NM, "/", "_")
-            OSREAD PJ FROM STORE : "/" : PKGKEY : "/mvpkg.json" ELSE PJ = ""
+            CALL MVPKG.FILE("READ", STORE : "/" : PKGKEY : "/mvpkg.json", PJ, MVFOK)
             IF PJ # "" THEN
                CALL MVPKGDEP(PJ, DVERBS, DFILES, DFALL)
                FOR VI = 1 TO DCOUNT(DVERBS, " ")

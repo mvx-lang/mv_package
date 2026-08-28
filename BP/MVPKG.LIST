@@ -22,23 +22,26 @@
 * assignment (not a macro) is what ports.
 $IFDEF MVX
    FMTL22 = "L#22" ; FMTL9 = "L#9" ; FMTL10 = "L#10"
-$ELSE
+$ENDIF
 * jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
-* at a cataloged one, and mvpkg uses it to reach its own seam wrappers.  jBASE
-* resolves a DEFFUN by NAME against the catalog instead -- and the names are
-* already there, because the packages mvpkg depends on catalog them: HTTPGET and
-* HTTPGETFILE from curl (curl-cmd), JSONDECODE from json, MAPFIELD from mapfield.
-* So the indirection is not needed there; the dependency IS the seam.
-   $IFDEF JBASE
-      DEFFUN JSONDECODE(A, B)
-   $ELSE
+* at a cataloged one; jBASE resolves a DEFFUN by NAME against the catalog, and
+* the names are already there because mvpkg's dependencies catalog them.
+*
+* FLAT GUARDS, one per platform: an $IFDEF nested inside an $ELSE compiles on
+* UniData and FAILS on UniVerse, which is what this block used to be.
+$IFDEF JBASE
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B, C, D, E)
+   FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
+$ENDIF
+$IFDEF UDT
    DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
-   $ENDIF
-   $IFDEF JBASE
-      DEFFUN MAPFIELD(A, B, C, D, E)
-   $ELSE
    DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
-   $ENDIF
+   FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
+$ENDIF
+$IFDEF UV
+   DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
    FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
 $ENDIF
    * flags: --long/-l wraps the full description; --all/-a lists every package on
@@ -71,11 +74,7 @@ $ENDIF
    * account's own mvpkg.json; read it once to fill that one row's description.
    SELFSPEC = MAPFIELD("name", 1, "", "", "")
    SELFSPEC<-1> = MAPFIELD("description", 2, "", "", "")
-$IFDEF MVX
-   SELFJ = OSREAD("mvpkg.json") ; IF STATUS() # 0 THEN SELFJ = ""
-$ELSE
-   OSREAD SELFJ FROM "mvpkg.json" ELSE SELFJ = ""
-$ENDIF
+   CALL MVPKG.FILE("READ", "mvpkg.json", SELFJ, MVFOK)
    SELFNAME = "" ; SELFDESC = ""
    IF SELFJ # "" THEN SM = JSONDECODE(SELFJ, SELFSPEC) ; SELFNAME = TRIM(SM<1>) ; SELFDESC = TRIM(SM<2>)
    INDENT = SPACE(41)          ;* 22 + 9 + 10 — aligns wrapped lines under DESCRIPTION
@@ -113,11 +112,7 @@ $ENDIF
             SHOWN = SHOWN + 1
             * description from the package's stored manifest (local, no network)
             PKGKEY = CHANGE(NM, "/", "_")
-$IFDEF MVX
-            J = OSREAD(STORE : "/" : PKGKEY : "/mvpkg.json") ; IF STATUS() # 0 THEN J = ""
-$ELSE
-            OSREAD J FROM STORE : "/" : PKGKEY : "/mvpkg.json" ELSE J = ""
-$ENDIF
+            CALL MVPKG.FILE("READ", STORE : "/" : PKGKEY : "/mvpkg.json", J, MVFOK)
             DESC = ""
             IF J # "" THEN
                M = JSONDECODE(J, SPEC) ; DESC = TRIM(M<1>)

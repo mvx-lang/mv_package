@@ -92,7 +92,7 @@ OLDFEET:
 NEWFEET:
    CALL MVPKGOS("STORE", "", "", USTORE)
    UKEY = CHANGE(NM, "/", "_")
-   OSREAD UMJ FROM USTORE : "/" : UKEY : "/mvpkg.json" ELSE UMJ = ""
+   CALL MVPKG.FILE("READ", USTORE : "/" : UKEY : "/mvpkg.json", UMJ, MVFOK)
    NEWV = "" ; NFP = ""
    IF UMJ # "" THEN
       CALL MVPKGDEP(UMJ, UVERBS, UFILES, UFB)
@@ -141,11 +141,8 @@ SRCUPDATE:
    PRINT "updating " : NM : " (git pull in " : WCDIR : ") ..."
    TMPF = "/tmp/mvpkg_pull_" : @USERNO
    CALL MVPKG.SH('cd "' : WCDIR : '" && git pull --ff-only; echo $? > "' : TMPF : '"', MVSHOUT, MVSHST)
-$IFDEF MVX
-   RC = OSREAD(TMPF) ; IF STATUS() # 0 THEN RC = "1"
-$ELSE
-   OSREAD RC FROM TMPF ELSE RC = "1"
-$ENDIF
+   CALL MVPKG.FILE("READ", TMPF, RC, MVFOK)
+   IF NOT(MVFOK) THEN RC = "1"
    CALL MVPKG.SH('rm -f "' : TMPF : '"', MVSHOUT, MVSHST)
    RC = TRIM(CONVERT(CHAR(10) : CHAR(13), "  ", RC))
    IF RC # "0" THEN

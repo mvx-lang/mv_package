@@ -65,7 +65,7 @@ FUNCTION MVPKG.JSONDECODE(JSON, SPEC)
          END
       END
    NEXT AI
-   RETURN RESULT
+   RETURN(RESULT)
 
 * QVALUE: VAL = the string value of "KEY":"..." in SRC (or "" if absent).
 QVALUE:

@@ -11,28 +11,29 @@
    $INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
    S = SENTENCE()
-$ELSE
+$ENDIF
 * jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
-* at a cataloged one, and mvpkg uses it to reach its own seam wrappers.  jBASE
-* resolves a DEFFUN by NAME against the catalog instead -- and the names are
-* already there, because the packages mvpkg depends on catalog them: HTTPGET and
-* HTTPGETFILE from curl (curl-cmd), JSONDECODE from json, MAPFIELD from mapfield.
-* So the indirection is not needed there; the dependency IS the seam.
-   $IFDEF JBASE
-      DEFFUN HTTPGET(A)
-   $ELSE
+* at a cataloged one; jBASE resolves a DEFFUN by NAME against the catalog, and
+* the names are already there because mvpkg's dependencies catalog them.
+*
+* FLAT GUARDS, one per platform: an $IFDEF nested inside an $ELSE compiles on
+* UniData and FAILS on UniVerse, which is what this block used to be.
+$IFDEF JBASE
+   DEFFUN HTTPGET(A)
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B, C, D, E)
+   S = @SENTENCE
+$ENDIF
+$IFDEF UDT
    DEFFUN HTTPGET(A) CALLING "*MVPKG.HTTPGET"
-   $ENDIF
-   $IFDEF JBASE
-      DEFFUN JSONDECODE(A, B)
-   $ELSE
    DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
-   $ENDIF
-   $IFDEF JBASE
-      DEFFUN MAPFIELD(A, B, C, D, E)
-   $ELSE
    DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
-   $ENDIF
+   S = @SENTENCE
+$ENDIF
+$IFDEF UV
+   DEFFUN HTTPGET(A) CALLING "*MVPKG.HTTPGET"
+   DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
    S = @SENTENCE
 $ENDIF
    A1 = FIELD(S, " ", 3)

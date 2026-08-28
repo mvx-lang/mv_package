@@ -10,20 +10,16 @@
 $INCLUDE MVPKG.INC PLATFORM.H
    DEFURL = "https://mv-package.heydon.io"
 $IFDEF MVX
-   CONF = GETENV("MVXACCOUNT")
+   CALL MVPKG.ENV("MVXACCOUNT", CONF)
    IF CONF = "" THEN CONF = "."
    CONF = CONF : "/mvpkg.conf"
 $ELSE
-   CONF = GETENV("HOME") : "/mvpkg.conf"
+   CALL MVPKG.ENV("HOME", MVENVT)
+   CONF = MVENVT : "/mvpkg.conf"
 $ENDIF
-   REG = GETENV("MVPKG_REGISTRY")
+   CALL MVPKG.ENV("MVPKG_REGISTRY", REG)
    IF REG = "" THEN
-$IFDEF MVX
-      REG = OSREAD(CONF)
-      IF STATUS() # 0 THEN REG = ""
-$ELSE
-      OSREAD REG FROM CONF ELSE REG = ""
-$ENDIF
+      CALL MVPKG.FILE("READ", CONF, REG, MVFOK)
       REG = TRIM(REG, CHAR(10), "T")
    END
    IF REG = "" THEN REG = DEFURL
@@ -36,7 +32,8 @@ $ENDIF
       HOST = FIELD(FIELD(REG[LEN(SCHEME) + 4, LEN(REG)], "/", 1), ":", 1)
       OK = 0
       IF HOST = "localhost" OR HOST = "127.0.0.1" OR HOST = "::1" THEN OK = 1
-      IF GETENV("MVPKG_INSECURE") # "" THEN OK = 1
+      CALL MVPKG.ENV("MVPKG_INSECURE", MVENVT)
+      IF MVENVT # "" THEN OK = 1
       IF OK = 0 THEN
          PRINT "mvpkg: refusing insecure registry (need https): " : REG
          PRINT "  fix it with:  MVPKG setup https://<host>"

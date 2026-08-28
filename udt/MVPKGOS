@@ -64,9 +64,13 @@ $INCLUDE MVPKG.INC PLATFORM.H
 * store resolves to "/mvpkg", which is not writable and fails as a permission
 * error a long way from the cause.
 $IFDEF JBASE
-   UDT = GETENV("HOME")
-$ELSE
-   UDT = GETENV("UDTHOME")
+   CALL MVPKG.ENV("HOME", UDT)
+$ENDIF
+$IFDEF UV
+   CALL MVPKG.ENV("HOME", UDT)
+$ENDIF
+$IFDEF UDT
+   CALL MVPKG.ENV("UDTHOME", UDT)
 $ENDIF
    BUILDER = UDT : "/bin/udt-callc-build"
    GOSUB CONFLOAD                         ;* MSCOPE / MPREFIX (#34 test/live isolation)
@@ -87,7 +91,8 @@ $ENDIF
          * success that then catalogs verbs with no CallC backend behind them.
          TMPF = "/tmp/mvpkg_callc_" : @USERNO
          CALL MVPKG.SH('"':BUILDER:'" add "':P1:'" "':P2:'"; echo $? > "':TMPF:'"', MVSHOUT, MVSHST)
-         OSREAD RC FROM TMPF ELSE RC = "1"
+         CALL MVPKG.FILE("READ", TMPF, RC, MVFOK)
+         IF NOT(MVFOK) THEN RC = "1"
          CALL MVPKG.SH('rm -f "':TMPF:'"', MVSHOUT, MVSHST)
          RC = TRIM(CONVERT(CHAR(10):CHAR(13), "  ", RC))
          IF RC # "0" THEN RESULT = "CallC build failed (udt-callc-build exit ":RC:") — see its output above (gcc / package -devel libs missing?)"
@@ -102,7 +107,7 @@ $ENDIF
          * "<sys>:<os>:<arch>:<endian>".
          TMPF = "/tmp/mvpkg_plat_" : @USERNO
          CALL MVPKG.SH('uname -s > "':TMPF:'" 2>/dev/null', MVSHOUT, MVSHST)
-         OSREAD OSN FROM TMPF ELSE OSN = ""
+         CALL MVPKG.FILE("READ", TMPF, OSN, MVFOK)
          OSN = OCONV(TRIM(CONVERT(CHAR(10):CHAR(13), "  ", OSN)), "MCL")
          BEGIN CASE
             CASE INDEX(OSN, "linux", 1) ; OSN = "linux"
@@ -113,11 +118,11 @@ $ENDIF
             CASE OSN = "" ; OSN = "unknown"
          END CASE
          CALL MVPKG.SH('uname -m > "':TMPF:'" 2>/dev/null', MVSHOUT, MVSHST)
-         OSREAD ARCH FROM TMPF ELSE ARCH = ""
+         CALL MVPKG.FILE("READ", TMPF, ARCH, MVFOK)
          ARCH = TRIM(CONVERT(CHAR(10):CHAR(13), "  ", ARCH))
          IF ARCH = "" THEN ARCH = "unknown"
          CALL MVPKG.SH("printf '\1\2' | od -An -tx2 | tr -d ' ' > " : TMPF : " 2>/dev/null", MVSHOUT, MVSHST)
-         OSREAD EW FROM TMPF ELSE EW = ""
+         CALL MVPKG.FILE("READ", TMPF, EW, MVFOK)
          CALL MVPKG.SH('rm -f "':TMPF:'"', MVSHOUT, MVSHST)
          IF EW[1,4] = "0102" THEN ENDIAN = "be" ELSE ENDIAN = "le"
          RESULT = "udt:" : OSN : ":" : ARCH : ":" : ENDIAN
@@ -151,7 +156,7 @@ $ENDIF
          * downloaded package's source lives once per system so it can be
          * globally cataloged and deployed to any account.  $MVPKG_STORE
          * overrides the default $UDTHOME/mvpkg.
-         SP = GETENV("MVPKG_STORE")
+         CALL MVPKG.ENV("MVPKG_STORE", SP)
          IF SP = "" THEN SP = UDT : "/" : MPREFIX : "mvpkg"
          CALL MVPKG.SH('mkdir -p "' : SP : '"', MVSHOUT, MVSHST)
          RESULT = SP
@@ -258,8 +263,24 @@ $IFDEF JBASE
          PH<-1> = "$DEFINE MV"
          PH<-1> = "$DEFINE JBASE"
          PH<-1> = 'EQUATE MVMASTER TO "MD"'
-         OSWRITE PH ON @PATH : "/MVPKG.INC/PLATFORM.H"
-$ELSE
+         CALL MVPKG.FILE("WRITE", @PATH : "/MVPKG.INC/PLATFORM.H", PH, MVFOK)
+$ENDIF
+$IFDEF UV
+* Same shape as UniData -- a DIR file and a record in it -- but the header has
+* to say UV, or `MVPKG init` rewrites the account as a UniData one and every
+* later recompile takes the wrong arm of every guard.
+         EXECUTE "CREATE.FILE DIR MVPKG.INC" CAPTURING JUNK
+         OPEN "MVPKG.INC" TO INCF THEN
+            PH = "* PLATFORM.H - UniVerse (UV) platform defines."
+            PH<-1> = "$DEFINE MV"
+            PH<-1> = "$DEFINE UV"
+            PH<-1> = 'EQUATE MVMASTER TO "VOC"'
+            WRITE PH ON INCF, "PLATFORM.H"
+         END ELSE
+            RESULT = "MVPKGOS INCSETUP: cannot open MVPKG.INC"
+         END
+$ENDIF
+$IFDEF UDT
          EXECUTE "CREATE.FILE DIR MVPKG.INC" CAPTURING JUNK
          OPEN "MVPKG.INC" TO INCF THEN
             PH = "* PLATFORM.H - UniData (UDT) platform defines."
@@ -417,10 +438,10 @@ STOREOPEN:
 * Deploying MVPKG to a NEW account therefore sets this pointer up automatically,
 * not just the cataloging of programs.
 STOREHEAL:
-   SP = GETENV("MVPKG_STORE")
+   CALL MVPKG.ENV("MVPKG_STORE", SP)
    IF SP = "" THEN SP = UDT : "/" : MPREFIX : "mvpkg"
    OMARK = SP : "/operator"
-   OSREAD OINFO FROM OMARK ELSE OINFO = ""
+   CALL MVPKG.FILE("READ", OMARK, OINFO, MVFOK)
    ONAME = TRIM(FIELD(OINFO, CHAR(10), 1))
    OPATH = TRIM(FIELD(OINFO, CHAR(10), 2))
    MYPATH = @PATH
@@ -428,7 +449,7 @@ STOREHEAL:
    BEGIN CASE
       CASE OINFO = ""
          EXECUTE "CREATE.FILE MVPKG.STORE 7"
-         OSWRITE MYNAME : CHAR(10) : MYPATH ON OMARK
+         CALL MVPKG.FILE("WRITE", OMARK, MYNAME : CHAR(10) : MYPATH, MVFOK)
       CASE OPATH = MYPATH
          EXECUTE "CREATE.FILE MVPKG.STORE 7"
       CASE 1

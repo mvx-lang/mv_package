@@ -283,7 +283,7 @@ $IFNDEF MVX
       FNM = TRIM(IREC<2,FI>) ; FVER = TRIM(IREC<3,FI>)
       IF FNM # "" AND FVER # "" AND FVER # "source" THEN
          FKEY = CHANGE(FNM, "/", "_")
-         OSREAD FMJ FROM FSTORE : "/" : FKEY : "/mvpkg.json" ELSE FMJ = ""
+         CALL MVPKG.FILE("READ", FSTORE : "/" : FKEY : "/mvpkg.json", FMJ, MVFOK)
          IF FMJ # "" THEN
             CALL MVPKGDEP(FMJ, FVERBS, FFILES, FFB)
             FPK = ""
@@ -332,7 +332,10 @@ SRCINSTALL:
    IF REPO = "" THEN PRINT META<1> : ": no source repository recorded — cannot clone" ; RETURN
    * default target: the package's short name, under $HOME so it is writable
    IF TGTDIR = "" THEN TGTDIR = FIELD(META<1>, "/", DCOUNT(META<1>, "/"))
-   IF TGTDIR[1, 1] # "/" THEN TGTDIR = GETENV("HOME") : "/" : TGTDIR
+   IF TGTDIR[1, 1] # "/" THEN
+      CALL MVPKG.ENV("HOME", MVENVT)
+      TGTDIR = MVENVT : "/" : TGTDIR
+   END
    RD = "" ; IF REF # "" THEN RD = " @ " : REF
    PRINT "cloning " : META<1> : RD : " from " : REPO : " -> " : TGTDIR : " ..."
    * Clone (and check REF out) through the git engine — libgit2, no shell, runs at
@@ -548,11 +551,7 @@ PROJECTSEED:
 * brackets that follow the key.  Anything already in this account's lock is left
 * alone; the rest install through the normal single-package path.
 DEVDEPS:
-$IFDEF MVX
-   DJ = OSREAD(TGTDIR : "/mvpkg.json") ; IF STATUS() # 0 THEN DJ = ""
-$ELSE
-   OSREAD DJ FROM TGTDIR : "/mvpkg.json" ELSE DJ = ""
-$ENDIF
+   CALL MVPKG.FILE("READ", TGTDIR : "/mvpkg.json", DJ, MVFOK)
    IF DJ = "" THEN RETURN
    DQ = CHAR(34)
    DKP = INDEX(DJ, DQ : "devDependencies" : DQ, 1)

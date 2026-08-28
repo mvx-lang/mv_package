@@ -186,7 +186,7 @@ $IFNDEF MVX
 * MVPKGDEP walks the nested block (the flat JSON seam only reads flat strings),
 * yielding space-separated DVERBS, DFILES ("name:type"), DFALL ("dep:dir").
 PARSEDEPLOY:
-   OSREAD MJ FROM DEST : "/mvpkg.json" ELSE MJ = ""
+   CALL MVPKG.FILE("READ", DEST : "/mvpkg.json", MJ, MVFOK)
    CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL)
    RETURN
 
@@ -207,7 +207,7 @@ CLIBCHECK:
    IF CLIBS = "" THEN RETURN
    TMPF = "/tmp/mvpkg_ldc_" : @USERNO
    CALL MVPKG.SH('ldconfig -p > "' : TMPF : '" 2>/dev/null', MVSHOUT, MVSHST)
-   OSREAD LDC FROM TMPF ELSE LDC = ""
+   CALL MVPKG.FILE("READ", TMPF, LDC, MVFOK)
    CALL MVPKG.SH('rm -f "' : TMPF : '"', MVSHOUT, MVSHST)
    NLC = DCOUNT(LDC, CHAR(10))
    FOR CI = 1 TO DCOUNT(CLIBS, " ")

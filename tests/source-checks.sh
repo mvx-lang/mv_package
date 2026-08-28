@@ -159,5 +159,41 @@ else
   else bad "DEFFUN ... CALLING only behind a guard" "unguarded in:$ungu"; fi
 fi
 
+
+# --- 10/11. the environment and OS files are reached through their seams ----
+# UniVerse has NEITHER GETENV nor OSREAD/OSWRITE, and says so unhelpfully: it
+# parses GETENV(x) as an undimensioned array and `OSREAD X FROM p` as a variable
+# being assigned.  Both live behind one subroutine each so uv needs one arm, not
+# sixty-two.
+say "the environment and file seams"
+envleak=""
+for f in $SRC; do
+  case "$f" in */MVPKG.SH|*/MVPKG.ENV|*/MVPKG.FILE) continue;; esac
+  grep -vE '^[[:space:]]*[*]' "$f" | grep -qE '\bGETENV[[:space:]]*\(' && envleak="$envleak $f"
+done
+if [ -z "$envleak" ]; then ok "GETENV appears only in the seams (use MVPKG.ENV)"
+else bad "GETENV appears only in the seams" "also in:$envleak"; fi
+
+fileleak=""
+for f in $SRC; do
+  case "$f" in */MVPKG.SH|*/MVPKG.SH.RM|*/MVPKG.ENV|*/MVPKG.FILE) continue;; esac
+  grep -vE '^[[:space:]]*[*]' "$f" | grep -qE '\bOS(READ|WRITE|DELETE)\b' && fileleak="$fileleak $f"
+done
+if [ -z "$fileleak" ]; then ok "OSREAD/OSWRITE appear only in the seams (use MVPKG.FILE)"
+else bad "OSREAD/OSWRITE appear only in the seams" "also in:$fileleak"; fi
+
+# --- 12. no $IFDEF nested inside an $ELSE -----------------------------------
+# Compiles on UniData, fails on UniVerse.  Flat guards instead, one per platform.
+nested=""
+for f in $SRC; do
+  if awk 'BEGIN{e=0}
+          /^[[:space:]]*[$]ELSE/{e=1; next}
+          /^[[:space:]]*[$]ENDIF/{e=0; next}
+          e && /^[[:space:]]*[$]IFDEF/{found=1}
+          END{exit !found}' "$f"; then nested="$nested $f"; fi
+done
+if [ -z "$nested" ]; then ok "no \$IFDEF nested inside an \$ELSE (uv rejects it)"
+else bad "no \$IFDEF nested inside an \$ELSE" "found in:$nested"; fi
+
 printf '\n%s\n' "source-checks: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

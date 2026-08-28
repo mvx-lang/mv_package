@@ -1,0 +1,103 @@
+* MVPKG.FILE - read and write whole OS files.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+*   FOP    in   "READ" | "WRITE" | "DELETE"
+*   FPATH  in   the OS path
+*   FDATA  in/out  the contents, lines separated by @AM
+*   FOK    out  1 on success, 0 on failure
+*
+* MVX, UniData and jBASE have OSREAD / OSWRITE.  UNIVERSE HAS NEITHER, and
+* again says so unhelpfully -- it reads `OSREAD X FROM P` as a variable being
+* assigned:
+*
+*     Variable Name (UNDEFINED) unexpected, Was expecting: Assignment Operator
+*
+* There the equivalent is OPENSEQ / READSEQ / WRITESEQ, with the wrinkle that
+* OPENSEQ on a path that does not exist yet FAILS, and CREATE is what makes it.
+*
+* Note OSWRITE takes no ELSE clause on UniData or jBASE -- writing
+* `OSWRITE X ON F ELSE ...` is a syntax error on both.
+   SUBROUTINE MVPKG.FILE(FOP, FPATH, FDATA, FOK)
+$INCLUDE MVPKG.INC PLATFORM.H
+   FOK = 0
+   FOP = OCONV(FOP, "MCU")
+   IF TRIM(FPATH) = "" THEN RETURN
+*
+$IFDEF UV
+   BEGIN CASE
+      CASE FOP = "READ"
+         FDATA = ""
+         OPENSEQ FPATH TO FFV THEN
+            FDONE = 0
+            LOOP UNTIL FDONE DO
+               READSEQ FLINE FROM FFV THEN
+                  IF FDATA = "" THEN FDATA = FLINE ELSE FDATA<-1> = FLINE
+               END ELSE FDONE = 1
+            REPEAT
+            CLOSESEQ FFV
+            FOK = 1
+         END
+      CASE FOP = "WRITE"
+         OPENSEQ FPATH TO FFV ELSE
+            CREATE FFV ELSE RETURN
+         END
+* An existing file is truncated first, or a shorter write leaves the tail of
+* the previous one behind and the file reads as a mixture of both.
+         WEOFSEQ FFV
+         FN = DCOUNT(FDATA, @AM)
+         FOR FI = 1 TO FN
+            WRITESEQ FDATA<FI> ON FFV ELSE NULL
+         NEXT FI
+         CLOSESEQ FFV
+         FOK = 1
+      CASE FOP = "DELETE"
+         CALL MVPKG.SH('rm -f "' : FPATH : '"', FO, FS)
+         FOK = 1
+   END CASE
+$ENDIF
+*
+$IFDEF UDT
+* An OSREAD/OSWRITE body cannot be shared through a GOSUB: the label's contents
+* sit outside every guard, so UniVerse still compiles them and still cannot
+* parse OSREAD.  Each platform that has the statements carries its own copy.
+   BEGIN CASE
+      CASE FOP = "READ"
+         OSREAD FDATA FROM FPATH THEN FOK = 1 ELSE FDATA = ""
+      CASE FOP = "WRITE"
+* OSWRITE takes no ELSE clause on either system -- that is a syntax error.
+         OSWRITE FDATA ON FPATH
+         FOK = 1
+      CASE FOP = "DELETE"
+         CALL MVPKG.SH('rm -f "' : FPATH : '"', FO, FS)
+         FOK = 1
+   END CASE
+$ENDIF
+$IFDEF JBASE
+* An OSREAD/OSWRITE body cannot be shared through a GOSUB: the label's contents
+* sit outside every guard, so UniVerse still compiles them and still cannot
+* parse OSREAD.  Each platform that has the statements carries its own copy.
+   BEGIN CASE
+      CASE FOP = "READ"
+         OSREAD FDATA FROM FPATH THEN FOK = 1 ELSE FDATA = ""
+      CASE FOP = "WRITE"
+* OSWRITE takes no ELSE clause on either system -- that is a syntax error.
+         OSWRITE FDATA ON FPATH
+         FOK = 1
+      CASE FOP = "DELETE"
+         CALL MVPKG.SH('rm -f "' : FPATH : '"', FO, FS)
+         FOK = 1
+   END CASE
+$ENDIF
+$IFDEF MVX
+   BEGIN CASE
+      CASE FOP = "READ"
+         FDATA = OSREAD(FPATH)
+         IF STATUS() = 0 THEN FOK = 1 ELSE FDATA = ""
+      CASE FOP = "WRITE"
+         IF OSWRITE(FDATA, FPATH) THEN FOK = 1
+      CASE FOP = "DELETE"
+         CALL MVPKG.SH('rm -f "' : FPATH : '"', FO, FS)
+         FOK = 1
+   END CASE
+$ENDIF
+   RETURN

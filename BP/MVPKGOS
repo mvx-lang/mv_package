@@ -173,7 +173,8 @@ $INCLUDE MVPKG.INC PLATFORM.H
          * effect -- so a guarded rename leaks and rewrites GETENV to a function
          * jBASE does not have.  A per-platform generated file cannot leak.
          PH = PH : "$DEFINE GETENV ENV" : CHAR(10)
-         IF NOT(OSWRITE(PH, INCD : "/PLATFORM.H")) THEN RESULT = "MVPKGOS INCSETUP: cannot write " : INCD : "/PLATFORM.H"
+         CALL MVPKG.FILE("WRITE", INCD : "/PLATFORM.H", PH, MVFOK)
+         IF NOT(MVFOK) THEN RESULT = "MVPKGOS INCSETUP: cannot write " : INCD : "/PLATFORM.H"
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE

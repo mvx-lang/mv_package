@@ -7,6 +7,7 @@ FUNCTION MVPKG.HTTPGETFILE(URL, PATH)
    * reports the final status (200), not the 302.
    CALL MVPKG.SH('curl -sL -o "' : PATH : '" -w "%{http_code}" "' : URL : '" > ' : CF, MVSHOUT, MVSHST)
    CODE = ""
-   OSREAD CODE FROM CF ELSE CODE = "0"
+   CALL MVPKG.FILE("READ", CF, CODE, MVFOK)
+   IF NOT(MVFOK) THEN CODE = "0"
    CALL MVPKG.SH('rm -f ' : CF, MVSHOUT, MVSHST)
-   RETURN CODE + 0
+   RETURN(CODE + 0)
