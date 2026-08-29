@@ -117,12 +117,26 @@ case "$PLATFORM" in
   *)     t "MVMASTER is VOC and it opens"   "RESULT=opened-VOC" "$OUT";;
 esac
 
-OUT=$(MVPKG_TEST_VAR=env-readable PROBE TMVENV '   PRINT "V=":GETENV("MVPKG_TEST_VAR")')
-if [ "$PLATFORM" = mvx ] || [ "$PLATFORM" = jbase ] || [ "$PLATFORM" = udt ]; then
-  t "GETENV reads the environment"          "V=env-readable" "$OUT"
-else
-  skip "GETENV reads the environment" "not wired for $PLATFORM"
-fi
+OUT=$(MVPKG_TEST_VAR=env-readable PROBE TMVENV '   CALL MVPKG.ENV("MVPKG_TEST_VAR", V)
+   PRINT "V=":V
+   CALL MVPKG.ENV("MVPKG_DEFINITELY_UNSET_VAR", U)
+   PRINT "U=[":U:"]"')
+t  "the env seam reads a set variable"      "V=env-readable" "$OUT"
+t  "the env seam returns empty when unset"  "U=[]"           "$OUT"
+
+# The file seam, likewise: OSREAD/OSWRITE do not exist on uv, so this has to go
+# through MVPKG.FILE to be assertable on all four.
+OUT=$(PROBE TMVFILE '   TF = "/tmp/mvpkg-fileseam.txt"
+   D = "alpha" : @AM : "beta"
+   CALL MVPKG.FILE("WRITE", TF, D, OK1)
+   R = ""
+   CALL MVPKG.FILE("READ", TF, R, OK2)
+   PRINT "W=":OK1:" R=":OK2:" N=":DCOUNT(R, @AM):" A=[":R<1>:"] B=[":R<2>:"]"
+   CALL MVPKG.FILE("DELETE", TF, D2, OK3)
+   CALL MVPKG.FILE("READ", TF, R2, OK4)
+   PRINT "AFTERDEL=":OK4')
+t  "the file seam writes and reads back"    "W=1 R=1 N=2 A=[alpha] B=[beta]" "$OUT"
+t  "the file seam deletes"                  "AFTERDEL=0"     "$OUT"
 
 # ===========================================================================
 say "the client"
@@ -159,6 +173,8 @@ te "init leaves PLATFORM.H unchanged"       "$BEFORE"        "$AFTER"
 case "$PLATFORM" in
   jbase) t "PLATFORM.H still says JBASE"    '$DEFINE JBASE'  "$AFTER";;
   udt)   t "PLATFORM.H still says UDT"      '$DEFINE UDT'    "$AFTER";;
+  uv)    t "PLATFORM.H still says UV"       '$DEFINE UV'     "$AFTER";;
+  mvx)   t "PLATFORM.H names the master"    'MVMASTER'       "$AFTER";;
   *)     skip "PLATFORM.H platform symbol" "not asserted for $PLATFORM";;
 esac
 # `CREATE.FILE DIR MVPKG.INC` reads DIR as the NAME on jBASE, silently creating
