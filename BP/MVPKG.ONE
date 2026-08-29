@@ -18,8 +18,19 @@
 * UniData compiles+globally-catalogs the code and deploys per-account VOC verb
 * pointers + declared files (the mvpkg.json deploy block, walked by MVPKGDEP).
    SUBROUTINE MVPKG.ONE(META, REG, RESULT)
+   $INCLUDE MVPKG.INC PLATFORM.H
 $IFNDEF MVX
+* jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
+* at a cataloged one, and mvpkg uses it to reach its own seam wrappers.  jBASE
+* resolves a DEFFUN by NAME against the catalog instead -- and the names are
+* already there, because the packages mvpkg depends on catalog them: HTTPGET and
+* HTTPGETFILE from curl (curl-cmd), JSONDECODE from json, MAPFIELD from mapfield.
+* So the indirection is not needed there; the dependency IS the seam.
+   $IFDEF JBASE
+      DEFFUN HTTPGETFILE(A, B)
+   $ELSE
    DEFFUN HTTPGETFILE(A, B) CALLING "*MVPKG.HTTPGETFILE"
+   $ENDIF
 $ENDIF
    RESULT = ""
    CALL MVPKGOS("STORE", "", "", STORE)
@@ -75,7 +86,7 @@ $ENDIF
       CALL MVPKGOS("RMRF", DEST, "", ERR)
       CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
       IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
-      EXECUTE '!rm -f "' : TMP : '"'
+      CALL MVPKG.SH('rm -f "' : TMP : '"', MVSHOUT, MVSHST)
       CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
       * A failed native fold must abort BEFORE cataloging — otherwise the
       * package's verbs get cataloged over working ones with no backend behind
@@ -175,7 +186,7 @@ $IFNDEF MVX
 * MVPKGDEP walks the nested block (the flat JSON seam only reads flat strings),
 * yielding space-separated DVERBS, DFILES ("name:type"), DFALL ("dep:dir").
 PARSEDEPLOY:
-   OSREAD MJ FROM DEST : "/mvpkg.json" ELSE MJ = ""
+   CALL MVPKG.FILE("READ", DEST : "/mvpkg.json", MJ, MVFOK)
    CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL)
    RETURN
 
@@ -195,9 +206,9 @@ CLIBCHECK:
    CLIBS = TRIM(META<9>)
    IF CLIBS = "" THEN RETURN
    TMPF = "/tmp/mvpkg_ldc_" : @USERNO
-   EXECUTE '!ldconfig -p > "' : TMPF : '" 2>/dev/null'
-   OSREAD LDC FROM TMPF ELSE LDC = ""
-   EXECUTE '!rm -f "' : TMPF : '"'
+   CALL MVPKG.SH('ldconfig -p > "' : TMPF : '" 2>/dev/null', MVSHOUT, MVSHST)
+   CALL MVPKG.FILE("READ", TMPF, LDC, MVFOK)
+   CALL MVPKG.SH('rm -f "' : TMPF : '"', MVSHOUT, MVSHST)
    NLC = DCOUNT(LDC, CHAR(10))
    FOR CI = 1 TO DCOUNT(CLIBS, " ")
       LB = FIELD(CLIBS, " ", CI)

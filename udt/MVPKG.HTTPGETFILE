@@ -5,8 +5,9 @@ FUNCTION MVPKG.HTTPGETFILE(URL, PATH)
    * -L follows redirects: a GitHub release-asset URL 302s to the CDN, and the
    * registry indexes exactly those external asset URLs.  %{http_code} then
    * reports the final status (200), not the 302.
-   EXECUTE '!curl -sL -o "' : PATH : '" -w "%{http_code}" "' : URL : '" > ' : CF
+   CALL MVPKG.SH('curl -sL -o "' : PATH : '" -w "%{http_code}" "' : URL : '" > ' : CF, MVSHOUT, MVSHST)
    CODE = ""
-   OSREAD CODE FROM CF ELSE CODE = "0"
-   EXECUTE '!rm -f ' : CF
-   RETURN CODE + 0
+   CALL MVPKG.FILE("READ", CF, CODE, MVFOK)
+   IF NOT(MVFOK) THEN CODE = "0"
+   CALL MVPKG.SH('rm -f ' : CF, MVSHOUT, MVSHST)
+   RETURN(CODE + 0)

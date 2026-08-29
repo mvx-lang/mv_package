@@ -48,7 +48,7 @@ $ELSE
          END
       NEXT I
    END ELSE
-      OSREAD MJ FROM DEST : "/mvpkg.json" ELSE MJ = ""
+      CALL MVPKG.FILE("READ", DEST : "/mvpkg.json", MJ, MVFOK)
       CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL)
    END
    FOR I = 1 TO DCOUNT(DVERBS, " ")
@@ -60,7 +60,8 @@ $ELSE
    * only a package that shipped a udt-callc/ contribution needs the library
    * rebuilt (avoid a pointless rebuild for pure-BASIC packages).
    HASCC = 0
-   OSREAD CCF FROM DEST : "/udt-callc/funcs" THEN HASCC = 1 ELSE HASCC = 0
+   CALL MVPKG.FILE("READ", DEST : "/udt-callc/funcs", CCF, MVFOK)
+   IF MVFOK THEN HASCC = 1 ELSE HASCC = 0
    IF HASCC THEN CALL MVPKGOS("CALLCRM", PKGKEY, "", ERR) ; IF ERR # "" THEN PRINT ERR
    CALL MVPKGOS("RMDIR", DEST, "", ERR)
 $ENDIF
@@ -78,10 +79,10 @@ $ENDIF
    NREC = "MVPKG-LOCK"
    NJ = 0
    FOR I = 1 TO DCOUNT(IREC<2>, @VM)
-      LN = TRIM(IREC<2,I>)
-      IF LN # "" AND LN # NM THEN
+      MLN = TRIM(IREC<2,I>)
+      IF MLN # "" AND MLN # NM THEN
          NJ = NJ + 1
-         NREC<2,NJ> = LN
+         NREC<2,NJ> = MLN
          NREC<3,NJ> = IREC<3,I>
       END
    NEXT I

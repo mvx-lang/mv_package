@@ -12,7 +12,24 @@
 * modal on).  @USER.TYPE is the portable session-type test: 0 = interactive on
 * UniData/UniVerse and mvx alike (D3 would map its user-vs-phantom PIB onto it).
    SUBROUTINE MVPKG.NOTIFY
-   IF @USER.TYPE # 0 THEN RETURN          ;* not a terminal (web/phantom/batch/pipe)
+$INCLUDE MVPKG.INC PLATFORM.H
+* @USER.TYPE is UniData's session-type test and UniVerse has no such variable,
+* so the check is guarded rather than the whole program.  Where it cannot be
+* asked, assume interactive -- the notify is advisory, and staying silent in a
+* real terminal is a worse failure than printing in a phantom.
+$IFDEF UV
+   MVNOTIFYOK = 1
+$ENDIF
+$IFDEF UDT
+   MVNOTIFYOK = 1 ; IF @USER.TYPE # 0 THEN MVNOTIFYOK = 0
+$ENDIF
+$IFDEF JBASE
+   MVNOTIFYOK = 1 ; IF @USER.TYPE # 0 THEN MVNOTIFYOK = 0
+$ENDIF
+$IFDEF MVX
+   MVNOTIFYOK = 1 ; IF @USER.TYPE # 0 THEN MVNOTIFYOK = 0
+$ENDIF
+   IF NOT(MVNOTIFYOK) THEN RETURN          ;* not a terminal (web/phantom/batch/pipe)
 
    * find packages deployed here that the system store has a newer version of
    CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", LREC)

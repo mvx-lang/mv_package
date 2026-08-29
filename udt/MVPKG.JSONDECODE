@@ -15,7 +15,7 @@ FUNCTION MVPKG.JSONDECODE(JSON, SPEC)
 * --- scalar fields (assoc empty): flat "key":"value" ------------------------
    FOR FI = 1 TO NF
       IF FIELD(SPEC<FI>, @VM, 5) = "" THEN
-         KEY = FIELD(SPEC<FI>, @VM, 1)
+         MKEY = FIELD(SPEC<FI>, @VM, 1)
          POS = FIELD(SPEC<FI>, @VM, 2)
          SRC = JSON ; GOSUB QVALUE
          RESULT<POS> = VAL
@@ -54,7 +54,7 @@ FUNCTION MVPKG.JSONDECODE(JSON, SPEC)
                EI = EI + 1
                FOR FI = 1 TO NF
                   IF FIELD(SPEC<FI>, @VM, 5) = ASC THEN
-                     KEY = FIELD(SPEC<FI>, @VM, 1)
+                     MKEY = FIELD(SPEC<FI>, @VM, 1)
                      POS = FIELD(SPEC<FI>, @VM, 2)
                      SRC = OBJ ; GOSUB QVALUE
                      RESULT<POS, EI> = VAL
@@ -65,12 +65,12 @@ FUNCTION MVPKG.JSONDECODE(JSON, SPEC)
          END
       END
    NEXT AI
-   RETURN RESULT
+   RETURN(RESULT)
 
 * QVALUE: VAL = the string value of "KEY":"..." in SRC (or "" if absent).
 QVALUE:
    VAL = ""
-   TAG = DQ : KEY : DQ
+   TAG = DQ : MKEY : DQ
    P = INDEX(SRC, TAG, 1)
    IF P > 0 THEN
       AFTER = SRC[P + LEN(TAG), LEN(SRC)]

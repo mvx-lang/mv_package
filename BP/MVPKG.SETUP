@@ -7,8 +7,8 @@
 * the function form (STATUS via the returned flag); UniData writes ~/mvpkg.conf
 * with the statement form.
    SUBROUTINE MVPKG.SETUP
+$INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
-$DEFINE GETENV ENV
    S = SENTENCE()
 $ELSE
    S = @SENTENCE
@@ -19,18 +19,19 @@ $ENDIF
       RETURN
    END
 $IFDEF MVX
-   CONF = GETENV("MVXACCOUNT")
+   CALL MVPKG.ENV("MVXACCOUNT", CONF)
    IF CONF = "" THEN CONF = "."
    CONF = CONF : "/mvpkg.conf"
-   * OSWRITE -> 1 on success, 0 on failure.
-   IF OSWRITE(A1, CONF) THEN
+   CALL MVPKG.FILE("WRITE", CONF, A1, MVFOK)
+   IF MVFOK THEN
       PRINT "registry set to " : A1
    END ELSE
       PRINT "cannot write config " : CONF
    END
 $ELSE
-   CONF = GETENV("HOME") : "/mvpkg.conf"
-   OSWRITE A1 ON CONF
+   CALL MVPKG.ENV("HOME", MVENVT)
+   CONF = MVENVT : "/mvpkg.conf"
+   CALL MVPKG.FILE("WRITE", CONF, A1, MVFOK)
    PRINT "registry set to " : A1
 $ENDIF
    RETURN

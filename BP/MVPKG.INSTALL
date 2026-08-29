@@ -14,8 +14,8 @@
 *   MVPKG.MANIFEST  <1> marker  <2> declared dep specs ("[?]name[@sys][:cons]")
 *   MVPKG.LOCK      <1> marker  <2> resolved names     <3> parallel versions
    SUBROUTINE MVPKG.INSTALL
+$INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
-$DEFINE GETENV ENV
    S = SENTENCE()
 $ELSE
    S = @SENTENCE
@@ -83,8 +83,8 @@ $ENDIF
    CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
    INSTALLED = "" ; VERS = ""
    FOR I = 1 TO DCOUNT(IREC<2>, @VM)
-      LN = TRIM(IREC<2,I>)
-      IF LN # "" THEN INSTALLED<-1> = LN ; VERS<-1> = IREC<3,I>
+      MLN = TRIM(IREC<2,I>)
+      IF MLN # "" THEN INSTALLED<-1> = MLN ; VERS<-1> = IREC<3,I>
    NEXT I
 
    * ---- seed the NEED set (with parallel CONS / OPT) from the invocation ----
@@ -283,7 +283,7 @@ $IFNDEF MVX
       FNM = TRIM(IREC<2,FI>) ; FVER = TRIM(IREC<3,FI>)
       IF FNM # "" AND FVER # "" AND FVER # "source" THEN
          FKEY = CHANGE(FNM, "/", "_")
-         OSREAD FMJ FROM FSTORE : "/" : FKEY : "/mvpkg.json" ELSE FMJ = ""
+         CALL MVPKG.FILE("READ", FSTORE : "/" : FKEY : "/mvpkg.json", FMJ, MVFOK)
          IF FMJ # "" THEN
             CALL MVPKGDEP(FMJ, FVERBS, FFILES, FFB)
             FPK = ""
@@ -332,7 +332,10 @@ SRCINSTALL:
    IF REPO = "" THEN PRINT META<1> : ": no source repository recorded — cannot clone" ; RETURN
    * default target: the package's short name, under $HOME so it is writable
    IF TGTDIR = "" THEN TGTDIR = FIELD(META<1>, "/", DCOUNT(META<1>, "/"))
-   IF TGTDIR[1, 1] # "/" THEN TGTDIR = GETENV("HOME") : "/" : TGTDIR
+   IF TGTDIR[1, 1] # "/" THEN
+      CALL MVPKG.ENV("HOME", MVENVT)
+      TGTDIR = MVENVT : "/" : TGTDIR
+   END
    RD = "" ; IF REF # "" THEN RD = " @ " : REF
    PRINT "cloning " : META<1> : RD : " from " : REPO : " -> " : TGTDIR : " ..."
    * Clone (and check REF out) through the git engine — libgit2, no shell, runs at
@@ -462,14 +465,14 @@ DEPAPPLY:
    END
    DNAME = DB[1, ATP - 1]
    FILT = DB[ATP + 1, LEN(DB)]
-   NEG = 0
-   IF FILT[1, 1] = "!" THEN NEG = 1 ; FILT = FILT[2, LEN(FILT)]
+   MNEG = 0
+   IF FILT[1, 1] = "!" THEN MNEG = 1 ; FILT = FILT[2, LEN(FILT)]
    HIT = 0
    FOR FJ = 1 TO DCOUNT(FILT, ",")
       IF FIELD(FILT, ",", FJ) = MYSYS THEN HIT = 1
    NEXT FJ
    APPLIES = HIT
-   IF NEG THEN
+   IF MNEG THEN
       IF HIT THEN APPLIES = 0 ELSE APPLIES = 1
    END
    RETURN
@@ -548,11 +551,7 @@ PROJECTSEED:
 * brackets that follow the key.  Anything already in this account's lock is left
 * alone; the rest install through the normal single-package path.
 DEVDEPS:
-$IFDEF MVX
-   DJ = OSREAD(TGTDIR : "/mvpkg.json") ; IF STATUS() # 0 THEN DJ = ""
-$ELSE
-   OSREAD DJ FROM TGTDIR : "/mvpkg.json" ELSE DJ = ""
-$ENDIF
+   CALL MVPKG.FILE("READ", TGTDIR : "/mvpkg.json", DJ, MVFOK)
    IF DJ = "" THEN RETURN
    DQ = CHAR(34)
    DKP = INDEX(DJ, DQ : "devDependencies" : DQ, 1)

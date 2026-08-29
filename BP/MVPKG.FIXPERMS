@@ -14,10 +14,10 @@
 * carries.  On MVX there is no DBA-owned global catalog to repair, so this only
 * re-owns the account + store (for changing the operator).
    SUBROUTINE MVPKG.FIXPERMS
+$INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
-$DEFINE GETENV ENV
    S = SENTENCE()
-   ACCT = GETENV("MVXACCOUNT") ; IF ACCT = "" THEN ACCT = "."
+   CALL MVPKG.ENV("MVXACCOUNT", ACCT) ; IF ACCT = "" THEN ACCT = "."
 $ELSE
    S = @SENTENCE
    ACCT = @PATH
@@ -28,11 +28,7 @@ $ENDIF
    * it ONLY from the MVPKG operator/package account, never a connected account a
    * package was merely deployed into (cataloged LOCAL for the same reason).
    * Identify the package account by its own PKG manifest (line 1 = the name).
-$IFDEF MVX
-   SELFPKG = OSREAD("PKG") ; IF STATUS() # 0 THEN SELFPKG = ""
-$ELSE
-   OSREAD SELFPKG FROM "PKG" ELSE SELFPKG = ""
-$ENDIF
+   CALL MVPKG.FILE("READ", "PKG", SELFPKG, MVFOK)
    IF TRIM(FIELD(SELFPKG, CHAR(10), 1)) # "mvpkg" THEN
       PRINT "fixperms: run this only from the MVPKG operator account — it is a"
       PRINT "  host-admin task, not available from accounts packages deploy into."
@@ -42,7 +38,7 @@ $ENDIF
    * 3rd column, once TRIM squeezes the padding to single spaces)
    OPU = NEWOP
    IF OPU = "" THEN
-      EXECUTE '!ls -ld "' : ACCT : '"' CAPTURING OWNL
+      CALL MVPKG.SH('ls -ld "' : ACCT : '"', OWNL, MVSHST)
       OWNL = TRIM(CONVERT(@AM : @FM : CHAR(10) : CHAR(13), "    ", OWNL))
       OPU = FIELD(TRIM(OWNL), " ", 3)
    END
@@ -52,7 +48,7 @@ $ENDIF
    END
    * the target must be a real user; take its primary group so files land
    * user:group (id -gn is empty for a non-existent user, which we reject).
-   EXECUTE '!id -gn "' : OPU : '" 2>/dev/null' CAPTURING GRP
+   CALL MVPKG.SH('id -gn "' : OPU : '" 2>/dev/null', GRP, MVSHST)
    GRP = FIELD(TRIM(TRIM(CONVERT(@AM : @FM : CHAR(10) : CHAR(13), "    ", GRP))), " ", 1)
    IF GRP = "" THEN
       PRINT "fixperms: no such user '" : OPU : "'"
@@ -68,7 +64,7 @@ $IFNDEF MVX
    * the CallC library + every staged fragment, and the GLOBAL catalog entries of
    * the mvpkg client AND every managed package.  MVPKG itself is a LOCAL verb
    * (its CATALOG entry lives under the account, already re-owned above).
-   UDT = GETENV("UDTHOME")
+   CALL MVPKG.ENV("UDTHOME", UDT)
    IF UDT # "" THEN
       CALL MVPKGOS("CHOWN", UDT : "/bin/libu2callc.so", TGT, E)
       CALL MVPKGOS("CHOWN", UDT : "/callc.d", TGT, E)
@@ -88,7 +84,7 @@ $IFNDEF MVX
          NM = TRIM(SREC<2,PI>)
          IF NM # "" THEN
             PKGKEY = CHANGE(NM, "/", "_")
-            OSREAD PJ FROM STORE : "/" : PKGKEY : "/mvpkg.json" ELSE PJ = ""
+            CALL MVPKG.FILE("READ", STORE : "/" : PKGKEY : "/mvpkg.json", PJ, MVFOK)
             IF PJ # "" THEN
                CALL MVPKGDEP(PJ, DVERBS, DFILES, DFALL)
                FOR VI = 1 TO DCOUNT(DVERBS, " ")

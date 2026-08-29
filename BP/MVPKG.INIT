@@ -11,8 +11,8 @@
 * this.  Initial availability comes from the global/bootstrap install (or a
 * manual LINK-PKG); init prepares an account to use it.
    SUBROUTINE MVPKG.INIT
+$INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
-$DEFINE GETENV ENV
    S = SENTENCE()
 $ELSE
    S = @SENTENCE
@@ -39,7 +39,7 @@ $ENDIF
    REPEAT
    IF NOT(YES) THEN
 $IFDEF MVX
-      HEREACC = GETENV("MVXACCOUNT") ; IF HEREACC = "" THEN HEREACC = "."
+      CALL MVPKG.ENV("MVXACCOUNT", HEREACC) ; IF HEREACC = "" THEN HEREACC = "."
 $ELSE
       HEREACC = @PATH
 $ENDIF
@@ -73,13 +73,15 @@ $ENDIF
    * writes ~/mvpkg.conf with the statement form.
    IF A1 # "" THEN
 $IFDEF MVX
-      CONF = GETENV("MVXACCOUNT")
+      CALL MVPKG.ENV("MVXACCOUNT", CONF)
       IF CONF = "" THEN CONF = "."
       CONF = CONF : "/mvpkg.conf"
-      IF NOT(OSWRITE(A1, CONF)) THEN PRINT "cannot write config " : CONF ; RETURN
+      CALL MVPKG.FILE("WRITE", CONF, A1, MVFOK)
+      IF NOT(MVFOK) THEN PRINT "cannot write config " : CONF ; RETURN
 $ELSE
-      CONF = GETENV("HOME") : "/mvpkg.conf"
-      OSWRITE A1 ON CONF
+      CALL MVPKG.ENV("HOME", MVENVT)
+      CONF = MVENVT : "/mvpkg.conf"
+      CALL MVPKG.FILE("WRITE", CONF, A1, MVFOK)
 $ENDIF
    END
 

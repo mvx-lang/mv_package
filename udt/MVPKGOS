@@ -51,23 +51,38 @@
 * gencdef/genefs/genfunc, relink, install) lives in the udt-callc-build
 * helper, installed at $UDTHOME/bin/udt-callc-build by the mv_package
 * UniData setup; MVPKGOS just drives it.  RESULT is "" on success or an
-* error message.  These shell out through EXECUTE "!...", so the caller
+* error message.  These reach the OS through MVPKG.SH, so the caller
 * needs the unrestricted privilege tier — installing software is privileged.
    SUBROUTINE MVPKGOS(OP, P1, P2, RESULT)
+$INCLUDE MVPKG.INC PLATFORM.H
    RESULT = ""
    OP = OCONV(OP, "MCU")
-   UDT = GETENV("UDTHOME")
+* The root the shared package store hangs off.  On UniData that is $UDTHOME, a
+* system location every operator account of the install can reach.  jBASE has no
+* equivalent -- $JBCRELEASEDIR is the release tree and is not ours to write into
+* -- so the store is per-user there.  Without this the default is "" and the
+* store resolves to "/mvpkg", which is not writable and fails as a permission
+* error a long way from the cause.
+$IFDEF JBASE
+   CALL MVPKG.ENV("HOME", UDT)
+$ENDIF
+$IFDEF UV
+   CALL MVPKG.ENV("HOME", UDT)
+$ENDIF
+$IFDEF UDT
+   CALL MVPKG.ENV("UDTHOME", UDT)
+$ENDIF
    BUILDER = UDT : "/bin/udt-callc-build"
    GOSUB CONFLOAD                         ;* MSCOPE / MPREFIX (#34 test/live isolation)
    BEGIN CASE
       CASE OP = "MKDIR"
-         EXECUTE '!mkdir -p "':P1:'"'
+         CALL MVPKG.SH('mkdir -p "':P1:'"', MVSHOUT, MVSHST)
       CASE OP = "UNTAR"
          * Extract into P2.  Account-shaped packages wrap their tree in one named
          * top dir (e.g. git/); contents-at-root packages do not.  Count the
          * distinct top-level components and, when there is exactly one, strip it
          * so the package's files land at the store root either way.
-         EXECUTE '!mkdir -p "':P2:'"; n=`tar -tzf "':P1:'" | sed "s#^\./##; s#/.*##" | grep -v "^$" | sort -u | wc -l | tr -d " "`; if [ "$n" = 1 ]; then tar -xzf "':P1:'" --strip-components=1 -C "':P2:'"; else tar -xzf "':P1:'" -C "':P2:'"; fi'
+         CALL MVPKG.SH('mkdir -p "':P2:'"; n=`tar -tzf "':P1:'" | sed "s#^\./##; s#/.*##" | grep -v "^$" | sort -u | wc -l | tr -d " "`; if [ "$n" = 1 ]; then tar -xzf "':P1:'" --strip-components=1 -C "':P2:'"; else tar -xzf "':P1:'" -C "':P2:'"; fi', MVSHOUT, MVSHST)
       CASE OP = "CALLC"
          * Fold P1's udt-callc contribution (named P2) into libu2callc.so.  A
          * package with no contribution is a no-op; a real one relinks and needs
@@ -75,13 +90,14 @@
          * failed link surfaces as an error the caller aborts on — not a silent
          * success that then catalogs verbs with no CallC backend behind them.
          TMPF = "/tmp/mvpkg_callc_" : @USERNO
-         EXECUTE '!"':BUILDER:'" add "':P1:'" "':P2:'"; echo $? > "':TMPF:'"'
-         OSREAD RC FROM TMPF ELSE RC = "1"
-         EXECUTE '!rm -f "':TMPF:'"'
+         CALL MVPKG.SH('"':BUILDER:'" add "':P1:'" "':P2:'"; echo $? > "':TMPF:'"', MVSHOUT, MVSHST)
+         CALL MVPKG.FILE("READ", TMPF, RC, MVFOK)
+         IF NOT(MVFOK) THEN RC = "1"
+         CALL MVPKG.SH('rm -f "':TMPF:'"', MVSHOUT, MVSHST)
          RC = TRIM(CONVERT(CHAR(10):CHAR(13), "  ", RC))
          IF RC # "0" THEN RESULT = "CallC build failed (udt-callc-build exit ":RC:") — see its output above (gcc / package -devel libs missing?)"
       CASE OP = "REBUILD"
-         EXECUTE '!"':BUILDER:'"'
+         CALL MVPKG.SH('"':BUILDER:'"', MVSHOUT, MVSHST)
       CASE OP = "PLATFORM"
          * "!" shell escapes don't feed CAPTURING here, so route the probes
          * through a temp file and read them back.  os = uname -s (linux/aix/
@@ -90,8 +106,8 @@
          * compiled BASIC objects + data files).  RESULT =
          * "<sys>:<os>:<arch>:<endian>".
          TMPF = "/tmp/mvpkg_plat_" : @USERNO
-         EXECUTE '!uname -s > "':TMPF:'" 2>/dev/null'
-         OSREAD OSN FROM TMPF ELSE OSN = ""
+         CALL MVPKG.SH('uname -s > "':TMPF:'" 2>/dev/null', MVSHOUT, MVSHST)
+         CALL MVPKG.FILE("READ", TMPF, OSN, MVFOK)
          OSN = OCONV(TRIM(CONVERT(CHAR(10):CHAR(13), "  ", OSN)), "MCL")
          BEGIN CASE
             CASE INDEX(OSN, "linux", 1) ; OSN = "linux"
@@ -101,13 +117,13 @@
             CASE INDEX(OSN, "windows", 1) OR INDEX(OSN, "cygwin", 1) OR INDEX(OSN, "mingw", 1) ; OSN = "windows"
             CASE OSN = "" ; OSN = "unknown"
          END CASE
-         EXECUTE '!uname -m > "':TMPF:'" 2>/dev/null'
-         OSREAD ARCH FROM TMPF ELSE ARCH = ""
+         CALL MVPKG.SH('uname -m > "':TMPF:'" 2>/dev/null', MVSHOUT, MVSHST)
+         CALL MVPKG.FILE("READ", TMPF, ARCH, MVFOK)
          ARCH = TRIM(CONVERT(CHAR(10):CHAR(13), "  ", ARCH))
          IF ARCH = "" THEN ARCH = "unknown"
-         EXECUTE "!printf '\1\2' | od -An -tx2 | tr -d ' ' > " : TMPF : " 2>/dev/null"
-         OSREAD EW FROM TMPF ELSE EW = ""
-         EXECUTE '!rm -f "':TMPF:'"'
+         CALL MVPKG.SH("printf '\1\2' | od -An -tx2 | tr -d ' ' > " : TMPF : " 2>/dev/null", MVSHOUT, MVSHST)
+         CALL MVPKG.FILE("READ", TMPF, EW, MVFOK)
+         CALL MVPKG.SH('rm -f "':TMPF:'"', MVSHOUT, MVSHST)
          IF EW[1,4] = "0102" THEN ENDIAN = "be" ELSE ENDIAN = "le"
          RESULT = "udt:" : OSN : ":" : ARCH : ":" : ENDIAN
       CASE OP = "CATALOG"
@@ -133,16 +149,16 @@
          * cataloged object so the verb is typeable in THIS account (a global
          * object alone is not a verb).  Subroutines need no such entry.
          GOBJ = UDT : "/sys/CTLG/" : OCONV(P1[1,1], "MCL") : "/" : P1
-         OPEN "VOC" TO VVF ELSE RESULT = "MVPKGOS VERB: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO VVF ELSE RESULT = "MVPKGOS VERB: cannot open " : MVMASTER ; RETURN
          WRITE ("C" : @FM : GOBJ : @FM : "mvpkg " : P1) ON VVF, P1
       CASE OP = "STORE"
          * RESULT = the global package store (created if absent) — where a
          * downloaded package's source lives once per system so it can be
          * globally cataloged and deployed to any account.  $MVPKG_STORE
          * overrides the default $UDTHOME/mvpkg.
-         SP = GETENV("MVPKG_STORE")
+         CALL MVPKG.ENV("MVPKG_STORE", SP)
          IF SP = "" THEN SP = UDT : "/" : MPREFIX : "mvpkg"
-         EXECUTE '!mkdir -p "' : SP : '"'
+         CALL MVPKG.SH('mkdir -p "' : SP : '"', MVSHOUT, MVSHST)
          RESULT = SP
       CASE OP = "HAVE"
          * P1 = program name.  RESULT = "1" if CALL P1 would resolve (a local
@@ -159,8 +175,8 @@
             RESULT = ""
          END ELSE
             IF OCONV(P2, "MCL") = "dir" THEN
-               EXECUTE '!mkdir -p "' : P1 : '" "D_' : P1 : '"'
-               OPEN "VOC" TO MFV ELSE RESULT = "MVPKGOS MKFILE: cannot open VOC" ; RETURN
+               CALL MVPKG.SH('mkdir -p "' : P1 : '" "D_' : P1 : '"', MVSHOUT, MVSHST)
+               OPEN MVMASTER TO MFV ELSE RESULT = "MVPKGOS MKFILE: cannot open " : MVMASTER ; RETURN
                WRITE ("DIR" : @FM : P1 : @FM : "D_" : P1) ON MFV, P1
             END ELSE
                EXECUTE "CREATE.FILE " : P1 : " 1"
@@ -172,16 +188,16 @@
          * RESULT = the record (a dynamic array), or "" when it is not on file.
          * This is how MVPKG keeps its manifest / lock / installed set the Pick
          * way — native MV records, not OS-level files.
-         OPEN "VOC" TO MDF ELSE RESULT = "" ; RETURN
+         OPEN MVMASTER TO MDF ELSE RESULT = "" ; RETURN
          READ MDR FROM MDF, P1 THEN RESULT = MDR ELSE RESULT = ""
       CASE OP = "MDWRITE"
          * P1 = record id, P2 = the record (a dynamic array).  Persist account
          * state as a native master-dictionary record.
-         OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDWRITE: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO MDF ELSE RESULT = "MVPKGOS MDWRITE: cannot open " : MVMASTER ; RETURN
          WRITE P2 ON MDF, P1
       CASE OP = "MDDELETE"
          * P1 = record id.  Remove an account state record.
-         OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open " : MVMASTER ; RETURN
          DELETE MDF, P1
       CASE OP = "STOREREAD"
          * Read a record from the shared SYSTEM store file MVPKG.STORE — the
@@ -210,36 +226,73 @@
       CASE OP = "UNVERB"
          * P1 = verb name.  Remove this account's VOC pointer for the verb
          * (the inverse of VERB).
-         OPEN "VOC" TO VVF ELSE RESULT = "MVPKGOS UNVERB: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO VVF ELSE RESULT = "MVPKGOS UNVERB: cannot open " : MVMASTER ; RETURN
          DELETE VVF, P1
       CASE OP = "CALLCRM"
          * P1 = package key (name '/'->'_').  Unstage its CallC contribution and
          * rebuild libu2callc.so from what remains (the inverse of CALLC).
-         EXECUTE '!"':BUILDER:'" remove "':P1:'"'
+         CALL MVPKG.SH('"':BUILDER:'" remove "':P1:'"', MVSHOUT, MVSHST)
       CASE OP = "RMDIR"
          * P1 = directory.  Remove it (the store copy on uninstall).
-         EXECUTE '!rm -rf "':P1:'"'
+         CALL MVPKG.SH('rm -rf "':P1:'"', MVSHOUT, MVSHST)
       CASE OP = "CHOWN"
          * P1 = path, P2 = user (or user:group).  Hand ownership to the operator —
          * repair a root-owned install so MVPKG can catalog/upgrade again, or move
          * the install to a new operator.  Needs sudo ($UDTHOME/sys/CTLG + the CallC
          * library are DBA-owned).  Recursive, so a dir + its records go together; a
          * missing path is silently skipped (2>/dev/null).  FIXPERMS drives it.
-         IF P1 # "" AND P2 # "" THEN EXECUTE '!sudo chown -R "' : P2 : '" "' : P1 : '" 2>/dev/null'
+         IF P1 # "" AND P2 # "" THEN CALL MVPKG.SH('sudo chown -R "' : P2 : '" "' : P1 : '" 2>/dev/null', MVSHOUT, MVSHST)
       CASE OP = "INCSETUP"
          * Create the MVPKG.INC directory file (+ its VOC pointer) and write the
          * PLATFORM.H record with the UniData platform defines, so a managed
          * package can $INCLUDE MVPKG.INC PLATFORM.H.  Idempotent — CREATE.FILE on
          * an existing file is captured and ignored.
+$IFDEF JBASE
+* jBASE resolves $INCLUDE by directory layout, so MVPKG.INC is an ordinary
+* directory here and PLATFORM.H an ordinary file in it -- no file pointer, and
+* no CREATE.FILE.  Which is just as well: `CREATE.FILE DIR MVPKG.INC` reads DIR
+* as the file NAME on jBASE rather than the type, so it silently creates a file
+* called DIR and never makes the one asked for.
+*
+* AND THE CONTENT HAS TO BE THIS PLATFORM'S.  Writing the UniData header here
+* would overwrite the account's own PLATFORM.H with $DEFINE UDT, and every
+* later recompile would quietly take the UniData arm of every guard -- an
+* account broken by its own `MVPKG init`.
+         CALL MVPKG.SH('mkdir -p "' : @PATH : '/MVPKG.INC"', MVSHOUT, MVSHST)
+         PH = "* PLATFORM.H - jBASE platform defines."
+         PH<-1> = "$DEFINE MV"
+         PH<-1> = "$DEFINE JBASE"
+         PH<-1> = 'EQUATE MVMASTER TO "MD"'
+         CALL MVPKG.FILE("WRITE", @PATH : "/MVPKG.INC/PLATFORM.H", PH, MVFOK)
+$ENDIF
+$IFDEF UV
+* Same shape as UniData -- a DIR file and a record in it -- but the header has
+* to say UV, or `MVPKG init` rewrites the account as a UniData one and every
+* later recompile takes the wrong arm of every guard.
+         EXECUTE "CREATE.FILE DIR MVPKG.INC" CAPTURING JUNK
+         OPEN "MVPKG.INC" TO INCF THEN
+            PH = "* PLATFORM.H - UniVerse (UV) platform defines."
+            PH<-1> = "$DEFINE MV"
+            PH<-1> = "$DEFINE UV"
+            PH<-1> = 'EQUATE MVMASTER TO "VOC"'
+            WRITE PH ON INCF, "PLATFORM.H"
+         END ELSE
+            RESULT = "MVPKGOS INCSETUP: cannot open MVPKG.INC"
+         END
+$ENDIF
+$IFDEF UDT
          EXECUTE "CREATE.FILE DIR MVPKG.INC" CAPTURING JUNK
          OPEN "MVPKG.INC" TO INCF THEN
             PH = "* PLATFORM.H - UniData (UDT) platform defines."
             PH<-1> = "$DEFINE MV"
             PH<-1> = "$DEFINE UDT"
+            * MVMASTER names the account's master dictionary -- see the mvx arm.
+            PH<-1> = 'EQUATE MVMASTER TO "VOC"'
             WRITE PH ON INCF, "PLATFORM.H"
          END ELSE
             RESULT = "MVPKGOS INCSETUP: cannot open MVPKG.INC"
          END
+$ENDIF
       CASE OP = "CONF"
          * P1 = field ("scope" | "prefix").  RESULT = this account's deploy config
          * value (loaded by CONFLOAD, with defaults).  The portable client reads
@@ -255,7 +308,7 @@
          * the default "global".
          CSC = OCONV(TRIM(P1), "MCL") ; IF CSC # "local" THEN CSC = "global"
          CREC = "MVPKG-CONF" ; CREC<2> = CSC ; CREC<3> = TRIM(P2)
-         OPEN "VOC" TO CFW ELSE RESULT = "MVPKGOS CONFSET: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO CFW ELSE RESULT = "MVPKGOS CONFSET: cannot open " : MVMASTER ; RETURN
          WRITE CREC ON CFW, "MVPKG.CONF"
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
@@ -267,7 +320,7 @@
 * (skipping compiled _objects and dotfiles) natively via SELECT — no shell.
 LISTSRC:
    ITEMS = ""
-   OPEN "VOC" TO LVF ELSE RESULT = "MVPKGOS: cannot open VOC" ; RETURN
+   OPEN MVMASTER TO LVF ELSE RESULT = "MVPKGOS: cannot open " : MVMASTER ; RETURN
    WRITE ("DIR" : @FM : SDIR : @FM : "D_BP") ON LVF, "MVPKG.SRC"
    OPEN "MVPKG.SRC" TO LSF ELSE RESULT = "MVPKGOS: cannot open " : SDIR ; RETURN
    SELECT LSF TO LLIST
@@ -341,7 +394,7 @@ DROPPTR:
 * global catalog, no prefix — the production behaviour, unchanged.   [#34]
 CONFLOAD:
    MSCOPE = "global" ; MPREFIX = ""
-   OPEN "VOC" TO CLVF THEN
+   OPEN MVMASTER TO CLVF THEN
       READ CLR FROM CLVF, "MVPKG.CONF" THEN
          IF OCONV(TRIM(CLR<2>), "MCL") = "local" THEN MSCOPE = "local"
          MPREFIX = TRIM(CLR<3>)
@@ -353,7 +406,7 @@ CONFLOAD:
 * catalog file), else "0".
 HAVECHK:
    HAV = "0"
-   OPEN "VOC" TO HVF THEN
+   OPEN MVMASTER TO HVF THEN
       READ HR FROM HVF, NCK THEN
          IF HR<1> = "C" THEN HAV = "1"
       END
@@ -385,10 +438,10 @@ STOREOPEN:
 * Deploying MVPKG to a NEW account therefore sets this pointer up automatically,
 * not just the cataloging of programs.
 STOREHEAL:
-   SP = GETENV("MVPKG_STORE")
+   CALL MVPKG.ENV("MVPKG_STORE", SP)
    IF SP = "" THEN SP = UDT : "/" : MPREFIX : "mvpkg"
    OMARK = SP : "/operator"
-   OSREAD OINFO FROM OMARK ELSE OINFO = ""
+   CALL MVPKG.FILE("READ", OMARK, OINFO, MVFOK)
    ONAME = TRIM(FIELD(OINFO, CHAR(10), 1))
    OPATH = TRIM(FIELD(OINFO, CHAR(10), 2))
    MYPATH = @PATH
@@ -396,11 +449,11 @@ STOREHEAL:
    BEGIN CASE
       CASE OINFO = ""
          EXECUTE "CREATE.FILE MVPKG.STORE 7"
-         OSWRITE MYNAME : CHAR(10) : MYPATH ON OMARK
+         CALL MVPKG.FILE("WRITE", OMARK, MYNAME : CHAR(10) : MYPATH, MVFOK)
       CASE OPATH = MYPATH
          EXECUTE "CREATE.FILE MVPKG.STORE 7"
       CASE 1
-         OPEN "VOC" TO SVF THEN
+         OPEN MVMASTER TO SVF THEN
             WRITE ("Q" : @FM : ONAME : @FM : "MVPKG.STORE") ON SVF, "MVPKG.STORE"
          END
    END CASE
