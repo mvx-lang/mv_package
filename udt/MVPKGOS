@@ -260,6 +260,8 @@ $IFDEF JBASE
 * account broken by its own `MVPKG init`.
          CALL MVPKG.SH('mkdir -p "' : @PATH : '/MVPKG.INC"', MVSHOUT, MVSHST)
          PH = "* PLATFORM.H - jBASE platform defines."
+         PH<-1> = "* GENERATED FILE - DO NOT EDIT.  MVPKG INIT rewrites it,"
+         PH<-1> = "* so any change made here is lost the next time it runs."
          PH<-1> = "$DEFINE MV"
          PH<-1> = "$DEFINE JBASE"
          PH<-1> = 'EQUATE MVMASTER TO "MD"'
@@ -272,6 +274,8 @@ $IFDEF UV
          EXECUTE "CREATE.FILE DIR MVPKG.INC" CAPTURING JUNK
          OPEN "MVPKG.INC" TO INCF THEN
             PH = "* PLATFORM.H - UniVerse (UV) platform defines."
+            PH<-1> = "* GENERATED FILE - DO NOT EDIT.  MVPKG INIT rewrites it,"
+            PH<-1> = "* so any change made here is lost the next time it runs."
             PH<-1> = "$DEFINE MV"
             PH<-1> = "$DEFINE UV"
             PH<-1> = 'EQUATE MVMASTER TO "VOC"'
@@ -284,6 +288,8 @@ $IFDEF UDT
          EXECUTE "CREATE.FILE DIR MVPKG.INC" CAPTURING JUNK
          OPEN "MVPKG.INC" TO INCF THEN
             PH = "* PLATFORM.H - UniData (UDT) platform defines."
+            PH<-1> = "* GENERATED FILE - DO NOT EDIT.  MVPKG INIT rewrites it,"
+            PH<-1> = "* so any change made here is lost the next time it runs."
             PH<-1> = "$DEFINE MV"
             PH<-1> = "$DEFINE UDT"
             * MVMASTER names the account's master dictionary -- see the mvx arm.

@@ -161,6 +161,8 @@ $INCLUDE MVPKG.INC PLATFORM.H
          INCD = AC : "/MVPKG.INC"
          IF MKDIR(INCD) < 1 THEN RESULT = "MVPKGOS INCSETUP: cannot create " : INCD ; RETURN
          PH = "* PLATFORM.H - platform compile-time defines." : CHAR(10)
+         PH = PH : "* GENERATED FILE - DO NOT EDIT.  MVPKG INIT rewrites it," : CHAR(10)
+         PH = PH : "* so any change made here is lost the next time it runs." : CHAR(10)
          PH = PH : "* MVX is a builtin compiler define; nothing to declare here." : CHAR(10)
          * MVMASTER names the account's master dictionary, so a managed package
          * opens it by name instead of guarding every OPEN.  VOC everywhere but
