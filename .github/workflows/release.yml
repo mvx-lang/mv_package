@@ -2,9 +2,9 @@
 # publishes source PLUS a per-Pick account artifact — the manager is itself a
 # downloadable PICK account you install from.  Asset names mirror the registry's
 # artifact key (<base>-<ver>-<suffix>, base = name '/'->'_'):
-#   source -> mvx-lang_mvpkg-<ver>-source.tar.gz
-#   mvx    -> mvx-lang_mvpkg-<ver>-mvx-<os>-<arch>-<endian>.tar.gz  (compiled, native)
-#   udt    -> mvx-lang_mvpkg-<ver>-udt-any-any-le.tar.gz            (BASIC, portable)
+#   source -> mvpkg-<ver>-source.tar.gz
+#   mvx    -> mvpkg-<ver>-mvx-<os>-<arch>-<endian>.tar.gz  (compiled, native)
+#   udt    -> mvpkg-<ver>-udt-any-any-le.tar.gz            (BASIC, portable)
 #
 # The mvx account is compiled with the published mvx toolchain (mkpkg.sh); the
 # udt account is pure BASIC + shell (cataloged on the target by install.sh), so
@@ -41,6 +41,7 @@ jobs:
       - uses: mvx-lang/mvx/.github/actions/publish-source@main
         with:
           package: mvx-lang/mvpkg
+          artifact: mvpkg
           title: mvpkg
           body: "MVPKG — the MultiValue package manager client (MVX + UniData). Source; indexed by the package registry."
           extra-exclude: docs        # the docs wiki submodule
@@ -65,7 +66,7 @@ jobs:
           case "$(printf '\1\2' | od -An -tx2 | tr -d ' \n')" in
             0201*) ENDIAN=le ;; 0102*) ENDIAN=be ;; *) ENDIAN=le ;;
           esac
-          BASE="mvx-lang_mvpkg-$VER-mvx-$OS-$ARCH-$ENDIAN"
+          BASE="mvpkg-$VER-mvx-$OS-$ARCH-$ENDIAN"
           # build.sh catalogs BP/* IN-ACCOUNT so cross-refs (MVPKG.META -> HTTPGET)
           # resolve — mkpkg's independent bundling does not.  setup-mvx put mvx +
           # its drivers under $MVXHOME; build.sh takes $MVX / $MVX_DRIVERS overrides.
@@ -105,7 +106,7 @@ jobs:
         run: |
           set -euo pipefail
           VER="${GITHUB_REF_NAME}"
-          BASE="mvx-lang_mvpkg-$VER-udt-any-any-le"
+          BASE="mvpkg-$VER-udt-any-any-le"
           rm -rf dist && mkdir -p dist
           sh udt/build-udt.sh dist              # stages dist/mvpkg/ (the account)
           tar czf "$BASE.tar.gz" -C dist mvpkg  # wrap mvpkg/ by name (clean, strippable)

@@ -1,5 +1,6 @@
 {
   "name": "mvx-lang/mvpkg",
+  "artifact": "mvpkg",
   "version": "1.16.0",
   "description": "MVPKG \u2014 the MultiValue package manager client",
   "license": "GPL-2.0-only",
