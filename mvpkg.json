@@ -8,7 +8,6 @@
     "udt"
   ],
   "dependencies": [
-    "mvx-lang/http@mvx",
     "curl@!mvx",
     "mvx-lang/json@!mvx",
     "?mvx-lang/cmd",
