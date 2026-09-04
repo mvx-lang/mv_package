@@ -94,11 +94,18 @@ $ENDIF
          CALL MVPKG.FILE("READ", TMPF, RC, MVFOK)
          IF NOT(MVFOK) THEN RC = "1"
          CALL MVPKG.SH('rm -f "':TMPF:'"', MVSHOUT, MVSHST)
-         RC = TRIM(CONVERT(CHAR(10):CHAR(13), "  ", RC))
+         RC = TRIM(FIELD(FIELD(FIELD(RC, @AM, 1), CHAR(10), 1), CHAR(13), 1))
          IF RC # "0" THEN RESULT = "CallC build failed (udt-callc-build exit ":RC:") — see its output above (gcc / package -devel libs missing?)"
       CASE OP = "REBUILD"
          CALL MVPKG.SH('"':BUILDER:'"', MVSHOUT, MVSHST)
       CASE OP = "PLATFORM"
+      * CONVERT() TAKES ITS ARGUMENTS IN THE OPPOSITE ORDER ON jBASE.  U2 and
+      * MVX read CONVERT(from, to, expr); jBASE reads CONVERT(expr, from, to).
+      * Measured on both: "Linux":CHAR(10) through the U2 spelling comes back
+      * length 2 on jBASE and length 6 on MVX, and the other spelling does the
+      * reverse -- so no argument order works on all four, and the call returns
+      * rubbish rather than failing (mv_package#54).  FIELD says portably what
+      * these actually want: the FIRST LINE of a shell capture.
          * "!" shell escapes don't feed CAPTURING here, so route the probes
          * through a temp file and read them back.  os = uname -s (linux/aix/
          * windows — native objects are OS-locked); arch = uname -m; endian
@@ -108,7 +115,7 @@ $ENDIF
          TMPF = "/tmp/mvpkg_plat_" : @USERNO
          CALL MVPKG.SH('uname -s > "':TMPF:'" 2>/dev/null', MVSHOUT, MVSHST)
          CALL MVPKG.FILE("READ", TMPF, OSN, MVFOK)
-         OSN = OCONV(TRIM(CONVERT(CHAR(10):CHAR(13), "  ", OSN)), "MCL")
+         OSN = OCONV(TRIM(FIELD(FIELD(FIELD(OSN, @AM, 1), CHAR(10), 1), CHAR(13), 1)), "MCL")
          BEGIN CASE
             CASE INDEX(OSN, "linux", 1) ; OSN = "linux"
             CASE INDEX(OSN, "aix", 1)   ; OSN = "aix"
@@ -119,13 +126,25 @@ $ENDIF
          END CASE
          CALL MVPKG.SH('uname -m > "':TMPF:'" 2>/dev/null', MVSHOUT, MVSHST)
          CALL MVPKG.FILE("READ", TMPF, ARCH, MVFOK)
-         ARCH = TRIM(CONVERT(CHAR(10):CHAR(13), "  ", ARCH))
+         ARCH = TRIM(FIELD(FIELD(FIELD(ARCH, @AM, 1), CHAR(10), 1), CHAR(13), 1))
          IF ARCH = "" THEN ARCH = "unknown"
          CALL MVPKG.SH("printf '\1\2' | od -An -tx2 | tr -d ' ' > " : TMPF : " 2>/dev/null", MVSHOUT, MVSHST)
          CALL MVPKG.FILE("READ", TMPF, EW, MVFOK)
          CALL MVPKG.SH('rm -f "':TMPF:'"', MVSHOUT, MVSHST)
          IF EW[1,4] = "0102" THEN ENDIAN = "be" ELSE ENDIAN = "le"
-         RESULT = "udt:" : OSN : ":" : ARCH : ":" : ENDIAN
+         * THE SYSTEM IS NOT ALWAYS udt.  These sources are shared by udt, uv
+         * and jbase, and this named one of them -- so jBASE asked the registry
+         * for UniData artifacts.  It went unnoticed because the arch was empty
+         * (the CONVERT above), and the query is only sent when system AND arch
+         * are both set (mv_package#54).
+         SYS = "udt"
+$IFDEF UV
+         SYS = "uv"
+$ENDIF
+$IFDEF JBASE
+         SYS = "jbase"
+$ENDIF
+         RESULT = SYS : ":" : OSN : ":" : ARCH : ":" : ENDIAN
       CASE OP = "CATALOG"
          * P1 = package dir, P2 = source subdir (e.g. "BP").  Compile every
          * source item in P1/P2 in place — via a temp VOC DIR-pointer, so

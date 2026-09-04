@@ -308,11 +308,22 @@ $ENDIF
 * with it).  mvx: is GITCLONE cataloged (the git package linked); udt: udt-git
 * ships with the udt mvpkg install, so assume present.
 HASGIT:
+   * IS THE GIT PACKAGE ACTUALLY HERE?  This answered "yes, always" off MVX,
+   * which is not a probe -- it is an assumption, and on jBASE it is fatal: an
+   * unresolved CALL there does not return an error, it traps into the debugger.
+   * So a machine with no git got a SUBROUTINE_CALL_FAIL on GITCLONE instead of
+   * the per-platform message the caller goes to the trouble of printing
+   * (mv_package#54).
+   *
+   * MVPKG.HAS is the portable probe: it reads the install lock through the
+   * MVPKGOS MD* seam, so one source answers on every platform.
    GITOK = 0
+   CALL MVPKG.HAS("mvx-lang/git", GITOK)
 $IFDEF MVX
+   * On MVX a LINKed package is callable without appearing in the lock -- the
+   * monorepo case, where packages/git is linked rather than installed -- so ask
+   * the catalog as well.
    IF CATALOGED("GITCLONE") THEN GITOK = 1
-$ELSE
-   GITOK = 1
 $ENDIF
    RETURN
 

@@ -39,7 +39,9 @@ $ENDIF
    OPU = NEWOP
    IF OPU = "" THEN
       CALL MVPKG.SH('ls -ld "' : ACCT : '"', OWNL, MVSHST)
-      OWNL = TRIM(CONVERT(@AM : @FM : CHAR(10) : CHAR(13), "    ", OWNL))
+      * first line only -- CONVERT() argument order differs on jBASE
+      * (mv_package#54).  TRIM then squeezes ls -ld's column padding.
+      OWNL = TRIM(FIELD(FIELD(FIELD(OWNL, @AM, 1), CHAR(10), 1), CHAR(13), 1))
       OPU = FIELD(TRIM(OWNL), " ", 3)
    END
    IF OPU = "" THEN
@@ -49,7 +51,7 @@ $ENDIF
    * the target must be a real user; take its primary group so files land
    * user:group (id -gn is empty for a non-existent user, which we reject).
    CALL MVPKG.SH('id -gn "' : OPU : '" 2>/dev/null', GRP, MVSHST)
-   GRP = FIELD(TRIM(TRIM(CONVERT(@AM : @FM : CHAR(10) : CHAR(13), "    ", GRP))), " ", 1)
+   GRP = FIELD(TRIM(FIELD(FIELD(FIELD(GRP, @AM, 1), CHAR(10), 1), CHAR(13), 1)), " ", 1)
    IF GRP = "" THEN
       PRINT "fixperms: no such user '" : OPU : "'"
       RETURN
