@@ -8,9 +8,29 @@
 * are MVX intrinsics; UniData reaches them as the cataloged seam functions, so
 * declare those only off MVX.  The output format mask is the other platform diff.
    SUBROUTINE MVPKG.SEARCH
+   $INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
    S = SENTENCE()
-$ELSE
+$ENDIF
+* jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
+* at a cataloged one; jBASE resolves a DEFFUN by NAME against the catalog, and
+* the names are already there because mvpkg's dependencies catalog them.
+*
+* FLAT GUARDS, one per platform: an $IFDEF nested inside an $ELSE compiles on
+* UniData and FAILS on UniVerse, which is what this block used to be.
+$IFDEF JBASE
+   DEFFUN HTTPGET(A)
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B, C, D, E)
+   S = @SENTENCE
+$ENDIF
+$IFDEF UDT
+   DEFFUN HTTPGET(A) CALLING "*MVPKG.HTTPGET"
+   DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
+   S = @SENTENCE
+$ENDIF
+$IFDEF UV
    DEFFUN HTTPGET(A) CALLING "*MVPKG.HTTPGET"
    DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
    DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"

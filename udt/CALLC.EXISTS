@@ -22,9 +22,9 @@ FUNCTION CALLC.EXISTS(FNAME)
 * The program compiles and runs whether or not the capability is installed:
 * only CALLC.EXISTS itself must be present, and it always is.
    FOUND = 0
-   UDT = GETENV("UDTHOME")
+   CALL MVPKG.ENV("UDTHOME", UDT)
    IF UDT # "" THEN
-      OSREAD DEF FROM UDT : "/bin/work/cfuncdef" ELSE DEF = ""
+      CALL MVPKG.FILE("READ", UDT : "/bin/work/cfuncdef", DEF, MVFOK)
       NL = DCOUNT(DEF, CHAR(10))
       I = 1
       LOOP WHILE I <= NL AND FOUND = 0 DO
@@ -32,4 +32,4 @@ FUNCTION CALLC.EXISTS(FNAME)
          I = I + 1
       REPEAT
    END
-   RETURN FOUND
+   RETURN(FOUND)

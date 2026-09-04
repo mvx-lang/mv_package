@@ -97,7 +97,7 @@ sudo install -m 755 "$HERE/udt-callc-build.sh" "$UDTHOME/bin/udt-callc-build"
 #    MVPKG LOCALLY.  A piped udt exits 0 even when an inner command fails, so
 #    verify by a catalog entry rather than trusting the exit code.
 PROBES="CALLC.EXISTS MVPKG.HAS"
-GLOBAL="MVPKGOS MVPKGDEP MVPKG.HTTPGET MVPKG.HTTPGETFILE MVPKG.JSONDECODE MVPKG.MAPFIELD SEMVER \
+GLOBAL="MVPKGOS MVPKG.SH MVPKG.SH.RM MVPKGDEP MVPKG.HTTPGET MVPKG.HTTPGETFILE MVPKG.JSONDECODE MVPKG.MAPFIELD SEMVER \
 CMD.INIT CMD.ADD CMD.RUN MVPKG.REG MVPKG.META MVPKG.ONE \
 MVPKG.INSTALL MVPKG.INFO MVPKG.LIST MVPKG.UPDATE MVPKG.REMOVE \
 MVPKG.REGISTER MVPKG.SEARCH MVPKG.SETUP MVPKG.CONFIG MVPKG.REBUILD MVPKG.INIT \
@@ -114,6 +114,24 @@ sudo chown -R "$OWNER:$GROUP" "$HERE" 2>/dev/null || true
 for v in $PROBES $GLOBAL; do
   sudo chown "$OWNER:$GROUP" "$UDTHOME"/sys/CTLG/*/"$v" 2>/dev/null || true
 done
+
+# MVPKG.INC/PLATFORM.H, BEFORE the compile.  Byte-for-byte what MVPKGOS
+# INCSETUP writes -- if the two disagree, `MVPKG init` silently rewrites the
+# file the account was built against.  Several BP records $INCLUDE it and
+# a missing include is a hard compile error -- and `MVPKG init` (step 4), which
+# is what normally writes this file, cannot run until the client is cataloged.
+# So the installer lays down the same file the INCSETUP op would, first.
+#
+#   MVMASTER  the account's master dictionary -- VOC here, MD on jBASE.
+#   GETENV    UniData has it natively, so nothing to declare.
+say "writing MVPKG.INC/PLATFORM.H (before the compile: sources include it)"
+mkdir -p "$HERE/MVPKG.INC"
+cat > "$HERE/MVPKG.INC/PLATFORM.H" <<'PLATEOF'
+* PLATFORM.H - UniData (UDT) platform defines.
+$DEFINE MV
+$DEFINE UDT
+EQUATE MVMASTER TO "VOC"
+PLATEOF
 
 say "compiling + cataloging the client (scope: $SCOPE) and the MVPKG verb"
 # One BASIC per program, not one BASIC with a long arg list: `BASIC BP <many

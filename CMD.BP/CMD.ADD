@@ -5,9 +5,9 @@
 * CMD.ADD(subcommand, description, handler-subroutine) — register a subcommand
 * and its handler.  Platform-neutral (no idiom diff), so this one source compiles
 * for both MVX and UniData.
-   SUBROUTINE CMD.ADD(SUB, DESC, HANDLER)
+   SUBROUTINE CMD.ADD(CSUB, DESC, HANDLER)
    COMMON /CMDPKG/ CNAME, CDESC, CSUBS, CDESCS, CHANDLERS
-   CSUBS<-1> = OCONV(SUB, "MCU")
+   CSUBS<-1> = OCONV(CSUB, "MCU")
    CDESCS<-1> = DESC
    CHANDLERS<-1> = HANDLER
    RETURN

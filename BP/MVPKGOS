@@ -36,6 +36,7 @@
 * vendor permit its .mvx declares (mkdir rmtree untar mkpkg chown), not the
 * whole-shell unrestricted tier; other ports may differ.
    SUBROUTINE MVPKGOS(OP, P1, P2, RESULT)
+$INCLUDE MVPKG.INC PLATFORM.H
    RESULT = ""
    OP = OCONV(OP, "MCU")
    BEGIN CASE
@@ -112,16 +113,16 @@
          * Read a record from the account master dictionary (VOC/MD) — the
          * portable home for account state (manifest / lock / installed set).
          * P1 = record id; RESULT = the record, or "" when it is not on file.
-         OPEN "VOC" TO MDF ELSE RESULT = "" ; RETURN
+         OPEN MVMASTER TO MDF ELSE RESULT = "" ; RETURN
          READ MDR FROM MDF, P1 THEN RESULT = MDR ELSE RESULT = ""
       CASE OP = "MDWRITE"
          * P1 = record id, P2 = the record.  Persist account state as a native
          * master-dictionary record.
-         OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDWRITE: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO MDF ELSE RESULT = "MVPKGOS MDWRITE: cannot open " : MVMASTER ; RETURN
          WRITE P2 ON MDF, P1
       CASE OP = "MDDELETE"
          * P1 = record id.  Remove an account state record.
-         OPEN "VOC" TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open VOC" ; RETURN
+         OPEN MVMASTER TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open " : MVMASTER ; RETURN
          DELETE MDF, P1
       CASE OP = "STOREREAD"
          * Read a record from the shared SYSTEM store MVPKG.STORE — the
@@ -160,8 +161,22 @@
          INCD = AC : "/MVPKG.INC"
          IF MKDIR(INCD) < 1 THEN RESULT = "MVPKGOS INCSETUP: cannot create " : INCD ; RETURN
          PH = "* PLATFORM.H - platform compile-time defines." : CHAR(10)
+         PH = PH : "* GENERATED FILE - DO NOT EDIT.  MVPKG INIT rewrites it," : CHAR(10)
+         PH = PH : "* so any change made here is lost the next time it runs." : CHAR(10)
          PH = PH : "* MVX is a builtin compiler define; nothing to declare here." : CHAR(10)
-         IF NOT(OSWRITE(PH, INCD : "/PLATFORM.H")) THEN RESULT = "MVPKGOS INCSETUP: cannot write " : INCD : "/PLATFORM.H"
+         * MVMASTER names the account's master dictionary, so a managed package
+         * opens it by name instead of guarding every OPEN.  VOC everywhere but
+         * jBASE, which has an MD -- and naming it here is what makes that a
+         * one-line difference rather than a $IFDEF at every call site.
+         PH = PH : 'EQUATE MVMASTER TO "VOC"' : CHAR(10)
+         * MVX spells the environment ENV(); every other MV system spells it
+         * GETENV().  Declared HERE rather than behind a $IFDEF MVX in each
+         * caller, because on jBASE a $DEFINE inside a FALSE $IFDEF still takes
+         * effect -- so a guarded rename leaks and rewrites GETENV to a function
+         * jBASE does not have.  A per-platform generated file cannot leak.
+         PH = PH : "$DEFINE GETENV ENV" : CHAR(10)
+         CALL MVPKG.FILE("WRITE", INCD : "/PLATFORM.H", PH, MVFOK)
+         IF NOT(MVFOK) THEN RESULT = "MVPKGOS INCSETUP: cannot write " : INCD : "/PLATFORM.H"
       CASE 1
          RESULT = "MVPKGOS: unknown op ":OP
    END CASE

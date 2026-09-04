@@ -16,12 +16,30 @@
 * JSON/MAPFIELD are MVX intrinsics (declared as the cataloged seam off MVX); the
 * @SENTENCE token, the FMT justify masks, and the OSREAD form are the other diffs.
    SUBROUTINE MVPKG.LIST
+   $INCLUDE MVPKG.INC PLATFORM.H
 * FMT justify masks differ by platform (mvx L#n vs udt nL); hold them in runtime
 * variables — UniData's $DEFINE has no value-substitution form, so a per-platform
 * assignment (not a macro) is what ports.
 $IFDEF MVX
    FMTL22 = "L#22" ; FMTL9 = "L#9" ; FMTL10 = "L#10"
-$ELSE
+$ENDIF
+* jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
+* at a cataloged one; jBASE resolves a DEFFUN by NAME against the catalog, and
+* the names are already there because mvpkg's dependencies catalog them.
+*
+* FLAT GUARDS, one per platform: an $IFDEF nested inside an $ELSE compiles on
+* UniData and FAILS on UniVerse, which is what this block used to be.
+$IFDEF JBASE
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B, C, D, E)
+   FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
+$ENDIF
+$IFDEF UDT
+   DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
+   FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
+$ENDIF
+$IFDEF UV
    DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
    DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
    FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
@@ -56,11 +74,7 @@ $ENDIF
    * account's own mvpkg.json; read it once to fill that one row's description.
    SELFSPEC = MAPFIELD("name", 1, "", "", "")
    SELFSPEC<-1> = MAPFIELD("description", 2, "", "", "")
-$IFDEF MVX
-   SELFJ = OSREAD("mvpkg.json") ; IF STATUS() # 0 THEN SELFJ = ""
-$ELSE
-   OSREAD SELFJ FROM "mvpkg.json" ELSE SELFJ = ""
-$ENDIF
+   CALL MVPKG.FILE("READ", "mvpkg.json", SELFJ, MVFOK)
    SELFNAME = "" ; SELFDESC = ""
    IF SELFJ # "" THEN SM = JSONDECODE(SELFJ, SELFSPEC) ; SELFNAME = TRIM(SM<1>) ; SELFDESC = TRIM(SM<2>)
    INDENT = SPACE(41)          ;* 22 + 9 + 10 — aligns wrapped lines under DESCRIPTION
@@ -98,11 +112,7 @@ $ENDIF
             SHOWN = SHOWN + 1
             * description from the package's stored manifest (local, no network)
             PKGKEY = CHANGE(NM, "/", "_")
-$IFDEF MVX
-            J = OSREAD(STORE : "/" : PKGKEY : "/mvpkg.json") ; IF STATUS() # 0 THEN J = ""
-$ELSE
-            OSREAD J FROM STORE : "/" : PKGKEY : "/mvpkg.json" ELSE J = ""
-$ENDIF
+            CALL MVPKG.FILE("READ", STORE : "/" : PKGKEY : "/mvpkg.json", J, MVFOK)
             DESC = ""
             IF J # "" THEN
                M = JSONDECODE(J, SPEC) ; DESC = TRIM(M<1>)
@@ -128,7 +138,7 @@ $ENDIF
 * name/version/status columns), each continuation line is indented so it sits
 * under the DESCRIPTION column.  A word longer than WRAPW takes its own line.
 WRAPDESC:
-   OUT = ""
+   MOUT = ""
    LINE = ""
    FOR WI = 1 TO DCOUNT(DESC, " ")
       W = FIELD(DESC, " ", WI)
@@ -139,18 +149,18 @@ WRAPDESC:
             IF LEN(LINE) + 1 + LEN(W) <= WRAPW THEN
                LINE = LINE : " " : W
             END ELSE
-               OUT<-1> = LINE ; LINE = W
+               MOUT<-1> = LINE ; LINE = W
             END
          END
       END
    NEXT WI
-   IF LINE # "" THEN OUT<-1> = LINE
-   NLN = DCOUNT(OUT, @AM)
+   IF LINE # "" THEN MOUT<-1> = LINE
+   NLN = DCOUNT(MOUT, @AM)
    IF NLN = 0 THEN
       PRINT PREFIX
    END ELSE
       FOR LI = 1 TO NLN
-         IF LI = 1 THEN PRINT PREFIX : OUT<LI> ELSE PRINT INDENT : OUT<LI>
+         IF LI = 1 THEN PRINT PREFIX : MOUT<LI> ELSE PRINT INDENT : MOUT<LI>
       NEXT LI
    END
    RETURN

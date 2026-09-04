@@ -16,13 +16,13 @@
    J = JSON[DP, LEN(JSON) - DP + 1]
 
 * --- verbs: the quoted strings inside the [ ... ] after "verbs" ---
-   KEY = "verbs" ; OCH = "[" ; CCH = "]" ; GOSUB SEG
+   MKEY = "verbs" ; OCH = "[" ; CCH = "]" ; GOSUB SEG
    SS = SEGV ; GOSUB QSTRS
    FOR QI = 1 TO DCOUNT(QL, @AM) ; VERBS := QL<QI> : " " ; NEXT QI
    VERBS = TRIM(VERBS)
 
 * --- files: name:type from each {"name":..,"type":..} object ---
-   KEY = "files" ; OCH = "[" ; CCH = "]" ; GOSUB SEG
+   MKEY = "files" ; OCH = "[" ; CCH = "]" ; GOSUB SEG
    WS = SEGV ; FDONE = 0
    LOOP UNTIL FDONE DO
       NP = INDEX(WS, DQ : "name" : DQ, 1)
@@ -41,7 +41,7 @@
    FILES = TRIM(FILES)
 
 * --- fallback: dep:dir for each "dep":[ "dir", ... ] ---
-   KEY = "fallback" ; OCH = "{" ; CCH = "}" ; GOSUB SEG
+   MKEY = "fallback" ; OCH = "{" ; CCH = "}" ; GOSUB SEG
    WS = SEGV ; BDONE = 0
    LOOP UNTIL BDONE DO
       KP = INDEX(WS, DQ, 1)
@@ -74,7 +74,7 @@
 * Valid for the deploy shapes, whose inner values never re-nest OCH/CCH.
 SEG:
    SEGV = ""
-   SP = INDEX(J, DQ : KEY : DQ, 1)
+   SP = INDEX(J, DQ : MKEY : DQ, 1)
    IF SP = 0 THEN RETURN
    TAIL = J[SP, LEN(J) - SP + 1]
    OPS = INDEX(TAIL, OCH, 1)
