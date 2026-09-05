@@ -1,0 +1,23 @@
+      FUNCTION HTTPGET(URL)
+* jBASE bootstrap: give mvpkg's own HTTP seam the name jBASE will look for.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see ../LICENSE).
+*
+* jBASE HAS NO `DEFFUN ... CALLING`, so a local name cannot be pointed at a
+* differently-named cataloged one -- verified on 6.2.1.1, the clause is a
+* syntax error.  UniData and UniVerse write
+*
+*     DEFFUN HTTPGET(A) CALLING "MVPKG.HTTPGET"
+*
+* and jBASE has to write a bare `DEFFUN HTTPGET(A)`, which resolves by NAME
+* against the catalog.  The name mvpkg ships is MVPKG.HTTPGET, so nothing
+* answered to HTTPGET and every fetch died with SUBROUTINE_CALL_FAIL -- mvpkg
+* could not download the curl-cmd package that was supposed to provide the
+* name, which is the whole bootstrap (mv_package#77).
+*
+* So this is the name, and it forwards.  It is a bootstrap copy in the sense the
+* client already uses elsewhere -- git bundles a stripped cmd so it can be
+* installed standalone -- and when curl-cmd is later installed it catalogs its
+* own HTTPGET over this one, same name and same signature.  Either way the work
+* is the same: both shell out to curl.
+      DEFFUN MVPKG.HTTPGET(A)
+      RETURN(MVPKG.HTTPGET(URL))

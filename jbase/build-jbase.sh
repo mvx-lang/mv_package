@@ -51,6 +51,15 @@ cp "$UDT"/MVPKGDEP \
    "$UDT"/CALLC.EXISTS "$ACCT/BP/"
 cp "$ROOT"/CMD.BP/CMD.INIT "$ROOT"/CMD.BP/CMD.ADD "$ROOT"/CMD.BP/CMD.RUN "$ACCT/BP/"
 
+# THE HTTP SEAM NEEDS THE NAME jBASE WILL LOOK FOR.  U2 points a local name at a
+# differently-named cataloged one with `DEFFUN ... CALLING`; jBASE has no such
+# clause (it is a syntax error there), so its DEFFUN is bare and resolves by
+# NAME.  mvpkg ships MVPKG.HTTPGET, nothing answered to HTTPGET, and every fetch
+# died -- including the fetch of the curl-cmd package that was meant to provide
+# the name (#77).  These two forward one to the other; curl-cmd catalogs its own
+# over them later, same names and signatures.
+cp "$HERE"/HTTPGET "$HERE"/HTTPGETFILE "$ACCT/BP/"
+
 cp "$HERE/install.sh" "$ACCT/install.sh"; chmod +x "$ACCT/install.sh"
 cp "$ROOT"/PKG "$ROOT"/mvpkg.json "$ROOT"/LICENSE "$ROOT"/README.md "$ACCT/" 2>/dev/null || true
 
