@@ -73,7 +73,12 @@ $ENDIF
 $IFDEF UDT
    CALL MVPKG.ENV("UDTHOME", UDT)
 $ENDIF
+   * Only ever used by the CallC ops below, which are UniData-only: elsewhere
+   * UDT is $HOME and this would name a file that is never there.
+   BUILDER = ""
+$IFDEF UDT
    BUILDER = UDT : "/bin/udt-callc-build"
+$ENDIF
    GOSUB CONFLOAD                         ;* MSCOPE / MPREFIX (#34 test/live isolation)
    BEGIN CASE
       CASE OP = "MKDIR"
@@ -90,6 +95,16 @@ $ENDIF
          * gcc.  Capture the builder's exit (via a temp file, like PLATFORM) so a
          * failed link surfaces as an error the caller aborts on — not a silent
          * success that then catalogs verbs with no CallC backend behind them.
+         *
+         * UNIDATA ONLY, AND THE GUARD IS THE WHOLE POINT.  One shared library
+         * every package's C is folded into is a UniData arrangement.  UniVerse
+         * has no in-process route to C at all (GCI is licensed and dead in the
+         * TE, which is why curl-cmd exists), and jBASE reaches C with DEFC
+         * against an ordinary shared library, so neither has an aggregator to
+         * call.  Unguarded, UDT resolves to $HOME on both and the builder path
+         * becomes $HOME/bin/udt-callc-build -- so EVERY install died on "exit
+         * 127", including pure-BASIC packages with no C at all (#75).
+$IFDEF UDT
          TMPF = "/tmp/mvpkg_callc_" : @USERNO
          CALL MVPKG.SH('"':BUILDER:'" add "':P1:'" "':P2:'"; echo $? > "':TMPF:'"', MVSHOUT, MVSHST)
          CALL MVPKG.FILE("READ", TMPF, RC, MVFOK)
@@ -97,8 +112,13 @@ $ENDIF
          CALL MVPKG.SH('rm -f "':TMPF:'"', MVSHOUT, MVSHST)
          RC = TRIM(FIELD(FIELD(FIELD(RC, @AM, 1), CHAR(10), 1), CHAR(13), 1))
          IF RC # "0" THEN RESULT = "CallC build failed (udt-callc-build exit ":RC:") — see its output above (gcc / package -devel libs missing?)"
+$ENDIF
       CASE OP = "REBUILD"
+         * Relink the aggregate library.  Nothing to relink where there is no
+         * aggregate -- see CALLC above.
+$IFDEF UDT
          CALL MVPKG.SH('"':BUILDER:'"', MVSHOUT, MVSHST)
+$ENDIF
       CASE OP = "PLATFORM"
       * CONVERT() TAKES ITS ARGUMENTS IN THE OPPOSITE ORDER ON jBASE.  U2 and
       * MVX read CONVERT(from, to, expr); jBASE reads CONVERT(expr, from, to).
@@ -244,8 +264,11 @@ $ENDIF
          DELETE VVF, P1
       CASE OP = "CALLCRM"
          * P1 = package key (name '/'->'_').  Unstage its CallC contribution and
-         * rebuild libu2callc.so from what remains (the inverse of CALLC).
+         * rebuild libu2callc.so from what remains (the inverse of CALLC), and
+         * like CALLC a UniData-only step.
+$IFDEF UDT
          CALL MVPKG.SH('"':BUILDER:'" remove "':P1:'"', MVSHOUT, MVSHST)
+$ENDIF
       CASE OP = "RMDIR"
          * P1 = directory.  Remove it (the store copy on uninstall).
          CALL MVPKG.SH('rm -rf "':P1:'"', MVSHOUT, MVSHST)
