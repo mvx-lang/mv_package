@@ -1,0 +1,6 @@
+      FUNCTION HTTPGETFILE(URL, PATH)
+* jBASE bootstrap: the download half of the pair.  See HTTPGET beside this for
+* why the name has to be this and not MVPKG.HTTPGETFILE.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see ../LICENSE).
+      DEFFUN MVPKG.HTTPGETFILE(A, B)
+      RETURN(MVPKG.HTTPGETFILE(URL, PATH))

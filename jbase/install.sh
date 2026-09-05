@@ -104,7 +104,16 @@ PLATEOF
 #    one silently drops a newly added program, which is how CMD.FLAG went missing
 #    from a cmd release and `GIT` failed with "Cannot find CMD.FLAG".
 #    One BASIC per program -- a bulk compile is harder to read when one fails.
-PROGS="$(cd "$HERE/BP" && for f in *; do [ -f "$f" ] && printf '%s ' "$f"; done)"
+# $<PROG> IS THE COMPILED OBJECT, NOT A PROGRAM.  jBASE writes objects beside
+# their source the way UniData writes _<PROG>, so after the first compile BP/
+# holds the sources and an object for each -- and a second run of this installer
+# then tried to compile `$MVPKGOS` and reported every one of them as a failure.
+# Dotfiles go with them.
+PROGS="$(cd "$HERE/BP" && for f in *; do
+   [ -f "$f" ] || continue
+   case "$f" in (\$*|.*) continue ;; esac
+   printf '%s ' "$f"
+done)"
 [ -n "$PROGS" ] || die "BP/ has no programs to compile"
 say "compiling + cataloging the client (scope: $SCOPE)"
 FAILED=
