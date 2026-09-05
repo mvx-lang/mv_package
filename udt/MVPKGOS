@@ -368,6 +368,31 @@ $ENDIF
 * (skipping compiled _objects and dotfiles) natively via SELECT — no shell.
 LISTSRC:
    ITEMS = ""
+$IFDEF JBASE
+* jBASE NEEDS NO POINTER, AND ITS SELECT WILL NOT ENUMERATE ONE.  The other two
+* reach a tree outside the account through a temporary file pointer; jBASE takes
+* the PATH directly in BASIC and CATALOG, and an MD "DIR" record does not open
+* at all there.  Nor does a SELECT over a directory opened by path help --
+* measured, 0 items against 11 files, and jBASE's own UD file behaves the same.
+* So the listing comes from the shell and DOCAT addresses the tree by path.
+*
+* Objects sit beside their source as $<PROG>, the way UniData writes _<PROG>,
+* and are skipped for the same reason: the directory holds 11 sources and 11
+* objects after one compile, and every one of them is not a program to catalog.
+* LSN, not LN: LN is jBASE's natural-log function and a reserved word, and the
+* error names the line after it as well, so it reads like two faults.
+   CALL MVPKG.SH('ls -1 "' : SDIR : '" 2>/dev/null', LSRAW, LSST)
+   LSN = DCOUNT(LSRAW, @AM)
+   FOR LSI = 1 TO LSN
+      PROG = TRIM(LSRAW<LSI>)
+      IF PROG[1,1] = "." THEN PROG = ""
+      IF PROG[1,1] = "$" OR PROG[1,1] = "_" THEN PROG = PROG[2, LEN(PROG) - 1]
+      IF PROG # "" THEN
+         LOCATE(PROG, ITEMS; LDUP) ELSE ITEMS<-1> = PROG
+      END
+   NEXT LSI
+   RETURN
+$ENDIF
    OPEN MVMASTER TO LVF ELSE RESULT = "MVPKGOS: cannot open " : MVMASTER ; RETURN
 * A FILE POINTER'S TYPE IS SPELLED DIFFERENTLY HERE.  UniData and jBASE write
 * "DIR" in attribute 1; UniVerse writes "F" and rejects "DIR", so the OPEN below
@@ -416,6 +441,17 @@ $ENDIF
 * one (a source install), then catalog every item either way — so a udt binary
 * artifact installs with no compiler, while a source package still compiles.
 DOCAT:
+$IFDEF JBASE
+* Addressed by path, compiled and cataloged in one sweep each -- both verbs take
+* a wildcard over a path here, so there is no per-program loop and no pointer to
+* drop afterwards.  And no scope: jBASE's catalog is per USER, which is the only
+* one it has, so a trailing LOCAL would simply be a syntax error.
+   IF DCOUNT(ITEMS, @AM) > 0 THEN
+      EXECUTE "BASIC " : SDIR : " *"
+      EXECUTE "CATALOG " : SDIR : " *"
+   END
+   RETURN
+$ENDIF
    NI = DCOUNT(ITEMS, @AM)
    IF NI > 0 THEN
       NEEDBAS = ""
@@ -442,6 +478,14 @@ DOCAT:
 * decatalog every listed program (remove its global catalog entry), then drop
 * the temp pointer.  The inverse of DOCAT.
 DODECAT:
+$IFDEF JBASE
+* DELETE-CATALOG, with a hyphen -- the dotted spelling is U2's.
+   NJ = DCOUNT(ITEMS, @AM)
+   FOR CJ = 1 TO NJ
+      EXECUTE "DELETE-CATALOG " : ITEMS<CJ>
+   NEXT CJ
+   RETURN
+$ENDIF
    * #34: plain DELETE.CATALOG resolves through THIS account's catalog view, so it
    * removes a local account's own LOCAL entry (leaving any shared global copy
    * that a live env cataloged untouched) and a global account's global entry —
@@ -454,6 +498,10 @@ DODECAT:
    RETURN
 
 DROPPTR:
+$IFDEF JBASE
+* Nothing was ever written: jBASE addresses the tree by path.
+   RETURN
+$ENDIF
    DELETE LVF, "MVPKG.SRC"
 * The object-side companion UniVerse made for us (see LISTSRC): leaving it is
 * what sent the next package's objects into this package's directory.
