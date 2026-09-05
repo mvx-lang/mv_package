@@ -47,10 +47,19 @@ done
 # The per-platform OS seam and the record includes.  CALLC.EXISTS comes too: it
 # is a probe a package may call to ask whether native code is available, and it
 # answers "no" perfectly well on a platform that has no route to C.
-cp "$UDT"/MVPKGDEP \
-   "$UDT"/MVPKG.LOCK.H "$UDT"/MVPKG.MANIFEST.H "$UDT"/MVPKG.CONF.H \
-   "$UDT"/MVPKG.HTTPGET "$UDT"/MVPKG.HTTPGETFILE "$UDT"/MVPKG.JSONDECODE "$UDT"/MVPKG.MAPFIELD \
-   "$UDT"/CALLC.EXISTS "$ACCT/BP/"
+ACCTBP="$ACCT/BP"
+# AND EVERY udt/ PROGRAM THAT HAS NO BP/ COUNTERPART.  The per-platform OS seam
+# and the record includes live only there, and they used to be named one by one
+# -- so MVPKG.HTTPPOST, added for install reporting, staged on no platform at
+# all and the client compiled without it.  Same lesson as the loop above: derive
+# it.  Non-programs (the shell scripts and the build's own files) are skipped by
+# extension; anything else in udt/ is a BASIC item and belongs in BP/.
+for f in "$UDT"/*; do
+   [ -f "$f" ] || continue
+   p=$(basename "$f")
+   case "$p" in (*.sh|_*|.*) continue ;; esac
+   [ -f "$ACCTBP/$p" ] || cp "$f" "$ACCTBP/"
+done
 cp "$ROOT"/CMD.BP/CMD.INIT "$ROOT"/CMD.BP/CMD.ADD "$ROOT"/CMD.BP/CMD.RUN "$ACCT/BP/"
 
 # EVERY STAGED BP ITEM GETS A TRAILING NEWLINE.  UniVerse's compiler rejects a
