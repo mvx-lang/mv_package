@@ -80,6 +80,14 @@ $IFDEF UDT
    BUILDER = UDT : "/bin/udt-callc-build"
 $ENDIF
    GOSUB CONFLOAD                         ;* MSCOPE / MPREFIX (#34 test/live isolation)
+$IFDEF JBASE
+* The helper that maintains jBASE's shared-object search path.  It lives in the
+* store, the way UniData's CallC builder lives in $UDTHOME/bin -- one per system,
+* installed once, reachable from every account.
+   CALL MVPKG.ENV("MVPKG_STORE", JBSTORE)
+   IF JBSTORE = "" THEN JBSTORE = UDT : "/" : MPREFIX : "mvpkg"
+   JBLIBTOOL = JBSTORE : "/mvpkg-jblib"
+$ENDIF
    BEGIN CASE
       CASE OP = "MKDIR"
          CALL MVPKG.SH('mkdir -p "':P1:'"', MVSHOUT, MVSHST)
@@ -173,6 +181,7 @@ $ENDIF
          * callable and its verbs cataloged for any account.  CATALOG FORCE
          * overwrites, so re-installing a package updates the shared copy.
          SDIR = P1 : "/" : P2
+         PKGLIB = P1 : "/lib"
          GOSUB LISTSRC
          GOSUB DOCAT
       CASE OP = "CATIFNEW"
@@ -180,6 +189,7 @@ $ENDIF
          * are NOT already cataloged — the fallback: a bundled copy (git's
          * CMD.BP) is cataloged just when the real dependency is absent.
          SDIR = P1 : "/" : P2
+         PKGLIB = P1 : "/lib"
          GOSUB LISTSRC
          HAV = "0"
          IF DCOUNT(ITEMS, @AM) > 0 THEN NCK = ITEMS<1> ; GOSUB HAVECHK
@@ -255,6 +265,7 @@ $ENDIF
          * P1 = package dir, P2 = source subdir.  The inverse of CATALOG: remove
          * every program's global catalog entry so it no longer resolves.
          SDIR = P1 : "/" : P2
+         PKGLIB = P1 : "/lib"
          GOSUB LISTSRC
          GOSUB DODECAT
       CASE OP = "UNVERB"
@@ -446,9 +457,21 @@ $IFDEF JBASE
 * a wildcard over a path here, so there is no per-program loop and no pointer to
 * drop afterwards.  And no scope: jBASE's catalog is per USER, which is the only
 * one it has, so a trailing LOCAL would simply be a syntax error.
+*
+* EACH PACKAGE GETS ITS OWN LIBRARY.  Left alone jBASE catalogs everything into
+* one $HOME/lib/lib0.so, so a program whose DEFC names an unresolvable symbol
+* makes that library unloadable and takes every OTHER package's subroutines down
+* with it -- across accounts, since the catalog is per user (#62).  JBCDEV_LIB
+* moves where the catalog is WRITTEN and JBCOBJECTLIST moves where the loader
+* LOOKS, and BOTH are needed: set only the first and every catalog reports
+* success while every CALL fails.  mvpkg-jblib owns the second half.
    IF DCOUNT(ITEMS, @AM) > 0 THEN
+      CALL MVPKG.SH('mkdir -p "' : PKGLIB : '"', MVSHOUT, MVSHST)
+      JBSET = PUTENV("JBCDEV_LIB=" : PKGLIB)
+      JBSET = PUTENV("JBCDEV_BIN=" : PKGLIB)
       EXECUTE "BASIC " : SDIR : " *"
       EXECUTE "CATALOG " : SDIR : " *"
+      CALL MVPKG.SH('"' : JBLIBTOOL : '" add "' : PKGLIB : '"', MVSHOUT, MVSHST)
    END
    RETURN
 $ENDIF
@@ -479,11 +502,14 @@ $ENDIF
 * the temp pointer.  The inverse of DOCAT.
 DODECAT:
 $IFDEF JBASE
-* DELETE-CATALOG, with a hyphen -- the dotted spelling is U2's.
+* DELETE-CATALOG, with a hyphen -- the dotted spelling is U2's.  Then take the
+* package's library directory back off the search path, so an uninstalled
+* package stops being looked in rather than leaving a stale entry behind.
    NJ = DCOUNT(ITEMS, @AM)
    FOR CJ = 1 TO NJ
       EXECUTE "DELETE-CATALOG " : ITEMS<CJ>
    NEXT CJ
+   CALL MVPKG.SH('"' : JBLIBTOOL : '" remove "' : PKGLIB : '"', MVSHOUT, MVSHST)
    RETURN
 $ENDIF
    * #34: plain DELETE.CATALOG resolves through THIS account's catalog view, so it

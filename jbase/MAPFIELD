@@ -1,0 +1,7 @@
+      FUNCTION MAPFIELD(NAME, ATTR, CONV, TYPE, ASSOC)
+* jBASE bootstrap: give mvpkg's own %MAP% builder the name jBASE will look for.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see ../LICENSE).
+* See HTTPGET beside this.  The mapfield package catalogs its own over this
+* later, same name and signature.
+      DEFFUN MVPKG.MAPFIELD(A, B, C, D, E)
+      RETURN(MVPKG.MAPFIELD(NAME, ATTR, CONV, TYPE, ASSOC))

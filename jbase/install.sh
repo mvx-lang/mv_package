@@ -139,6 +139,24 @@ esac
 say "provisioning the MVPKG store $MVPKG_STORE"
 mkdir -p "$MVPKG_STORE"
 
+# The search-path helper goes in the store, not the account: MVPKGOS reaches it
+# from ANY account that has this package manager deployed, and there is one per
+# system, like UniData's CallC builder under $UDTHOME/bin.
+if [ -f "$HERE/mvpkg-jblib" ]; then
+   install -m 0755 "$HERE/mvpkg-jblib" "$MVPKG_STORE/mvpkg-jblib"
+   # Say what it will do to a jBASE system file before it does it, rather than
+   # editing one quietly.  It writes ONE line in the `environment` array of
+   # $JBCGLOBALDIR/config/jbase_config.json -- the same array PATH and
+   # LD_LIBRARY_PATH are set in, and where jBASE itself documents JBCOBJECTLIST.
+   say "installed mvpkg-jblib -> $MVPKG_STORE/mvpkg-jblib"
+   say "NOTE: installing a package adds its library directory to JBCOBJECTLIST in"
+   say "      ${JBCGLOBALDIR:-/opt/jbase/global}/config/jbase_config.json (one managed line; \$HOME/lib stays first)"
+   if ! "$MVPKG_STORE/mvpkg-jblib" show >/dev/null 2>&1; then
+      say "WARNING: that config is not readable/writable by $(id -un) — package"
+      say "         subroutines will not resolve until it is (group 'jbase' on a stock install)"
+   fi
+fi
+
 INITFLAGS="-y"
 [ "$SCOPE" = local ] && INITFLAGS="$INITFLAGS --local"
 [ -n "$PREFIX" ] && INITFLAGS="$INITFLAGS --prefix $PREFIX"
