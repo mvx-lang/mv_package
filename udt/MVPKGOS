@@ -381,6 +381,14 @@ $IFDEF UV
 * not the OS directory behind it.  Without this the compile stops at "[ENOENT]
 * No such file or directory" having built nothing.
    CALL MVPKG.SH('mkdir -p "' : SDIR : '.O"', MVSHOUT, MVSHST)
+* AND THE POINTER COMES IN A PAIR.  Compiling through MVPKG.SRC makes UniVerse
+* create a second record, MVPKG.SRC.O, naming the OBJECT directory -- and it
+* survives, so the next package rewrites MVPKG.SRC to its own directory while
+* MVPKG.SRC.O still names the previous one, and the compiler writes there.  Five
+* packages installed on UniVerse left every object in the FIRST one's BP.O and
+* every catalog entry pointing into it (#78).  Clear it here so the compiler
+* makes it afresh for the package in hand.
+   DELETE LVF, "MVPKG.SRC.O"
 $ENDIF
    WRITE (PTYPE : @FM : SDIR : @FM : "D_BP") ON LVF, "MVPKG.SRC"
    OPEN "MVPKG.SRC" TO LSF ELSE RESULT = "MVPKGOS: cannot open " : SDIR ; RETURN
@@ -447,6 +455,11 @@ DODECAT:
 
 DROPPTR:
    DELETE LVF, "MVPKG.SRC"
+* The object-side companion UniVerse made for us (see LISTSRC): leaving it is
+* what sent the next package's objects into this package's directory.
+$IFDEF UV
+   DELETE LVF, "MVPKG.SRC.O"
+$ENDIF
    RETURN
 
 * NEWFILE -- create the account file NFN if it is not already there.  NFT is
