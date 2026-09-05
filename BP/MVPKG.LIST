@@ -73,7 +73,19 @@ $ENDIF
    FOR GI = 1 TO NL
       IF TRIM(SREC<2,GI>) # "" THEN NG = NG + 1
    NEXT GI
-   IF NG = 0 THEN PRINT "no packages installed" ; RETURN
+   IF NG = 0 THEN
+      * EMPTY OR UNREACHABLE?  STOREREAD answers "" to both, and saying "no
+      * packages installed" when the store could not be opened is a statement
+      * of fact about a question that was never asked -- it was printed right
+      * after five successful installs (#67).  Ask before concluding.
+      CALL MVPKGOS("STOREOK", "", "", SOERR)
+      IF SOERR # "" THEN
+         PRINT "mvpkg: " : SOERR
+      END ELSE
+         PRINT "no packages installed"
+      END
+      RETURN
+   END
    SPEC = MAPFIELD("description", 1, "", "", "")
    * a self-registered package (mvpkg) has no store copy — its manifest is this
    * account's own mvpkg.json; read it once to fill that one row's description.
