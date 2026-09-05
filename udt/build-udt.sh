@@ -40,10 +40,19 @@ done
 # the udt deploy helper, the record include files, the bundled deps (native
 # intrinsics on mvx), and the cmd framework.  (MVPKG.NOTIFY is now shared — the
 # login update-notifier is platform-agnostic and builds for mvx too, issue #35.)
-cp "$HERE"/MVPKGDEP \
-   "$HERE"/MVPKG.LOCK.H "$HERE"/MVPKG.MANIFEST.H "$HERE"/MVPKG.CONF.H \
-   "$HERE"/MVPKG.HTTPGET "$HERE"/MVPKG.HTTPGETFILE "$HERE"/MVPKG.JSONDECODE "$HERE"/MVPKG.MAPFIELD \
-   "$HERE"/CALLC.EXISTS "$ACCT/BP/"
+ACCTBP="$ACCT/BP"
+# AND EVERY udt/ PROGRAM THAT HAS NO BP/ COUNTERPART.  The per-platform OS seam
+# and the record includes live only there, and they used to be named one by one
+# -- so MVPKG.HTTPPOST, added for install reporting, staged on no platform at
+# all and the client compiled without it.  Same lesson as the loop above: derive
+# it.  Non-programs (the shell scripts) are skipped by extension; anything else
+# in udt/ is a BASIC item and belongs in BP/.
+for f in "$HERE"/*; do
+   [ -f "$f" ] || continue
+   p=$(basename "$f")
+   case "$p" in (*.sh|_*|.*) continue ;; esac
+   [ -f "$ACCTBP/$p" ] || cp "$f" "$ACCTBP/"
+done
 cp "$ROOT"/CMD.BP/CMD.INIT "$ROOT"/CMD.BP/CMD.ADD "$ROOT"/CMD.BP/CMD.RUN "$ACCT/BP/"
 
 # The self-installer, the CallC aggregator it deploys, and the package metadata.

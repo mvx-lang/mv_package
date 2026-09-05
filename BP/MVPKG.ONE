@@ -111,7 +111,14 @@ $ENDIF
       * record it in the system inventory (add, or update its version)
       CALL MVPKGOS("STOREREAD", "installed", "", SREC)
       IF SREC = "" THEN SREC = "MVPKG-STORE"
+      * WHICH IT IS, AND WHAT IT MOVED FROM, are both only knowable here: once
+      * the record is written the previous version is gone.  Already in the
+      * inventory means this is an update, and SREC<3,SPOS> is still the version
+      * it is updating from.
+      TKACT = "install" ; TKFROM = ""
       LOCATE(META<1>, SREC, 2; SPOS) THEN
+         TKACT = "update" ; TKFROM = TRIM(SREC<3,SPOS>)
+         IF TKFROM = META<2> THEN TKACT = "install"   ;* same version again
          SREC<3,SPOS> = META<2>
       END ELSE
          SAN = DCOUNT(SREC<2>, @VM) + 1
@@ -120,6 +127,9 @@ $ENDIF
       END
       CALL MVPKGOS("STOREWRITE", "installed", SREC, SERR)
       IF SERR # "" THEN PRINT "mvpkg: " : SERR
+      * The SYSTEM store changed, so the registry hears about it.  Best-effort
+      * and capped: see MVPKG.TRACK.
+      CALL MVPKG.TRACK(TKACT, META<1>, META<2>, TKFROM)
       PRINT "installed " : META<1> : " " : META<2> : " (built + cataloged)"
    END ELSE
       PRINT META<1> : " " : META<2> : " already installed — deploying here"

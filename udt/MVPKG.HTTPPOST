@@ -1,0 +1,36 @@
+      FUNCTION MVPKG.HTTPPOST(URL, CTYPE, BODY)
+* mv_package seam — POST BODY to URL, returning the HTTP status (0 when the
+* request could not be made at all).  Copyright (C) 2026 Gordon Heydon.
+* GPL-2.0-only.
+*
+* THE CLIENT'S OWN POST, not the http package's.  mvpkg is what installs
+* mvx-lang/http-curl, so it cannot require it to report having done so.  This
+* goes through MVPKG.SH and MVPKG.FILE like MVPKG.HTTPGET beside it, and needs
+* no per-platform code of its own: MVPKG.SH takes a command line written exactly
+* as for /bin/sh, and MVPKG.FILE writes a file on every platform including
+* UniVerse, which has no OSWRITE.
+*
+* THE BODY GOES IN A FILE, NEVER ON THE COMMAND LINE.  A command line has a
+* length limit and a body does not; it would have to survive the shell's quoting
+* on some platforms and none at all on others; and argv is readable by every
+* user on the box.  --data-binary @file carries it instead.
+*
+* --max-time IS THE POINT OF THIS ROUTINE BEING SAFE.  A registry that is down
+* or slow must not turn an install into a hang, so the whole request is capped
+* and the caller treats any failure as nothing happened.
+$INCLUDE MVPKG.INC PLATFORM.H
+      BTMP = "/tmp/mvpkg_post_" : @USERNO
+      CALL MVPKG.FILE("WRITE", BTMP, BODY, MVFOK)
+      IF NOT(MVFOK) THEN RETURN(0)
+      CT = TRIM(CTYPE)
+      IF CT = "" THEN CT = "application/json"
+      CMD = 'curl -sS --max-time 5 -X POST -H "Content-Type: ' : CT : '"'
+      CMD := ' --data-binary @' : BTMP : ' -o /dev/null -w "%{http_code}" "' : URL : '"'
+      CALL MVPKG.SH(CMD, MVSHOUT, MVSHST)
+* The first line of the capture is the whole of what -w wrote.  FIELD rather
+* than CONVERT: CONVERT takes its arguments in the opposite order on jBASE and
+* returns rubbish rather than failing (mv_package#54).
+      CODE = TRIM(FIELD(FIELD(FIELD(MVSHOUT, @AM, 1), CHAR(10), 1), CHAR(13), 1))
+      CALL MVPKG.SH('rm -f ' : BTMP, RMOUT, RMST)
+      IF CODE = "" THEN CODE = "0"
+      RETURN(CODE + 0)
