@@ -31,7 +31,8 @@ MVPKG install <name> [<dest>]   install a package and its dependencies
 MVPKG info <name>               show a package's registry metadata
 MVPKG search <term>             list packages whose name/description matches
 MVPKG setup <url>               set (and persist) the registry base URL
-MVPKG config                    show the current registry URL
+MVPKG config                    show the registry URL and stability policy
+MVPKG config <setting> [<value>]  show or set one setting
 ```
 
 `install` resolves the package's **dependencies** first: a package names the
@@ -60,17 +61,62 @@ with an optional `?` prefix and two optional suffixes,
   (comma = AND), `1.2.*`, an exact `1.4.2`, or `*` for any. The client picks
   the **newest published version** satisfying it.
 
+- `@stability` — a **stability floor** for this one dependency, raising it above
+  the project's: `thing@beta`, or after a constraint, `thing:^1.2@beta`. The
+  word decides which `@` this is: the stability vocabulary is closed (`dev`,
+  `alpha`, `beta`, `rc`, `stable`) and shares no member with the system names,
+  so `thing@udt` is still a platform gate.
+
 All may appear together, in that order: `?udt_curses@udt:^1.0`.
 
 **Release channels.** A registry version is *stable* unless it carries a
 pre-release suffix (`1.3.0-beta.1`, `2.0.0-rc.2`, `1.0.0-dev`). The default
 "latest" a bare `MVPKG install <name>` (or an unconstrained dependency)
 resolves to is always the newest **stable** release, so following a stable
-series is the default — a published beta never pulls anyone off it. To opt in
-to a pre-release, pin it exactly (`MVPKG install thing` then a version
-constraint referencing it) or write a constraint whose lower bound is itself a
-pre-release, e.g. `thing:^1.3.0-beta` matches `1.3.0-beta.1`, `1.3.0-rc.1`,
-and the eventual `1.3.0`.
+series is the default — a published beta never pulls anyone off it.
+
+**Minimum stability** (Composer's `minimum-stability`) is how a project opts
+into pre-releases as a policy rather than one constraint at a time:
+
+```
+MVPKG config minimum-stability beta   # accept beta and rc as well as stable
+MVPKG config prefer-stable on         # ...but still follow the stable line
+MVPKG config                          # show what is set
+```
+
+The floor is stored in the account manifest beside the declared dependencies,
+so a checkout carries its policy with it. Two rules make it predictable:
+
+- **The floor admits; `prefer-stable` decides what to do with the choice.** Off
+  (the default, as in Composer) the newest admissible version wins outright — so
+  a floor of `beta` on a package whose newest release is `2.1.0-beta2` gets that
+  beta. On, a package takes the newest *stable* version satisfying its
+  constraint and drops to a pre-release only when nothing stable does. At a
+  floor of `stable` the setting has nothing to decide.
+- **Nothing lowers the floor for a package that did not ask.** A per-package
+  `@beta` raises tolerance for that one dependency; there is no spec that makes
+  a dependency accept *less* than the project does.
+
+For a single install without changing the project's policy, name the stability
+on the command line:
+
+```
+MVPKG install mvx-lang/cmd@beta
+```
+
+The spec is recorded in the manifest as typed, so a later bare `MVPKG install`
+reproduces the same decision. (On the command line `name@word` is a git ref when
+the word is not a stability — `install thing@my-branch` still builds from
+source, and `install thing@dev --source` keeps a branch genuinely named `dev`
+reachable, since `--source` says a ref was meant.)
+
+Pinning still works and is unchanged: a constraint whose lower bound is itself a
+pre-release opts in for that one package without any floor, e.g.
+`thing:^1.3.0-beta` matches `1.3.0-beta.1`, `1.3.0-rc.1`, and the eventual
+`1.3.0`.
+
+`MVPKG.LOCK` records each resolved version's stability beside it, so a lock
+shows what kind of build it pins.
 
 The registry URL is taken from `$MVPKG_REGISTRY`, then a persisted `mvpkg.conf`,
 then the built-in default (`https://mv-package.heydon.io`).
@@ -192,6 +238,10 @@ issues #2, #3).
 
 ```sh
 MVX_HOME=/path/to/mvx-lang ./build.sh        # catalog MVPKG + MVPKGOS
+```
+
+```sh
+MVX_HOME=/path/to/mvx-lang ./tests/run.sh    # the portable BASIC unit tests
 ```
 
 `build.sh` needs an mvx-lang checkout with a built toolchain (the `http` and

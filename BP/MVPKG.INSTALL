@@ -12,7 +12,9 @@
 *
 * Account state is native master-dictionary (VOC/MD) records, not OS files:
 *   MVPKG.MANIFEST  <1> marker  <2> declared dep specs ("[?]name[@sys][:cons]")
+*                   <3> minimum-stability  <4> prefer-stable ("0" turns it off)
 *   MVPKG.LOCK      <1> marker  <2> resolved names     <3> parallel versions
+*                   <8> parallel stabilities (dev|alpha|beta|rc|stable)
    SUBROUTINE MVPKG.INSTALL
 $INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF MVX
@@ -37,14 +39,27 @@ $ENDIF
    NEXT FI
    CALL MVPKG.REG(REG)
 
-   * "name@ref" on the command line selects a git ref (dev branch / tag) to build
-   * from source (latest unreleased work, or a released source point).  On the
-   * command line "@" is a ref — the "@system" filter is a manifest-dependency
-   * concern (DEPAPPLY), never typed here — so this is unambiguous.
+   * "name@word" on the command line is one of two things, and the word decides.
+   * A STABILITY word (dev alpha beta rc stable, the closed vocabulary SEMVER
+   * RANK scores) raises the floor for THIS install alone (mv_package#30): a
+   * project pinned to stable can still ask for `install mvx-lang/cmd@beta`.
+   * Anything else is a git ref to build from source (mv_package#23).  An
+   * explicit --source says the caller means a ref, so a branch genuinely named
+   * "dev" stays reachable as `install name@dev --source`.  The "@system" filter
+   * is a manifest-dependency concern (DEPAPPLY), never typed here.
+   A1SPEC = A1
+   ASTAB = ""
    IF A1 # "" AND INDEX(A1, "@", 1) THEN
-      REF = FIELD(A1, "@", 2, 99)
-      A1 = FIELD(A1, "@", 1)
-      SRCMODE = 1
+      AWORD = FIELD(A1, "@", 2, 99)
+      CALL SEMVER("RANK", AWORD, "", AWRANK)
+      IF AWRANK > 0 AND SRCMODE = 0 THEN
+         ASTAB = OCONV(AWORD, "MCL")
+         A1 = FIELD(A1, "@", 1)
+      END ELSE
+         REF = AWORD
+         A1 = FIELD(A1, "@", 1)
+         SRCMODE = 1
+      END
    END
 
    IF SRCMODE THEN
@@ -74,6 +89,31 @@ $ENDIF
    * this client's system, for platform-gated deps + manifest parsing (DEPAPPLY)
    CALL MVPKGOS("PLATFORM", "", "", PLAT)
    MYSYS = FIELD(PLAT, ":", 1)
+
+   * ---- this project's stability policy (mv_package#30) --------------------
+   * PFLOOR is the least stable build this account will accept (composer
+   * minimum-stability, default stable); PREFST is prefer-stable — take the most
+   * stable version that satisfies, and drop to a pre-release only when nothing
+   * stable does.  A per-package flag (ASTAB / a spec's "@word") overrides
+   * PFLOOR for that one package; nothing overrides it downwards, so a floor of
+   * stable is still a floor when a dependency asks for beta... which is why the
+   * per-package flag RAISES tolerance and never lowers it.
+   CALL MVPKGOS("MDREAD", "MVPKG.MANIFEST", "", PFR)
+   PFLOOR = OCONV(TRIM(PFR<3>), "MCL")
+   IF PFLOOR = "" THEN PFLOOR = "stable"
+   CALL SEMVER("RANK", PFLOOR, "", PFRANK)
+   IF PFRANK = 0 THEN
+      PRINT "mvpkg: minimum-stability " : PFLOOR : " is not one of dev alpha beta rc stable — using stable"
+      PFLOOR = "stable"
+   END
+   * PREFER-STABLE IS OFF BY DEFAULT, as it is in Composer, and the default only
+   * has meaning once the floor moves: at a floor of stable there is nothing to
+   * prefer.  Off is also what makes an explicit ask do the obvious thing —
+   * `install thing@beta` gets the beta, not the stable release it was reaching
+   * past.  Turn it on to follow the stable line and accept a pre-release only
+   * when no stable version satisfies.
+   PREFST = 0
+   IF TRIM(PFR<4>) = "1" THEN PREFST = 1
 
    * this account's lock — the resolved/installed set (the composer.lock
    * equivalent), the native MVPKG.LOCK master-dictionary record: <1> marker,
@@ -105,13 +145,14 @@ $ENDIF
       END
    NEXT I
 
-   * ---- seed the NEED set (with parallel CONS / OPT) from the invocation ----
-   * CONS<i> is the version constraint NEED<i> was requested with ("" = latest).
-   NEED = "" ; CONS = "" ; OPT = 0
+   * ---- seed the NEED set (with parallel CONS / OPT / STAB) from the invocation
+   * CONS<i> is the version constraint NEED<i> was requested with ("" = latest);
+   * STAB<i> its own stability floor ("" = the project's PFLOOR).
+   NEED = "" ; CONS = "" ; OPT = 0 ; STAB = ""
    IF A1 # "" THEN
       * `MVPKG install <pkg>` — install it (+deps) and declare it in the manifest
       * (composer require): the package becomes a stated dependency of this account.
-      NEED = A1 ; CONS<1> = "" ; OPT<1> = 0
+      NEED = A1 ; CONS<1> = "" ; OPT<1> = 0 ; STAB<1> = ASTAB
       GOSUB MANIFESTADD
    END ELSE
       * `MVPKG install` (no name) — install the account's declared set, lock-first
@@ -168,6 +209,7 @@ $ENDIF
                      NEED<-1> = DNAME
                      CONS<DCOUNT(NEED, @AM)> = DCONS
                      OPT<DCOUNT(NEED, @AM)> = OPTIONAL
+                     STAB<DCOUNT(NEED, @AM)> = DSTAB
                   END
                END
             END
@@ -215,10 +257,20 @@ $ENDIF
                END
                IF DOINST THEN
                   PCONS = CONS<I>
-                  IF PCONS # "" THEN
+                  * The floor is a REASON TO RESOLVE, not only a filter.  With no
+                  * constraint the registry's own current version was taken as-is
+                  * — and that is the promoted STABLE one, so a project that
+                  * accepts pre-releases would never see them.  Below stable, the
+                  * version list is walked even for an unconstrained package.
+                  EFLOOR = STAB<I> ; IF EFLOOR = "" THEN EFLOOR = PFLOOR
+                  IF PCONS # "" OR EFLOOR # "stable" THEN
                      GOSUB RESOLVE
                      IF TGT = "" THEN
-                        MISSWHY = "no published version satisfies " : PCONS
+                        IF PCONS # "" THEN
+                           MISSWHY = "no published version satisfies " : PCONS
+                        END ELSE
+                           MISSWHY = "no published version is " : EFLOOR : " or better"
+                        END
                         GOSUB OPTMISS ; DOINST = 0
                         IF FATAL THEN RETURN
                      END ELSE
@@ -291,11 +343,15 @@ WRITELOCK:
          * as its own virtual name (no version) — collapse to one entry, keeping
          * a real version over the empty one.
          LOCATE(NMI, IREC, 2; EPOS) THEN
-            IF IREC<3,EPOS> = "" THEN IREC<3,EPOS> = VERS<I>
+            IF IREC<3,EPOS> = "" THEN
+               IREC<3,EPOS> = VERS<I>
+               LKV = VERS<I> ; GOSUB LOCKSTAB ; IREC<8,EPOS> = LKS
+            END
          END ELSE
             MJ = MJ + 1
             IREC<2,MJ> = NMI
             IREC<3,MJ> = VERS<I>
+            LKV = VERS<I> ; GOSUB LOCKSTAB ; IREC<8,MJ> = LKS
          END
       END
    NEXT I
@@ -331,6 +387,16 @@ $IFNDEF MVX
 $ENDIF
    CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", IREC, WERR)
    IF WERR # "" THEN PRINT "mvpkg: " : WERR
+   RETURN
+
+* LOCKSTAB — the stability recorded beside a locked version (mv_package#30).
+* Written so a reader can see WHAT KIND of build is pinned here without
+* re-deriving it, and so `MVPKG list` can flag a pre-release that a since-raised
+* floor would no longer choose.  A virtual name (no version) and a source
+* working copy have no release stability, so they record none.
+LOCKSTAB:
+   LKS = ""
+   IF LKV # "" AND LKV # "source" THEN CALL SEMVER("STABILITY", LKV, "", LKS)
    RETURN
 
 * HASGIT — GITOK = 1 when the git engine's clone is reachable (source mode clones
@@ -466,39 +532,77 @@ PROVDEFER:
    NEXT PV
    RETURN
 
-* RESOLVE — given P, its constraint PCONS, and META (latest, with META<6> the
-* published versions newest-first), pick TGT = the newest version satisfying
-* PCONS ("" if none).  Constraint commas mean AND (>=1.0,<2.0), which SEMVER
-* expresses as space-separated ranges, so normalise "," -> " ".
+* RESOLVE — given P, its constraint PCONS, its stability floor EFLOOR, and META
+* (latest, with META<6> the published versions newest-first), pick TGT = the
+* newest acceptable version ("" if none).  Constraint commas mean AND
+* (>=1.0,<2.0), which SEMVER expresses as space-separated ranges, so normalise
+* "," -> " ".
+*
+* PREFER-STABLE IS A SEPARATE PASS, NOT A SORT.  The floor only says which
+* pre-releases are ADMISSIBLE; it does not say a newer pre-release beats an
+* older release.  So pass 1 asks the stable-only question this has always asked,
+* and only when nothing answers it does pass 2 append the floor and ask again.
+* Composer's rule: take a pre-release when you must, not because one is newer.
+* With prefer-stable off, the newest admissible version wins outright.
 RESOLVE:
    TGT = ""
    PC = CHANGE(PCONS, ",", " ")
    VLIST = META<6>
-   FOR VI = 1 TO DCOUNT(VLIST, " ")
-      CV = FIELD(VLIST, " ", VI)
-      IF CV # "" AND TGT = "" THEN
-         CALL SEMVER("SAT", CV, PC, SR)
-         IF SR = 1 THEN TGT = CV
+   RPASS = 1
+   IF PREFST = 0 OR EFLOOR = "stable" THEN RPASS = 2
+   LOOP WHILE TGT = "" AND RPASS <= 2 DO
+      RCONS = PC
+      IF RPASS = 2 AND EFLOOR # "stable" THEN
+         IF RCONS = "" THEN RCONS = "*"
+         RCONS = RCONS : "@" : EFLOOR
       END
-   NEXT VI
+      FOR VI = 1 TO DCOUNT(VLIST, " ")
+         CV = FIELD(VLIST, " ", VI)
+         IF CV # "" AND TGT = "" THEN
+            CALL SEMVER("SAT", CV, RCONS, SR)
+            IF SR = 1 THEN TGT = CV
+         END
+      NEXT VI
+      RPASS = RPASS + 1
+   REPEAT
    RETURN
 
-* DEPAPPLY — parse a dependency "[?]name[@sys][:constraint]" into DNAME (the bare
-* package), APPLIES (1 if it applies to this client's MYSYS), OPTIONAL (1 if the
-* dependency is optional), and DCONS (a version constraint for SEMVER, "" if none).
+* DEPAPPLY — parse a dependency "[?]name[@sys][:constraint][@stability]" into
+* DNAME (the bare package), APPLIES (1 if it applies to this client's MYSYS),
+* OPTIONAL (1 if the dependency is optional), DCONS (a version constraint for
+* SEMVER, "" if none) and DSTAB (a stability floor for this dep, "" = the
+* project's).
 *   ?          leading — optional: install if available, skip (don't fail) if not.
 *   @sys,sys   only those systems;  @!sys,sys   all systems except those.
 *   :^1.2 / :~1.0 / :>=1.0,<2.0 / :1.2.* / :1.2.3   a version constraint.
+*   @beta      a stability floor: "name@beta", or after a constraint
+*              ("name:^1.2@beta").  TWO USES OF "@" LIVE IN ONE SPEC, and the
+*              WORD tells them apart: the stability vocabulary is closed (dev
+*              alpha beta rc stable, what SEMVER RANK scores) and shares no
+*              member with the system names, so "cmd@udt" is still a filter and
+*              "cmd@beta" is a floor.  A negated filter ("@!udt") is never a
+*              stability word, so it is read as a filter without asking.
 * E.g. a package built into the runtime on one platform (mapfield -> MVX
 * builtin) declares "mapfield@!mvx": pulled on udt, skipped on mvx.  An optional
 * native add-on the app guards with CALLC.EXISTS declares "?udt_curses".
 DEPAPPLY:
    OPTIONAL = 0
+   DSTAB = ""
    DD = D
    IF DD[1, 1] = "?" THEN OPTIONAL = 1 ; DD = DD[2, LEN(DD)]
    COLON = INDEX(DD, ":", 1)
    IF COLON > 0 THEN
       DCONS = DD[COLON + 1, LEN(DD)] ; DB = DD[1, COLON - 1]
+      * a trailing "@word" on the CONSTRAINT is this dep's stability floor
+      DAT = INDEX(DCONS, "@", 1)
+      IF DAT > 0 THEN
+         DW = DCONS[DAT + 1, LEN(DCONS)]
+         CALL SEMVER("RANK", DW, "", DWR)
+         IF DWR > 0 THEN
+            DSTAB = OCONV(DW, "MCL")
+            DCONS = TRIM(DCONS[1, DAT - 1])
+         END
+      END
    END ELSE
       DCONS = "" ; DB = DD
    END
@@ -509,6 +613,14 @@ DEPAPPLY:
    END
    DNAME = DB[1, ATP - 1]
    FILT = DB[ATP + 1, LEN(DB)]
+   * "name@beta" — a stability word here is a floor, not a one-system filter
+   IF FILT[1, 1] # "!" THEN
+      CALL SEMVER("RANK", FILT, "", FWR)
+      IF FWR > 0 THEN
+         DSTAB = OCONV(FILT, "MCL") ; APPLIES = 1
+         RETURN
+      END
+   END
    MNEG = 0
    IF FILT[1, 1] = "!" THEN MNEG = 1 ; FILT = FILT[2, LEN(FILT)]
    HIT = 0
@@ -527,18 +639,21 @@ DEPAPPLY:
 * package (perhaps with a new constraint) updates its spec rather than duplicating.
 MANIFESTADD:
    CALL MVPKGOS("MDREAD", "MVPKG.MANIFEST", "", MFR)
-   SP = A1 ; GOSUB SPECNAME ; WANTN = SN
+   * THE SPEC AS TYPED, not the bare name the rest of this run works with.  A
+   * "@beta" the caller asked for is part of what they declared, and storing it
+   * is what makes a later bare `MVPKG install` reproduce this decision.
+   SP = A1SPEC ; GOSUB SPECNAME ; WANTN = SN
    MFND = 0
    FOR MDI = 1 TO DCOUNT(MFR<2>, @VM)
       SP = TRIM(MFR<2,MDI>)
       IF SP # "" THEN
          GOSUB SPECNAME
-         IF SN = WANTN THEN MFND = 1 ; MFR<2,MDI> = A1   ;* refresh the stored spec
+         IF SN = WANTN THEN MFND = 1 ; MFR<2,MDI> = A1SPEC   ;* refresh the stored spec
       END
    NEXT MDI
    IF MFND = 0 THEN
       IF MFR = "" THEN MFR = "MVPKG-MANIFEST"
-      MFR<2,-1> = A1
+      MFR<2,-1> = A1SPEC
    END
    CALL MVPKGOS("MDWRITE", "MVPKG.MANIFEST", MFR, MERR)
    IF MERR # "" THEN PRINT "mvpkg: " : MERR
@@ -565,6 +680,9 @@ PROJECTSEED:
             NEED<-1> = NM
             CONS<DCOUNT(NEED, @AM)> = LV       ;* pin to the exact locked version
             OPT<DCOUNT(NEED, @AM)> = 0
+            * no floor needed: an exact pin names its own pre-release, which
+            * satisfies the constraint whatever the project's floor is now.
+            STAB<DCOUNT(NEED, @AM)> = ""
          END
       NEXT LI
    END ELSE
@@ -577,6 +695,7 @@ PROJECTSEED:
                NEED<-1> = DNAME
                CONS<DCOUNT(NEED, @AM)> = DCONS
                OPT<DCOUNT(NEED, @AM)> = OPTIONAL
+               STAB<DCOUNT(NEED, @AM)> = DSTAB
             END
          END
       NEXT MDI
