@@ -184,4 +184,28 @@ say "MVPKG init ($INITFLAGS)"
 printf 'MVPKG init %s\nQUIT\n' "$INITFLAGS" | uv 2>&1 \
    | grep -iE "initialised|registry|store|include|catalog|prefix" | sed 's/^/  /' || true
 
+# ---- self-host: pull the real dependencies, then register this package ------
+#
+# The client ships cut-down copies of what it needs to bootstrap -- the cmd
+# framework, and the HTTP/JSON/MAPFIELD seams.  They exist only to get far
+# enough to fetch the real packages; once MVPKG runs, it should be managing
+# them like anything else, and `MVPKG list` should show what is actually here
+# rather than nothing at all (#19).
+#
+# curl-cmd is the transport pulled here, not the libcurl `curl` package: it
+# shells out to the OS curl and needs no compiler.  UniVerse has no in-process route to C at all, so curl-cmd is the only
+# transport there is here.
+#
+# ONE MVPKG PER SESSION.  Each install compiles and catalogs, and keeping that
+# to one command per session is the same rule the client install above follows.
+say "pulling managed deps (json, cmd, curl-cmd) + registering mvpkg  [needs network]"
+MVVER="$(sed -n 2p "$HERE/PKG" 2>/dev/null || true)"
+[ -n "$MVVER" ] || MVVER="$(sed -n 2p "$HERE/../PKG" 2>/dev/null || true)"
+for dep in mvx-lang/json mvx-lang/cmd mvx-lang/curl-cmd; do
+   ( cd "$HERE" && printf 'MVPKG install %s\nQUIT\n' "$dep" | uv ) 2>&1 \
+      | grep -aiE "installed |deployed|up to date|error|not found|refus" | sed 's/^/  /' || true
+done
+( cd "$HERE" && printf 'MVPKG register mvx-lang/mvpkg %s\nQUIT\n' "$MVVER" | uv ) 2>&1 \
+   | grep -aiE "registered|error|not found" | sed 's/^/  /' || true
+
 say "done — LOGTO this account and run MVPKG"
