@@ -6,10 +6,13 @@ FUNCTION MVPKG.JSONDECODE(JSON, SPEC)
 *     members decode into PARALLEL multivalued attributes (R<pos> a @VM list,
 *     R<pos,i> the i-th element's value).
 * Just enough JSON for MVPKG (metadata + search); the MVX json extension does
-* the general case.  Values are taken as the text between the first quote pair
-* after the key (no escape handling — sufficient for the registry).  GPL-2.0-only.
+* the general case.  Escapes ARE handled: the registry serves them (every em
+* dash in a description arrives as \u2014) and an escaped quote inside a value
+* used to end the value early, which is a wrong answer rather than an ugly one.
+* GPL-2.0-only.
    RESULT = ""
    DQ = CHAR(34)
+   BSL = CHAR(92)
    NF = DCOUNT(SPEC, @AM)
 
 * --- scalar fields (assoc empty): flat "key":"value" ------------------------
@@ -80,9 +83,100 @@ QVALUE:
          OQ = INDEX(AFTER, DQ, 1)
          IF OQ > 0 THEN
             AFTER = AFTER[OQ + 1, LEN(AFTER)]
-            CQ = INDEX(AFTER, DQ, 1)
-            IF CQ > 0 THEN VAL = AFTER[1, CQ - 1]
+* THE CLOSING QUOTE IS THE FIRST UNESCAPED ONE.  INDEX finds the first quote of
+* any kind, so a value containing \" ended there -- silently short, and the
+* remainder parsed as though it were the next key.
+            CQ = 0 ; QK = 1 ; QL = LEN(AFTER)
+            LOOP WHILE QK <= QL AND CQ = 0 DO
+               QC = AFTER[QK, 1]
+               IF QC = BSL THEN
+                  QK = QK + 2
+               END ELSE
+                  IF QC = DQ THEN CQ = QK ELSE QK = QK + 1
+               END
+            REPEAT
+            IF CQ > 0 THEN
+               VAL = AFTER[1, CQ - 1]
+               GOSUB JUNESC
+            END
          END
       END
    END
+   RETURN
+
+* JUNESC — VAL in, VAL out: JSON's escapes become the characters they stand for.
+* The common case is a value with no backslash in it at all, so that leaves
+* immediately and the rest of this costs nothing.
+JUNESC:
+   IF INDEX(VAL, BSL, 1) = 0 THEN RETURN
+   URES = "" ; UI = 1 ; UL = LEN(VAL)
+   LOOP WHILE UI <= UL DO
+      UC = VAL[UI, 1]
+      IF UC = BSL AND UI < UL THEN
+         UN = VAL[UI + 1, 1]
+         BEGIN CASE
+            CASE UN = DQ  ; URES := DQ         ; UI = UI + 2
+            CASE UN = BSL ; URES := BSL        ; UI = UI + 2
+            CASE UN = "/" ; URES := "/"        ; UI = UI + 2
+            CASE UN = "n" ; URES := CHAR(10)   ; UI = UI + 2
+            CASE UN = "r" ; URES := CHAR(13)   ; UI = UI + 2
+            CASE UN = "t" ; URES := CHAR(9)    ; UI = UI + 2
+            CASE UN = "b" ; URES := CHAR(8)    ; UI = UI + 2
+            CASE UN = "f" ; URES := CHAR(12)   ; UI = UI + 2
+            CASE UN = "u" ; GOSUB JUNI
+            * an escape this does not know stands for itself, which is what a
+            * reader would rather see than the backslash
+            CASE 1        ; URES := UN         ; UI = UI + 2
+         END CASE
+      END ELSE
+         URES := UC ; UI = UI + 1
+      END
+   REPEAT
+   VAL = URES
+   RETURN
+
+* JUNI — the \uXXXX at UI, appended to URES as UTF-8, UI advanced past it.
+* A codepoint above U+FFFF arrives as a SURROGATE PAIR (a high in D800-DBFF then
+* a low in DC00-DFFF), and the two halves have to be recombined before encoding
+* -- encoding them separately produces two characters that are not the one that
+* was sent, and neither is valid on its own.
+JUNI:
+   UHEX = VAL[UI + 2, 4] ; GOSUB JHEX
+   UCP = UNUM
+   UI = UI + 6
+   IF UCP >= 55296 AND UCP <= 56319 THEN
+      IF VAL[UI, 2] = BSL : "u" THEN
+         UHEX = VAL[UI + 2, 4] ; GOSUB JHEX
+         IF UNUM >= 56320 AND UNUM <= 57343 THEN
+            UCP = 65536 + (UCP - 55296) * 1024 + (UNUM - 56320)
+            UI = UI + 6
+         END
+      END
+   END
+* UTF-8, because that is what the registry's source was and what these terminals
+* are.  No byte produced here can be 252, 253 or 254 -- valid UTF-8 never uses
+* them -- so an encoded value cannot forge a subvalue, value or attribute mark.
+   BEGIN CASE
+      CASE UCP < 128
+         URES := CHAR(UCP)
+      CASE UCP < 2048
+         URES := CHAR(192 + INT(UCP / 64)) : CHAR(128 + MOD(UCP, 64))
+      CASE UCP < 65536
+         URES := CHAR(224 + INT(UCP / 4096)) : CHAR(128 + MOD(INT(UCP / 64), 64)) : CHAR(128 + MOD(UCP, 64))
+      CASE 1
+         URES := CHAR(240 + INT(UCP / 262144)) : CHAR(128 + MOD(INT(UCP / 4096), 64)) : CHAR(128 + MOD(INT(UCP / 64), 64)) : CHAR(128 + MOD(UCP, 64))
+   END CASE
+   RETURN
+
+* JHEX — UNUM = the four hex digits in UHEX.  A digit that is not one is read as
+* zero rather than aborting: a mangled escape should cost its own character, not
+* the rest of the description.
+JHEX:
+   UNUM = 0
+   FOR UHI = 1 TO 4
+      UHC = OCONV(UHEX[UHI, 1], "MCU")
+      UHV = INDEX("0123456789ABCDEF", UHC, 1) - 1
+      IF UHV < 0 THEN UHV = 0
+      UNUM = UNUM * 16 + UHV
+   NEXT UHI
    RETURN
