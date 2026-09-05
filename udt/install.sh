@@ -57,6 +57,18 @@ export MVPKG_STORE="${MVPKG_STORE:-$UDTHOME/${PREFIX}mvpkg}"
 
 say() { printf 'mvpkg-install: %s\n' "$1"; }
 die() { printf 'mvpkg-install: %s\n' "$1" >&2; exit 1; }
+# UniData reports a failed compile on stdout and still exits 0, so read $CLOG.
+# It names the program it was compiling on the line before the error, which is
+# what makes the message actionable -- a bare count sends you back to the log.
+checkcompile() {
+  NOK=$(grep -ac 'Compiling Unibasic' "$CLOG" 2>/dev/null || true)
+  NBAD=$(grep -acE 'Compilation failed|Fatal error' "$CLOG" 2>/dev/null || true)
+  if [ "${NBAD:-0}" -eq 0 ]; then say "compiled $NOK program(s)"; return 0; fi
+  printf 'mvpkg-install: %s program(s) failed to compile:\n' "$NBAD" >&2
+  grep -aB2 -E 'Compilation failed|Fatal error' "$CLOG" | sed 's/^/    /' >&2
+  rm -f "$CLOG" "$MARK"
+  exit 1
+}
 [ -d "$UDTHOME" ] && [ -x "$UDT" ] || die "UDTHOME=$UDTHOME is not a UniData install (set UDTHOME)"
 command -v sudo >/dev/null 2>&1 || die "sudo not found — needed for \$UDTHOME writes"
 # MVPKG fetches packages over HTTP through the curl seam (UniData's native HTTPS
@@ -96,12 +108,33 @@ sudo install -m 755 "$HERE/udt-callc-build.sh" "$UDTHOME/bin/udt-callc-build"
 # 3) catalog the probes + client GLOBALLY (default; there is NO GLOBAL keyword),
 #    MVPKG LOCALLY.  A piped udt exits 0 even when an inner command fails, so
 #    verify by a catalog entry rather than trusting the exit code.
+# WHAT IS GLOBAL IS DERIVED, NOT LISTED.  A hardcoded list silently drops a
+# newly added program: this one had never heard of MVPKG.ENV or MVPKG.FILE, so
+# neither was ever cataloged, and MVPKGOS -- which CALLs MVPKG.ENV on its second
+# line -- resolved only because an older install had left something behind.
+#
+# The rule is small enough to state: everything in BP/ is cataloged globally
+# EXCEPT the two probes (listed separately only because they are also chowned),
+# the two verbs that stay local to the operator account, and the .H records,
+# which are $INCLUDE fragments and not programs.
 PROBES="CALLC.EXISTS MVPKG.HAS"
-GLOBAL="MVPKGOS MVPKG.SH MVPKG.SH.RM MVPKGDEP MVPKG.HTTPGET MVPKG.HTTPGETFILE MVPKG.JSONDECODE MVPKG.MAPFIELD SEMVER \
-CMD.INIT CMD.ADD CMD.RUN MVPKG.REG MVPKG.META MVPKG.ONE \
-MVPKG.INSTALL MVPKG.INFO MVPKG.LIST MVPKG.UPDATE MVPKG.REMOVE \
-MVPKG.REGISTER MVPKG.SEARCH MVPKG.SETUP MVPKG.CONFIG MVPKG.REBUILD MVPKG.INIT \
-MVPKG.NOTIFY"
+# MVPKG and MVPKG.FIXPERMS are LOCAL to this operator account: fixperms is a
+# host-admin task (it chowns the DBA-owned catalog and reassigns the operator)
+# and must not be reachable from an account a package was merely deployed into.
+LOCALONLY="MVPKG MVPKG.FIXPERMS"
+# _<PROG> IS THE COMPILED OBJECT, NOT A PROGRAM.  UniData keeps objects INSIDE
+# the source file beside their source, so after the first compile BP/ holds 36
+# sources and 33 objects -- and a second run of this installer then tried to
+# compile and catalog `_MVPKGOS`.  MVPKGOS LISTSRC strips the same prefix for
+# the same reason; dotfiles go with them.
+GLOBAL=$(cd "$HERE/BP" && for f in *; do
+  [ -f "$f" ] || continue
+  case "$f" in (_*|.*|*.H) continue ;; esac
+  skip=
+  for x in $PROBES $LOCALONLY; do [ "$f" = "$x" ] && skip=1; done
+  [ -n "$skip" ] || printf '%s ' "$f"
+done)
+[ -n "$GLOBAL" ] || die "BP/ has no programs to catalog"
 
 # Auto-repair: an earlier `sudo ./install.sh` (before the installer re-execed as
 # the operator) may have left this account or our GLOBAL catalog entries
@@ -124,8 +157,42 @@ done
 #
 #   MVMASTER  the account's master dictionary -- VOC here, MD on jBASE.
 #   GETENV    UniData has it natively, so nothing to declare.
+#
+# AND MVPKG.INC HAS TO BE A UNIDATA FILE, NOT A BARE DIRECTORY.  `$INCLUDE
+# MVPKG.INC PLATFORM.H` is resolved through the VOC, so an OS directory with no
+# pointer naming it is invisible to the compiler:
+#
+#     Fatal error: can't find file MVPKG.INC near line 57
+#
+# `mkdir -p MVPKG.INC` is what used to be here, and it made that state
+# permanent: `CREATE.FILE DIR` refuses once the directory exists, so the pointer
+# `MVPKG init` would have created never got made either, and a FRESH account
+# compiled almost nothing.  It stayed invisible because the catalog is
+# system-wide -- every account on a machine that had once installed mvpkg went
+# on resolving against months-old objects (mv_package#66).
+#
+# So let CREATE.FILE build the directory, the dictionary and the pointer
+# together, the way it exists to.  Anything already on disk with no pointer
+# naming it is debris in its way and goes first; the records are put back after.
+voc_has() {
+  printf 'CT VOC %s\nQUIT\n' "$1" | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
+    | grep -q "^$1:"
+}
+if voc_has MVPKG.INC; then
+  say "MVPKG.INC is already a UniData file"
+else
+  say "registering MVPKG.INC as a UniData file"
+  [ -d "$HERE/MVPKG.INC" ] && mv "$HERE/MVPKG.INC" "$HERE/MVPKG.INC.staged"
+  rm -rf "$HERE/D_MVPKG.INC"
+  printf 'CREATE.FILE DIR MVPKG.INC\nQUIT\n' | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) >/dev/null 2>&1 || true
+  [ -d "$HERE/MVPKG.INC" ] || die "CREATE.FILE DIR MVPKG.INC did not create the file"
+  if [ -d "$HERE/MVPKG.INC.staged" ]; then
+    for f in "$HERE/MVPKG.INC.staged"/*; do [ -f "$f" ] && cp "$f" "$HERE/MVPKG.INC/"; done
+    rm -rf "$HERE/MVPKG.INC.staged"
+  fi
+fi
+
 say "writing MVPKG.INC/PLATFORM.H (before the compile: sources include it)"
-mkdir -p "$HERE/MVPKG.INC"
 cat > "$HERE/MVPKG.INC/PLATFORM.H" <<'PLATEOF'
 * PLATFORM.H - UniData (UDT) platform defines.
 $DEFINE MV
@@ -137,6 +204,16 @@ say "compiling + cataloging the client (scope: $SCOPE) and the MVPKG verb"
 # One BASIC per program, not one BASIC with a long arg list: `BASIC BP <many
 # args>` segfaults udt on this UniData (it still writes the objects, but the
 # session dies before the CATALOGs run).  Per-program compile is clean.
+#
+# THE OUTPUT IS THE ONLY EVIDENCE.  A piped udt exits 0 whatever happened
+# inside it, so the compile is judged by what it printed and the catalog by a
+# file that did not exist before this run started.  The check this replaces --
+# `ls $UDTHOME/sys/CTLG/*/MVPKGOS` -- asked whether a catalog entry EXISTS, and
+# the global catalog is system-wide: on any machine that had ever installed
+# mvpkg it answered yes about somebody else's months-old object, so an install
+# that compiled nothing at all reported success (mv_package#66).
+CLOG=$(mktemp) || die "cannot make a temporary file"
+MARK=$(mktemp)  || die "cannot make a temporary file"
 if [ "$SCOPE" = local ]; then
   # #34 --local: catalog the WHOLE client LOCAL to this operator account, so a
   # test env is self-contained and never overwrites the live global catalog.
@@ -144,10 +221,12 @@ if [ "$SCOPE" = local ]; then
     for p in $PROBES $GLOBAL MVPKG MVPKG.FIXPERMS; do echo "BASIC BP $p"; done
     for p in $PROBES $GLOBAL MVPKG MVPKG.FIXPERMS; do echo "CATALOG BP $p LOCAL FORCE"; done
     echo "QUIT"
-  } | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) >/dev/null 2>&1 || true
+  } | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) > "$CLOG" 2>&1 || true
+  checkcompile
   # LOCAL catalog leaves no $UDTHOME/sys/CTLG entry — verify via the account VOC.
   if printf 'CT VOC MVPKGOS\nQUIT\n' | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) 2>&1 \
        | grep -qi 'not a record'; then
+    rm -f "$CLOG" "$MARK"
     die "local catalog failed — check LANG (not C.UTF-8) and that CATALOG ... LOCAL is permitted"
   fi
   say "cataloged locally in $HERE (scope: local — not in the global catalog)"
@@ -161,11 +240,21 @@ else
     echo "CATALOG BP MVPKG LOCAL FORCE"
     echo "CATALOG BP MVPKG.FIXPERMS LOCAL FORCE"
     echo "QUIT"
-  } | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) >/dev/null 2>&1 || true
-  ls "$UDTHOME"/sys/CTLG/*/MVPKGOS >/dev/null 2>&1 \
-    || die "catalog failed — check LANG (not C.UTF-8) and write access to $UDTHOME/sys/CTLG"
-  say "cataloged (MVPKGOS -> $(ls "$UDTHOME"/sys/CTLG/*/MVPKGOS 2>/dev/null | head -1))"
+  } | ( cd "$HERE" && LANG="$LANG_OK" TERM=dumb "$UDT" ) > "$CLOG" 2>&1 || true
+  checkcompile
+  # NEWER THAN THIS RUN, not merely present: $MARK was made a few lines above,
+  # so an entry that predates it belongs to some earlier install.
+  GOBJ=$(find "$UDTHOME"/sys/CTLG/*/MVPKGOS -newer "$MARK" 2>/dev/null | head -1)
+  if [ -z "$GOBJ" ]; then
+    rm -f "$CLOG" "$MARK"
+    if ls "$UDTHOME"/sys/CTLG/*/MVPKGOS >/dev/null 2>&1; then
+      die "catalog did not run — $UDTHOME/sys/CTLG holds an OLDER MVPKGOS, so this account would run somebody else's objects.  Check LANG (not C.UTF-8) and write access to $UDTHOME/sys/CTLG"
+    fi
+    die "catalog failed — check LANG (not C.UTF-8) and write access to $UDTHOME/sys/CTLG"
+  fi
+  say "cataloged (MVPKGOS -> $GOBJ)"
 fi
+rm -f "$CLOG" "$MARK"
 
 # 4) provision the MVPKG store.  It defaults to $UDTHOME/<prefix>mvpkg (a system
 #    location so every operator account of this env shares one package store), but

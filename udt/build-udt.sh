@@ -30,6 +30,9 @@ mkdir -p "$ACCT/BP"
 for f in "$ROOT"/BP/*; do
    [ -f "$f" ] || continue
    p=$(basename "$f")
+   # _<PROG> is a compiled object, not a program: UniData writes them beside
+   # their source, so a repo that has been compiled in carries both.
+   case "$p" in _*|.*) continue ;; esac
    if [ -f "$HERE/$p" ]; then cp "$HERE/$p" "$ACCT/BP/"; else cp "$f" "$ACCT/BP/"; fi
 done
 
