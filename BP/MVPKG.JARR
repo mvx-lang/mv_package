@@ -1,0 +1,41 @@
+      SUBROUTINE MVPKG.JARR(JSON, JKEY, JOUT)
+* mv_package — JOUT = the strings of the JSON array at JKEY, space-separated
+* ("" when the key is absent or is not an array of strings).
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* The flat JSONDECODE seam reads "key":"value" and nothing else, and both the
+* lists this client needs to read from a LOCAL manifest -- dependencies and
+* provides -- are arrays of strings.  Rather than reach for the json package
+* (which mvpkg installs, so it cannot require it) this walks the one shape it
+* needs, the way MVPKGDEP walks the deploy block beside it.
+*
+* Space-separated because that is what every caller here already splits with
+* FIELD(..., " ", i), and no name in a manifest contains a space.
+      JOUT = ""
+      DQ = CHAR(34)
+      KP = INDEX(JSON, DQ : JKEY : DQ, 1)
+      IF KP = 0 THEN RETURN
+      TAIL = JSON[KP + LEN(JKEY) + 2, LEN(JSON)]
+      OB = INDEX(TAIL, "[", 1)
+      CB = INDEX(TAIL, "]", 1)
+      IF OB = 0 OR CB < OB THEN RETURN
+      BODY = TAIL[OB + 1, CB - OB - 1]
+      JDONE = 0
+      LOOP UNTIL JDONE DO
+         Q1 = INDEX(BODY, DQ, 1)
+         IF Q1 = 0 THEN
+            JDONE = 1
+         END ELSE
+            REST = BODY[Q1 + 1, LEN(BODY)]
+            Q2 = INDEX(REST, DQ, 1)
+            IF Q2 = 0 THEN
+               JDONE = 1
+            END ELSE
+               JV = REST[1, Q2 - 1]
+               IF JV # "" THEN JOUT := JV : " "
+               BODY = REST[Q2 + 1, LEN(REST)]
+            END
+         END
+      REPEAT
+      JOUT = TRIM(JOUT)
+      RETURN
