@@ -56,11 +56,18 @@ cp "$ROOT"/CMD.BP/CMD.INIT "$ROOT"/CMD.BP/CMD.ADD "$ROOT"/CMD.BP/CMD.RUN "$ACCT/
 # clause (it is a syntax error there), so its DEFFUN is bare and resolves by
 # NAME.  mvpkg ships MVPKG.HTTPGET, nothing answered to HTTPGET, and every fetch
 # died -- including the fetch of the curl-cmd package that was meant to provide
-# the name (#77).  These two forward one to the other; curl-cmd catalogs its own
-# over them later, same names and signatures.
-cp "$HERE"/HTTPGET "$HERE"/HTTPGETFILE "$ACCT/BP/"
+# the name (#77).  ALL FOUR names MVPKG.META declares that way need one, not
+# just the HTTP pair: a clean $HOME/lib showed MAPFIELD failing exactly the same
+# way once no earlier install had left a copy behind.  Each forwards to mvpkg's
+# own seam, and the real package (curl-cmd, json, mapfield) catalogs its own
+# over the wrapper later, same name and same signature.
+cp "$HERE"/HTTPGET "$HERE"/HTTPGETFILE "$HERE"/JSONDECODE "$HERE"/MAPFIELD "$ACCT/BP/"
 
 cp "$HERE/install.sh" "$ACCT/install.sh"; chmod +x "$ACCT/install.sh"
+# The shared-object search-path helper.  install.sh puts it in the store, where
+# MVPKGOS reaches it from any account -- the way UniData's CallC builder sits in
+# $UDTHOME/bin.
+cp "$HERE/mvpkg-jblib" "$ACCT/mvpkg-jblib"; chmod +x "$ACCT/mvpkg-jblib"
 cp "$ROOT"/PKG "$ROOT"/mvpkg.json "$ROOT"/LICENSE "$ROOT"/README.md "$ACCT/" 2>/dev/null || true
 
 # The version the release ships, into the manifests the release ships.  mvpkg

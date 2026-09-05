@@ -1,0 +1,113 @@
+#!/bin/sh
+# mvpkg-jblib — maintain jBASE's shared-object search path for installed packages.
+# Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see ../LICENSE).
+#
+#   mvpkg-jblib add <dir>       put <dir> on JBCOBJECTLIST (idempotent)
+#   mvpkg-jblib remove <dir>    take it off
+#   mvpkg-jblib show            print the current list
+#
+# WHY THERE IS A SEARCH PATH AT ALL.  jBASE catalogs into ONE shared library per
+# user, $HOME/lib/lib0.so, so every package a user installs lands in the same
+# object.  A program whose DEFC names a symbol the loader cannot find makes that
+# whole library unloadable -- and the failure names neither the package at fault
+# nor the caller:
+#
+#     jBASE: /home/rocky/lib/lib0.so.314: undefined symbol: JBCURLGETFILE
+#      ** Error [ SUBROUTINE_CALL_FAIL ] **
+#     Unable to perform CALL to subroutine CMD.INIT , Line 32 , Source MVPKG
+#
+# That was `MVPKG list` failing because an unrelated HTTP package had been
+# cataloged earlier, in a DIFFERENT account (mv_package#62).  So MVPKG catalogs
+# each package into its own directory (JBCDEV_LIB) and adds that directory here,
+# which is where the loader looks (JBCOBJECTLIST).  BOTH halves are needed: set
+# only the first and every catalog reports success while every CALL fails.
+#
+# WHERE IT IS WRITTEN.  jBASE's own config, in the `environment` array that every
+# session reads -- the same place PATH and LD_LIBRARY_PATH are set, and jBASE
+# documents this very variable there:
+#
+#     # JBCOBJECTLIST defines the directories to find user shared object
+#     # libraries where user subroutines are located.
+#     #   {"name": "JBCOBJECTLIST", "default": "$HOME/lib"},
+#
+# Not a shell profile: jBASE reads nothing from the account directory, so a
+# profile would need a human to source it every session.  On a normal install
+# this file belongs to group `jbase` and is group-writable, so no sudo.
+#
+# $HOME/lib STAYS ON THE PATH, ALWAYS, AND STAYS LAST.
+#
+# On the path because it is jBASE's documented default and holds the MVPKG
+# client itself, cataloged by install.sh -- drop it and the package manager
+# stops resolving its own subroutines.
+#
+# LAST because the client also catalogs bootstrap copies of names the real
+# packages provide -- HTTPGET, HTTPGETFILE, JSONDECODE, MAPFIELD, which exist so
+# mvpkg can fetch the very packages that supply them.  jBASE searches this list
+# in order, so with $HOME/lib first those cut-down copies would shadow the real
+# mapfield and json packages for every program on the system, forever.  Packages
+# first, bootstrap last, is the only order that lets a package take over the
+# name it provides.
+set -e
+
+CFG="${JBCGLOBALDIR:-/opt/jbase/global}/config/jbase_config.json"
+MARK='# mvpkg: managed line below -- change it with mvpkg-jblib, not by hand'
+BASE='$HOME/lib'
+
+die() { printf 'mvpkg-jblib: %s\n' "$1" >&2; exit 1; }
+[ -f "$CFG" ] || die "no jBASE config at $CFG (set JBCGLOBALDIR)"
+
+# The current list: ours if we have written one, else jBASE's default alone.
+current() {
+   line=$(grep -F '"JBCOBJECTLIST"' "$CFG" | grep -v '^[[:space:]]*#' | head -1)
+   if [ -z "$line" ]; then printf '%s' "$BASE"; return 0; fi
+   # "value": "<list>"  -- take what is between the last pair of quotes
+   printf '%s' "$line" | sed 's/.*"value"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
+}
+
+# Rewrite the managed block with $1 as the list.  Our two lines are removed
+# wherever they are and re-inserted directly after the array opens, so repeated
+# edits cannot accumulate and a hand-removed block simply comes back.
+write() {
+   [ -w "$CFG" ] || die "$CFG is not writable by $(id -un) — on a stock install it is group 'jbase'; add yourself to that group, or run this as the jBASE administrator"
+   tmp="$CFG.mvpkg.$$"
+   awk -v list="$1" -v mark="$MARK" '
+      index($0, "\"JBCOBJECTLIST\"") && $0 !~ /^[[:space:]]*#/ { next }
+      index($0, mark)                                          { next }
+      { print }
+      /"environment"[[:space:]]*:[[:space:]]*\[/ && !done {
+         printf "        %s\n", mark
+         printf "        {\"name\": \"JBCOBJECTLIST\", \"value\": \"%s\"},\n", list
+         done = 1
+      }
+   ' "$CFG" > "$tmp"
+   grep -q '"JBCOBJECTLIST"' "$tmp" || { rm -f "$tmp"; die "could not find the environment array in $CFG — left unchanged"; }
+   # Same file, so the group ownership jBASE relies on is kept.
+   cat "$tmp" > "$CFG" && rm -f "$tmp"
+}
+
+case "${1:-}" in
+   show)   current; echo ;;
+   add)
+      [ -n "${2:-}" ] || die "usage: mvpkg-jblib add <dir>"
+      cur=$(current); new=""
+      # rebuild in order, dropping duplicates and the base, then append the base
+      for d in $(printf '%s' "$cur" | tr ':' ' ') "$2"; do
+         [ "$d" = "$BASE" ] && continue
+         case ":$new:" in *":$d:"*) ;; *) new="${new:+$new:}$d" ;; esac
+      done
+      new="${new:+$new:}$BASE"
+      [ "$new" = "$cur" ] || write "$new"
+      ;;
+   remove)
+      [ -n "${2:-}" ] || die "usage: mvpkg-jblib remove <dir>"
+      cur=$(current); new=""
+      for d in $(printf '%s' "$cur" | tr ':' ' '); do
+         [ "$d" = "$2" ] && continue
+         [ "$d" = "$BASE" ] && continue
+         case ":$new:" in *":$d:"*) ;; *) new="${new:+$new:}$d" ;; esac
+      done
+      new="${new:+$new:}$BASE"
+      [ "$new" = "$cur" ] || write "$new"
+      ;;
+   *) die "usage: mvpkg-jblib add|remove <dir> | show" ;;
+esac

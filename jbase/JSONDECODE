@@ -1,0 +1,8 @@
+      FUNCTION JSONDECODE(BODY, SPEC)
+* jBASE bootstrap: give mvpkg's own JSON seam the name jBASE will look for.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see ../LICENSE).
+* See HTTPGET beside this for why the name has to be this one -- jBASE has no
+* `DEFFUN ... CALLING`, so the bare DEFFUN resolves by NAME and mvpkg ships
+* MVPKG.JSONDECODE.  The json package catalogs its own over this later.
+      DEFFUN MVPKG.JSONDECODE(A, B)
+      RETURN(MVPKG.JSONDECODE(BODY, SPEC))
