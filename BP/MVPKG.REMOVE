@@ -14,7 +14,7 @@ $ELSE
    S = @SENTENCE
 $ENDIF
    A1 = FIELD(S, " ", 3)
-   IF A1 = "" THEN PRINT "usage: MVPKG remove <name>" ; RETURN
+   IF A1 = "" THEN PRINT "usage: MVPKG remove <name> [--force]" ; RETURN
    NM = A1
    CALL MVPKGOS("STORE", "", "", STORE)
    PKGKEY = CHANGE(NM, "/", "_")
@@ -24,6 +24,26 @@ $ENDIF
    INST = 0
    LOCATE(NM, SREC, 2; SPOS) THEN INST = 1
    IF INST = 0 THEN PRINT NM : " is not installed" ; RETURN
+* WHAT STILL NEEDS IT?  Asked BEFORE anything is deleted, because the answer
+* stops being recoverable the moment the store copy goes: removing getopt on a
+* working account took cmd's GETOPT.SENTENCE with it and left MVPKG unable to
+* dispatch its own commands, with the failure reported from inside the
+* dependent rather than at the thing that caused it (#98).  MVX has refused
+* this since it linked packages; the MV vendors did not.
+   RFORCE = 0
+   FOR FI = 3 TO DCOUNT(S, " ")
+      IF FIELD(S, " ", FI) = "--force" THEN RFORCE = 1
+   NEXT FI
+   CALL MVPKG.RDEPS(NM, RHARD, RSOFT, RPROV)
+   IF RHARD # "" AND RFORCE = 0 THEN
+      PRINT NM : " is still required by: " : RHARD
+      PRINT "  removing it would break them: their code is cataloged against"
+      PRINT "  this package's store copy, which this would delete."
+      PRINT "  remove those first, or  MVPKG remove " : NM : " --force"
+      RETURN
+   END
+   IF RHARD # "" THEN PRINT "mvpkg: --force — removing anyway; this breaks: " : RHARD
+   IF RSOFT # "" THEN PRINT "mvpkg: optional for: " : RSOFT : " (they guard its absence)"
    PRINT "removing " : NM : " ..."
    * ---- un-deploy from this account + drop the store copy (deploy model) ----
 $IFDEF MVX
@@ -80,12 +100,24 @@ $ENDIF
    * drop the source working-copy marker too, if any
    CALL MVPKGOS("STOREDELETE", "SRC." : PKGKEY, "", SERR)
    * drop it from this account's lock (the MVPKG.LOCK record), name + version
+   *
+   * AND THE NAMES IT PROVIDED WITH IT.  The lock records a package and each
+   * virtual name it satisfies (#81); dropping only the package left the alias
+   * behind, so "getopt" stayed in a lock whose mvx-lang/getopt was gone and a
+   * later resolve could believe the name was satisfied when nothing provided
+   * it.  The store copy is still there to read at this point -- the RMDIR above
+   * removed it, so RDEPS read the provides list earlier and it is in RNAMES.
    CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
    NREC = "MVPKG-LOCK"
    NJ = 0
    FOR I = 1 TO DCOUNT(IREC<2>, @VM)
       MLN = TRIM(IREC<2,I>)
-      IF MLN # "" AND MLN # NM THEN
+      MLDROP = 0
+      IF MLN = NM THEN MLDROP = 1
+      FOR PVI = 1 TO DCOUNT(RPROV, " ")
+         IF MLN # "" AND MLN = FIELD(RPROV, " ", PVI) THEN MLDROP = 1
+      NEXT PVI
+      IF MLN # "" AND MLDROP = 0 THEN
          NJ = NJ + 1
          NREC<2,NJ> = MLN
          NREC<3,NJ> = IREC<3,I>
