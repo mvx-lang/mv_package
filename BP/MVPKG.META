@@ -25,21 +25,31 @@ $IFNDEF MVX
 * already there, because the packages mvpkg depends on catalog them: HTTPGET and
 * HTTPGETFILE from curl (curl-cmd), JSONDECODE from json, MAPFIELD from mapfield.
 * So the indirection is not needed there; the dependency IS the seam.
-   $IFDEF JBASE
-      DEFFUN HTTPGET(A)
-   $ELSE
+*
+* UNIVERSE TAKES THE SAME CLAUSE AS UNIDATA BUT NOT THE SAME NAME.  A leading
+* "*" names the GLOBAL catalog, and UniVerse packages are cataloged LOCAL -- per
+* account, which is also what makes each program typeable as a verb.  Asking for
+* "*MVPKG.MAPFIELD" there fails with "is not in the CATALOG space" even though
+* the program is cataloged and callable; the bare name resolves through the
+* account's VOC.
+*
+* FLAT GUARDS, one per platform: an $IFDEF nested inside an $ELSE compiles on
+* UniData and FAILS on UniVerse, which is what this block used to be.
+$IFDEF JBASE
+   DEFFUN HTTPGET(A)
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B, C, D, E)
+$ENDIF
+$IFDEF UDT
    DEFFUN HTTPGET(A) CALLING "*MVPKG.HTTPGET"
-   $ENDIF
-   $IFDEF JBASE
-      DEFFUN JSONDECODE(A, B)
-   $ELSE
    DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
-   $ENDIF
-   $IFDEF JBASE
-      DEFFUN MAPFIELD(A, B, C, D, E)
-   $ELSE
    DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
-   $ENDIF
+$ENDIF
+$IFDEF UV
+   DEFFUN HTTPGET(A) CALLING "MVPKG.HTTPGET"
+   DEFFUN JSONDECODE(A, B) CALLING "MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "MVPKG.MAPFIELD"
+$ENDIF
 $ENDIF
    SPEC = ""
    SPEC<-1> = MAPFIELD("name", 1, "", "", "")
