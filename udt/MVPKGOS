@@ -56,6 +56,7 @@
    SUBROUTINE MVPKGOS(OP, P1, P2, RESULT)
 $INCLUDE MVPKG.INC PLATFORM.H
    RESULT = ""
+   NFM = ""                               ;* NEWFILE's modulo, when a caller cares
    OP = OCONV(OP, "MCU")
 * The root the shared package store hangs off.  On UniData that is $UDTHOME, a
 * system location every operator account of the install can reach.  jBASE has no
@@ -186,20 +187,14 @@ $ENDIF
          * a package's "fallback" (bundle a copy only when the dep is absent).
          NCK = P1 ; GOSUB HAVECHK ; RESULT = HAV
       CASE OP = "MKFILE"
-         * P1 = file name, P2 = type ("dir" = a directory file — an OS
-         * directory + VOC DIR-pointer, like BP; anything else = a dynamic
-         * hashed file).  Create it in this account if absent (deploy.files);
-         * a no-op if it already opens.
+         * P1 = file name, P2 = type ("dir" = a directory file, one that holds
+         * source items like BP; anything else = a hashed file).  Create it in
+         * this account if absent (deploy.files); a no-op if it already opens.
+         * NEWFILE knows how each platform is asked for one.
          OPEN P1 TO MFF THEN
             RESULT = ""
          END ELSE
-            IF OCONV(P2, "MCL") = "dir" THEN
-               CALL MVPKG.SH('mkdir -p "' : P1 : '" "D_' : P1 : '"', MVSHOUT, MVSHST)
-               OPEN MVMASTER TO MFV ELSE RESULT = "MVPKGOS MKFILE: cannot open " : MVMASTER ; RETURN
-               WRITE ("DIR" : @FM : P1 : @FM : "D_" : P1) ON MFV, P1
-            END ELSE
-               EXECUTE "CREATE.FILE " : P1 : " 1"
-            END
+            NFN = P1 ; NFT = P2 ; GOSUB NEWFILE
          END
       CASE OP = "MDREAD"
          * Read a record from the account master dictionary — the portable home
@@ -287,10 +282,15 @@ $IFDEF JBASE
          CALL MVPKG.FILE("WRITE", @PATH : "/MVPKG.INC/PLATFORM.H", PH, MVFOK)
 $ENDIF
 $IFDEF UV
-* Same shape as UniData -- a DIR file and a record in it -- but the header has
-* to say UV, or `MVPKG init` rewrites the account as a UniData one and every
+* Same shape as UniData -- a directory file and a record in it -- but the header
+* has to say UV, or `MVPKG init` rewrites the account as a UniData one and every
 * later recompile takes the wrong arm of every guard.
-         EXECUTE "CREATE.FILE DIR MVPKG.INC" CAPTURING JUNK
+*
+* The file is made through NEWFILE rather than `CREATE.FILE DIR MVPKG.INC`,
+* which is UniData's spelling: UniVerse reads that DIR as the MODULO, answers
+* "Improper modulo number entered", and then asks the question -- and a
+* question asked from inside EXECUTE is not an error, it is a hang.
+         NFN = "MVPKG.INC" ; NFT = "dir" ; GOSUB NEWFILE
          OPEN "MVPKG.INC" TO INCF THEN
             PH = "* PLATFORM.H - UniVerse (UV) platform defines."
             PH<-1> = "* GENERATED FILE - DO NOT EDIT.  MVPKG INIT rewrites it,"
@@ -346,7 +346,20 @@ $ENDIF
 LISTSRC:
    ITEMS = ""
    OPEN MVMASTER TO LVF ELSE RESULT = "MVPKGOS: cannot open " : MVMASTER ; RETURN
-   WRITE ("DIR" : @FM : SDIR : @FM : "D_BP") ON LVF, "MVPKG.SRC"
+* A FILE POINTER'S TYPE IS SPELLED DIFFERENTLY HERE.  UniData and jBASE write
+* "DIR" in attribute 1; UniVerse writes "F" and rejects "DIR", so the OPEN below
+* just fails and not one package can be cataloged.  Read one of UniVerse's own
+* pointers back (CT VOC BP) and it says "F", with the file description after it.
+   PTYPE = "DIR"
+$IFDEF UV
+   PTYPE = "F"
+* AND UNIVERSE DOES NOT PUT OBJECTS BESIDE THE SOURCE.  It compiles <dir>/<prog>
+* to <dir>.O/<prog>, making the pointer to that object directory itself -- but
+* not the OS directory behind it.  Without this the compile stops at "[ENOENT]
+* No such file or directory" having built nothing.
+   CALL MVPKG.SH('mkdir -p "' : SDIR : '.O"', MVSHOUT, MVSHST)
+$ENDIF
+   WRITE (PTYPE : @FM : SDIR : @FM : "D_BP") ON LVF, "MVPKG.SRC"
    OPEN "MVPKG.SRC" TO LSF ELSE RESULT = "MVPKGOS: cannot open " : SDIR ; RETURN
    SELECT LSF TO LLIST
    RDONE = 0
@@ -413,6 +426,49 @@ DROPPTR:
    DELETE LVF, "MVPKG.SRC"
    RETURN
 
+* NEWFILE -- create the account file NFN if it is not already there.  NFT is
+* "dir" for a directory file (one that holds source items, like BP) and anything
+* else for a hashed one; NFM is the modulo when the caller cares, else 1.
+* Idempotent on every platform: creating a file that already exists leaves it,
+* and its records, alone.
+NEWFILE:
+   IF NFM = "" THEN NFM = 1
+$IFNDEF UV
+   IF OCONV(NFT, "MCL") = "dir" THEN
+      CALL MVPKG.SH('mkdir -p "' : NFN : '" "D_' : NFN : '"', MVSHOUT, MVSHST)
+      OPEN MVMASTER TO NFV ELSE RESULT = "MVPKGOS NEWFILE: cannot open " : MVMASTER ; RETURN
+      WRITE ("DIR" : @FM : NFN : @FM : "D_" : NFN) ON NFV, NFN
+   END ELSE
+      EXECUTE "CREATE.FILE " : NFN : " " : NFM
+   END
+$ENDIF
+$IFDEF UV
+* UNIVERSE ASKS SEVEN QUESTIONS AND NO ARGUMENT FORM ANSWERS THEM.  `CREATE.FILE
+* X 19` reads the 19 as a MODULO, not a type, and every other positional
+* spelling either mis-parses or leaves the DATA part unspecified.  The verb then
+* stops on "Modulo =" -- which, from inside EXECUTE, is a hang and not an error.
+* So the answers go on the input stack instead: modulo, separation and type for
+* the DICTionary, the same three for the DATA part, then a FILE DESCRIPTION.
+*
+* THE EMPTY DESCRIPTION IS NOT PADDING.  UniVerse keeps it in VOC attribute 1 as
+* "F <description>", so anything that tests attribute 1 for "F" -- LISTSRC's
+* pointer, an account scan -- stops seeing the file the moment it carries one.
+*
+* Types 18 (hashed) and 19 (directory), NOT 30: UniVerse rejects 30, re-prompts,
+* and the re-prompt eats the rest of the stack, so the file is never made and
+* the leftovers are inherited by whatever EXECUTEs next.  CLEARDATA closes that
+* door for the case where a create consumes fewer answers than it was handed.
+   IF OCONV(NFT, "MCL") = "dir" THEN
+      DATA 1, 2, 3, NFM, 2, 19, ""
+   END ELSE
+      DATA 1, 2, 3, NFM, 2, 18, ""
+   END
+   EXECUTE "CREATE.FILE " : NFN CAPTURING NFJUNK
+   CLEARDATA
+$ENDIF
+   NFM = ""
+   RETURN
+
 * CONFLOAD — this account's deploy config (MVPKG.CONF), read once per call into
 * MSCOPE / MPREFIX with defaults, so CATALOG / DECAT pick the right catalog scope
 * and STORE resolves the right (prefixed) store.  Absent record = defaults:
@@ -431,9 +487,18 @@ CONFLOAD:
 * catalog file), else "0".
 HAVECHK:
    HAV = "0"
+* THE CATALOG POINTER IS NOT ALWAYS TYPE "C".  UniData writes "C"; UniVerse's
+* LOCAL catalog writes "V" with the object path in attribute 2 -- and it is that
+* record which makes the program both typeable and CALLable.  Reading only "C"
+* here made every HAVE answer "0" on UniVerse, so a package with a "fallback"
+* bundled its own copy of a dependency that was installed and working.
+   CTYPES = "C"
+$IFDEF UV
+   CTYPES = "C":@AM:"V"
+$ENDIF
    OPEN MVMASTER TO HVF THEN
       READ HR FROM HVF, NCK THEN
-         IF HR<1> = "C" THEN HAV = "1"
+         LOCATE(HR<1>, CTYPES; CTPOS) THEN HAV = "1"
       END
    END
    IF HAV = "0" THEN
@@ -473,10 +538,10 @@ STOREHEAL:
    MYNAME = FIELD(MYPATH, "/", DCOUNT(MYPATH, "/"))   ;* account name = dir basename
    BEGIN CASE
       CASE OINFO = ""
-         EXECUTE "CREATE.FILE MVPKG.STORE 7"
+         NFN = "MVPKG.STORE" ; NFT = "" ; NFM = 7 ; GOSUB NEWFILE
          CALL MVPKG.FILE("WRITE", OMARK, MYNAME : CHAR(10) : MYPATH, MVFOK)
       CASE OPATH = MYPATH
-         EXECUTE "CREATE.FILE MVPKG.STORE 7"
+         NFN = "MVPKG.STORE" ; NFT = "" ; NFM = 7 ; GOSUB NEWFILE
       CASE 1
          OPEN MVMASTER TO SVF THEN
             WRITE ("Q" : @FM : ONAME : @FM : "MVPKG.STORE") ON SVF, "MVPKG.STORE"
