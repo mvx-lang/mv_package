@@ -134,8 +134,45 @@ jobs:
   #
   # Both directions are set explicitly, for the same reason: leaving the stable
   # case alone means it keeps whatever that race happened to leave behind.
+  # ---- jbase account: the client as a self-installing jBASE account -----------
+  # Pure BASIC and shell, like the udt account -- staged and tarred on a hosted
+  # runner, os/arch-independent (jbase-any-any-le).  Unpacks to mvpkg/; then
+  # `. jbase_env.sh && cd mvpkg && ./install.sh`.
+  #
+  # The installer is jbase/install.sh, not udt/install.sh: jBASE catalogs PER USER
+  # (verbs to ~/bin, subroutines to ~/lib/lib0.so) so nothing needs sudo or a
+  # system catalog; it has no CallC aggregator to install; and CREATE-ACCOUNT
+  # refuses a non-empty directory, which an unpacked release always is -- so the
+  # furniture is made in a temp directory and moved across.
+  jbase-account:
+    needs: [source]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Stage the jbase account package
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME}"
+          BASE="mvpkg-$VER-jbase-any-any-le"
+          rm -rf dist && mkdir -p dist
+          sh jbase/build-jbase.sh dist
+          tar czf "$BASE.tar.gz" -C dist mvpkg
+          sha256sum "$BASE.tar.gz" > "$BASE.tar.gz.sha256"
+          echo "tarball=$BASE.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "checksum=$BASE.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+      - name: Publish the jbase account asset
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            ${{ steps.pkg.outputs.tarball }}
+            ${{ steps.pkg.outputs.checksum }}
+          fail_on_unmatched_files: true
+
   mark:
-    needs: [source, mvx-binary, udt-binary]
+    needs: [source, mvx-binary, udt-binary, jbase-account]
     runs-on: ubuntu-latest
     steps:
       - name: Say what this release is
