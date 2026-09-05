@@ -53,7 +53,19 @@ jobs:
   # ---- mvx binary: the MVPKG client account compiled with the mvx toolchain ---
   # No native extension (the CallC bridge is UniData-only) — mkpkg.sh compiles
   # BP/* into CATALOG/ with the published mvx-basic.  Native -> os/arch-locked.
+  # needs: [source] — NOT for ordering, but so this job never CREATES the release.
+  # Every publish step here creates it as a side effect of uploading, and three
+  # of them starting at once means three creates: one wins, the losers get
+  # `Validation Failed: {"code":"already_exists","field":"tag_name"}` on
+  # finalize, plus a stray draft release left behind for the tag.  That is where
+  # the duplicate drafts beside every tag came from.  On 1.17.0-beta4 it went
+  # further and took `source` down with it, which skipped uv-account and
+  # jbase-account (they need it) — a release with half its artifacts.
+  #
+  # So `source` alone creates the release, and everything else uploads into one
+  # that is already there.
   mvx-binary:
+    needs: [source]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
@@ -101,6 +113,7 @@ jobs:
   # container, no self-hosted runner — so it stages + tars on a hosted runner and
   # is os/arch-independent (udt-any-any-le).  Unpacks to mvpkg/; cd mvpkg && ./install.sh
   udt-binary:
+    needs: [source]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
