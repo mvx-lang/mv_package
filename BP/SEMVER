@@ -3,7 +3,13 @@
 *   OP="SAT"  RESULT = 1/0     does VER satisfy the constraint CONS
 *   OP="STABILITY"  RESULT = dev|alpha|beta|rc|stable  the build's stability, read
 *                   from its pre-release tag (mv_package#30 part 1).  Ranked
-*                   dev < alpha < beta < rc < stable for a later minimum-stability.
+*                   dev < alpha < beta < rc < stable by the RANK op.
+*   OP="RANK"  RESULT = 5..1 for the stability WORD in VER (stable rc beta alpha
+*                   dev), and 0 for anything else.  Deliberately strict: callers
+*                   use it to decide whether a typed word ("mvpkg install x@beta")
+*                   IS a stability flag at all, so an arbitrary git ref or branch
+*                   name must score 0 rather than being classified as a version.
+*                   For a VERSION's rank, ask STABILITY first, then RANK the word.
 * Versions: major.minor.patch[-prerelease].  A prerelease (1.2.0-beta.1) sorts
 * BEFORE its release and is EXCLUDED by default (stable-only) unless the
 * constraint itself names a prerelease.  Constraints: "" / "*" (any), exact
@@ -13,6 +19,7 @@
       CASE OP = "CMP" ; A = VER ; B = CONS ; GOSUB VCMP ; RESULT = CMP
       CASE OP = "SAT" ; GOSUB SATISFY ; RESULT = SAT
       CASE OP = "STABILITY" ; GOSUB STABILITY ; RESULT = STB
+      CASE OP = "RANK" ; RWORD = OCONV(TRIM(VER), "MCL") ; GOSUB RANKW ; RESULT = RNK
       CASE 1 ; RESULT = ""
    END CASE
    RETURN
@@ -31,6 +38,19 @@ STABILITY:
       CASE FST[1, 1] = "b"     ; STB = "beta"
       CASE FST[1, 1] = "a"     ; STB = "alpha"
       CASE 1                   ; STB = "dev"
+   END CASE
+   RETURN
+* RANKW — rank the stability word in RWORD (already lower-cased), 0 if it is not
+* one of the five.  The vocabulary is closed, which is what lets a spec suffix be
+* read as a stability flag without colliding with a system name or a git ref.
+RANKW:
+   BEGIN CASE
+      CASE RWORD = "stable" ; RNK = 5
+      CASE RWORD = "rc"     ; RNK = 4
+      CASE RWORD = "beta"   ; RNK = 3
+      CASE RWORD = "alpha"  ; RNK = 2
+      CASE RWORD = "dev"    ; RNK = 1
+      CASE 1                ; RNK = 0
    END CASE
    RETURN
 PARSE:
@@ -83,8 +103,22 @@ PRECMP:
    RETURN
 SATISFY:
    C = TRIM(CONS)
+   * A trailing "@word" on the constraint is a MINIMUM-STABILITY FLOOR
+   * (mv_package#30): "^1.2@beta" accepts 1.3.0-beta1, plain "^1.2" does not.
+   * With no flag the floor is stable, which is the Composer rule this has
+   * always applied -- so every existing caller keeps its exact behaviour.
+   FRANK = 5
+   ATC = INDEX(C, "@", 1)
+   IF ATC > 0 THEN
+      RWORD = OCONV(TRIM(C[ATC + 1, LEN(C)]), "MCL") ; GOSUB RANKW
+      IF RNK > 0 THEN FRANK = RNK
+      C = TRIM(C[1, ATC - 1])
+   END
+   * VER's own rank, compared against the floor wherever a pre-release would
+   * otherwise be refused.  Computed once: it does not vary across the ranges.
+   GOSUB STABILITY ; RWORD = STB ; GOSUB RANKW ; VRANK = RNK
    IF C = "" OR C = "*" THEN
-      PVIN = VER ; GOSUB PARSE ; SAT = 0 ; IF PPRE = "" THEN SAT = 1
+      SAT = 0 ; IF VRANK >= FRANK THEN SAT = 1
       RETURN
    END
    SAT = 1
@@ -109,7 +143,11 @@ SATONE:
    OPND = TRIM(OPND)
    PVIN = VER ; GOSUB PARSE ; VPRE = PPRE
    PVIN = OPND ; GOSUB PARSE ; OPRE = PPRE
-   IF VPRE # "" AND OPRE = "" THEN RETURN
+   * A pre-release satisfies a stable constraint only when the floor allows it.
+   * Below the floor -- and, with no floor, for every pre-release -- S1 stays 0.
+   IF VPRE # "" AND OPRE = "" THEN
+      IF VRANK < FRANK THEN RETURN
+   END
    BEGIN CASE
       CASE OPER = "="  ; A = VER ; B = OPND ; GOSUB VCMP ; IF CMP = 0 THEN S1 = 1
       CASE OPER = ">=" ; A = VER ; B = OPND ; GOSUB VCMP ; IF CMP >= 0 THEN S1 = 1
@@ -121,22 +159,39 @@ SATONE:
       CASE OPER = "W"  ; GOSUB WILD
    END CASE
    RETURN
+* A DERIVED BOUND IS A BOUND ON THE RELEASE, NOT ON ITS PRE-RELEASES.  ^1.0 and
+* ~1.0 invent both ends of their range, and a pre-release compares BELOW the
+* release it leads to -- so a literal comparison puts 2.0.0-rc1 inside ^1.0 (it
+* is less than 2.0.0) and puts 1.0.0-beta1 outside it (it is less than 1.0.0).
+* Both are wrong: the caller named a major line, not a point in the ordering.
+* Comparing VER's release part against a derived bound gives Composer's reading
+* (">=1.0.0-dev <2.0.0-dev").  An OPND that names a pre-release itself is a
+* deliberate point in the ordering, so that one is compared in full.
+* Only reachable for a pre-release VER when a stability floor let it through.
+MAINOF:
+   PVIN = VER ; GOSUB PARSE
+   VMAIN = P1 : "." : P2 : "." : P3
+   RETURN
 CARET:
    PVIN = OPND ; GOSUB PARSE ; OM = P1 ; ONN = P2 ; OPT = P3
-   A = VER ; B = OPND ; GOSUB VCMP ; LO = 0 ; IF CMP >= 0 THEN LO = 1
+   GOSUB MAINOF
+   LOA = VMAIN ; IF OPRE # "" THEN LOA = VER
+   A = LOA ; B = OPND ; GOSUB VCMP ; LO = 0 ; IF CMP >= 0 THEN LO = 1
    BEGIN CASE
       CASE OM > 0 ; HIV = (OM + 1) : ".0.0"
       CASE ONN > 0 ; HIV = "0." : (ONN + 1) : ".0"
       CASE 1 ; HIV = "0.0." : (OPT + 1)
    END CASE
-   A = VER ; B = HIV ; GOSUB VCMP ; HI = 0 ; IF CMP < 0 THEN HI = 1
+   A = VMAIN ; B = HIV ; GOSUB VCMP ; HI = 0 ; IF CMP < 0 THEN HI = 1
    IF LO AND HI THEN S1 = 1
    RETURN
 TILDE:
    PVIN = OPND ; GOSUB PARSE ; OM = P1 ; ONN = P2
-   A = VER ; B = OPND ; GOSUB VCMP ; LO = 0 ; IF CMP >= 0 THEN LO = 1
+   GOSUB MAINOF
+   LOA = VMAIN ; IF OPRE # "" THEN LOA = VER
+   A = LOA ; B = OPND ; GOSUB VCMP ; LO = 0 ; IF CMP >= 0 THEN LO = 1
    HIV = OM : "." : (ONN + 1) : ".0"
-   A = VER ; B = HIV ; GOSUB VCMP ; HI = 0 ; IF CMP < 0 THEN HI = 1
+   A = VMAIN ; B = HIV ; GOSUB VCMP ; HI = 0 ; IF CMP < 0 THEN HI = 1
    IF LO AND HI THEN S1 = 1
    RETURN
 WILD:

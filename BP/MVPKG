@@ -38,7 +38,7 @@ $ENDIF
    CALL CMD.ADD("REGISTER", "adopt an already-installed package (name {version})", "MVPKG.REGISTER")
    CALL CMD.ADD("SEARCH", "find packages by name/description (term)", "MVPKG.SEARCH")
    CALL CMD.ADD("SETUP", "set the registry URL (url)", "MVPKG.SETUP")
-   CALL CMD.ADD("CONFIG", "show the current registry URL", "MVPKG.CONFIG")
+   CALL CMD.ADD("CONFIG", "show or set config ({minimum-stability|prefer-stable} {value})", "MVPKG.CONFIG")
    CALL CMD.ADD("REBUILD", "rebuild the host's native library", "MVPKG.REBUILD")
    CALL CMD.ADD("INIT", "provision this account for package management ({url})", "MVPKG.INIT")
    CALL CMD.ADD("FIXPERMS", "hand MVPKG's files to the operator, or move to a new one ({user})", "MVPKG.FIXPERMS")
