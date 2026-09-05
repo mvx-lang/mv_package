@@ -66,6 +66,12 @@ done
 cp "$HERE/install.sh" "$ACCT/install.sh"; chmod +x "$ACCT/install.sh"
 cp "$ROOT"/PKG "$ROOT"/mvpkg.json "$ROOT"/LICENSE "$ROOT"/README.md "$ACCT/" 2>/dev/null || true
 
+# The version the release ships, into the manifests the release ships.  mvpkg
+# REGISTERS ITSELF from PKG line 2, so a manifest the tag never touched makes it
+# install one version and report another (mv_package#72).
+. "$ROOT/version.sh"
+mvpkg_stamp_manifests "$ACCT" "$(mvpkg_version "$ROOT")"
+
 # PLATFORM.H -- the compile-time defines the sources $INCLUDE as
 # `$INCLUDE MVPKG.INC PLATFORM.H`.  BUILT HERE, not written by install.sh: it is
 # build output, and build output belongs to the build.  Shipping it means the
