@@ -53,10 +53,22 @@ $ENDIF
    N = DCOUNT(R<1>, @VM)
    IF N = 0 OR R<1> = "" THEN PRINT "no packages match " : '"' : A1 : '"' ; RETURN
    FOR I = 1 TO N
-$IFDEF MVX
-      PRINT R<1,I> "L#16" : R<2,I> "L#10" : R<3,I>
-$ELSE
-      PRINT FMT(R<1,I>, "16L") : FMT(R<2,I>, "10L") : R<3,I>
-$ENDIF
+      * Padded by hand, not by FMT: a name wider than its column made FMT wrap
+      * it with a text mark on UniData and jBASE and truncate it flush against
+      * the next column on UniVerse -- "mvx-lang/mapfiel?d" (#89).
+      CV = R<1,I> ; CW = 16 ; GOSUB PADCOL ; ROW = CV
+      CV = R<2,I> ; CW = 10 ; GOSUB PADCOL ; ROW := CV
+      PRINT ROW : R<3,I>
    NEXT I
+   RETURN
+
+* PADCOL — CV becomes exactly CW characters, clipped or padded.  See MVPKG.LIST.
+PADCOL:
+* A COLUMN HAS TO KEEP ITS SEPARATOR.  Clipping to exactly CW leaves a value that
+* fills the column butted against the next one -- "mvx-lang/mapfiel1.1.0" -- so
+* the content gets CW-1 and the last character is always a space.  A value that
+* did not fit ends in ">", the same mark the description column uses, so a
+* truncated cell is visibly truncated rather than quietly wrong.
+   IF LEN(CV) >= CW THEN CV = CV[1, CW - 2] : ">"
+   CV = CV : SPACE(CW - LEN(CV))
    RETURN
