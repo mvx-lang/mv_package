@@ -1,0 +1,110 @@
+      SUBROUTINE MVPKG.RDEPS(RNAME, RHARD, RSOFT, RPROV)
+* mv_package — which INSTALLED packages still depend on RNAME.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+*   RHARD  space-separated names that REQUIRE it — removing it breaks them
+*   RSOFT  names that declare it OPTIONAL — they guard its absence at run time
+*   RPROV  the virtual names this package provides, which the caller needs too:
+*          the lock records them beside the package and has to drop both, and
+*          the store copy is gone by the time it gets there
+*
+* MVX has had this since it linked packages: UNLINK-PKG refuses when another
+* linked package still needs the one being unlinked.  The MV vendors had
+* nothing, so removing getopt on a working account deleted the store directory
+* out from under cmd and left MVPKG itself unable to dispatch a command
+* (mv_package#98).  This is the same question, asked from what the store knows.
+*
+* IT ANSWERS TO MORE THAN ITS OWN NAME.  A dependent may name the package
+* (mvx-lang/getopt) or a virtual name it PROVIDES (curl, http), so the match is
+* against both -- otherwise removing curl-cmd would look safe while mvpkg
+* depends on "curl" and nothing else provides it.
+* THE INCLUDE IS NOT OPTIONAL.  Without it none of the symbols below are
+* defined, every $IFDEF is silently FALSE, and the DEFFUNs simply do not exist --
+* which the compiler then reports as "Array 'MAPFIELD' never dimensioned",
+* naming the use rather than the missing guard.
+$INCLUDE MVPKG.INC PLATFORM.H
+$IFDEF JBASE
+      DEFFUN JSONDECODE(A, B)
+      DEFFUN MAPFIELD(A, B, C, D, E)
+$ENDIF
+$IFDEF UDT
+      DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
+      DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
+$ENDIF
+$IFDEF UV
+      DEFFUN JSONDECODE(A, B) CALLING "MVPKG.JSONDECODE"
+      DEFFUN MAPFIELD(A, B, C, D, E) CALLING "MVPKG.MAPFIELD"
+$ENDIF
+      RHARD = "" ; RSOFT = "" ; RPROV = ""
+      IF TRIM(RNAME) = "" THEN RETURN
+      CALL MVPKGOS("STORE", "", "", RSTORE)
+      RKEY = CHANGE(RNAME, "/", "_")
+      RNAMES = RNAME : " "
+      CALL MVPKG.FILE("READ", RSTORE : "/" : RKEY : "/mvpkg.json", RJ, ROK)
+      IF ROK THEN
+         CALL MVPKG.JARR(RJ, "provides", RPV)
+         IF RPV # "" THEN RNAMES := RPV : " " ; RPROV = RPV
+      END
+      CALL MVPKGOS("STOREREAD", "installed", "", RSREC)
+      RN = DCOUNT(RSREC<2>, @VM)
+      FOR RI = 1 TO RN
+         ROTHER = TRIM(RSREC<2,RI>)
+         IF ROTHER # "" AND ROTHER # RNAME THEN
+            OKEY = CHANGE(ROTHER, "/", "_")
+            CALL MVPKG.FILE("READ", RSTORE : "/" : OKEY : "/mvpkg.json", OJ, OOK)
+            IF NOT(OOK) THEN GOSUB RSELF
+            IF OOK THEN
+               CALL MVPKG.JARR(OJ, "dependencies", ODEPS)
+               GOSUB RSCAN
+            END
+         END
+      NEXT RI
+      RHARD = TRIM(RHARD) ; RSOFT = TRIM(RSOFT)
+      RETURN
+
+* RSELF — a package in the inventory with NO store copy.  mvpkg is the case:
+* it registers itself, and the operator account IS the package, so there is no
+* <store>/<key>/ to read.  Its manifest is the account's own, and missing it
+* meant the one package that depends on the "curl" virtual was invisible here --
+* so removing curl-cmd looked safe and took mvpkg's HTTP with it.
+*
+* Matched by NAME rather than assumed: the account manifest is only this
+* package's if it says so.  A package adopted by MVPKG register from somewhere
+* else still has no manifest to find, and then its dependencies are genuinely
+* unknown -- this reports what it can see, not a guarantee.
+RSELF:
+      CALL MVPKG.FILE("READ", "mvpkg.json", SJ, SOK)
+      IF SOK = 0 THEN RETURN
+      SSPEC = MAPFIELD("name", 1, "", "", "")
+      SM = JSONDECODE(SJ, SSPEC)
+      IF TRIM(SM<1>) = ROTHER THEN OJ = SJ ; OOK = 1
+      RETURN
+
+* RSCAN — does ROTHER's dependency list name anything in RNAMES?  Each spec is
+* "[?]name[@sys][:constraint]", normalised the same way MVPKG.REMOVE normalises
+* the manifest it edits.
+RSCAN:
+      ODN = DCOUNT(ODEPS, " ")
+      FOR ODI = 1 TO ODN
+         DSPEC = FIELD(ODEPS, " ", ODI)
+         IF DSPEC # "" THEN
+            DOPT = 0
+            IF DSPEC[1,1] = "?" THEN DOPT = 1 ; DSPEC = DSPEC[2, LEN(DSPEC)]
+            DCP = INDEX(DSPEC, ":", 1) ; IF DCP > 0 THEN DSPEC = DSPEC[1, DCP - 1]
+            DAP = INDEX(DSPEC, "@", 1) ; IF DAP > 0 THEN DSPEC = DSPEC[1, DAP - 1]
+            DHIT = 0
+            FOR DNI = 1 TO DCOUNT(RNAMES, " ")
+               IF FIELD(RNAMES, " ", DNI) = DSPEC THEN DHIT = 1
+            NEXT DNI
+            IF DHIT THEN
+*              Recorded once each, and a required edge wins: a package that
+*              names it both ways is still broken by losing it.
+               IF DOPT THEN
+                  IF INDEX(" " : RSOFT : " ", " " : ROTHER : " ", 1) = 0 THEN RSOFT := ROTHER : " "
+               END ELSE
+                  IF INDEX(" " : RHARD : " ", " " : ROTHER : " ", 1) = 0 THEN RHARD := ROTHER : " "
+               END
+            END
+         END
+      NEXT ODI
+      RETURN
