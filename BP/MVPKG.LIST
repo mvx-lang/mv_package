@@ -17,12 +17,13 @@
 * @SENTENCE token, the FMT justify masks, and the OSREAD form are the other diffs.
    SUBROUTINE MVPKG.LIST
    $INCLUDE MVPKG.INC PLATFORM.H
-* FMT justify masks differ by platform (mvx L#n vs udt nL); hold them in runtime
-* variables — UniData's $DEFINE has no value-substitution form, so a per-platform
-* assignment (not a macro) is what ports.
-$IFDEF MVX
-   FMTL22 = "L#22" ; FMTL9 = "L#9" ; FMTL10 = "L#10"
-$ENDIF
+* COLUMNS ARE PADDED BY HAND, NOT BY FMT.  FMT does not clip a value wider than
+* its mask, it WRAPS -- and differently per platform, so the same row broke three
+* ways.  FMT("1.18.1-test", "9L") is 19 characters on UniData and jBASE (the
+* first nine, a text mark, then the rest padded to nine) and 9 on UniVerse, which
+* truncates with no gap before the next column (#89).  PADCOL below gives exactly
+* the width asked for, everywhere, and the per-platform justify masks that used
+* to live here are gone with it.
 * jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
 * at a cataloged one; jBASE resolves a DEFFUN by NAME against the catalog, and
 * the names are already there because mvpkg's dependencies catalog them.
@@ -32,12 +33,10 @@ $ENDIF
 $IFDEF JBASE
    DEFFUN JSONDECODE(A, B)
    DEFFUN MAPFIELD(A, B, C, D, E)
-   FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
 $ENDIF
 $IFDEF UDT
    DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
    DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
-   FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
 $ENDIF
 $IFDEF UV
 * NO "*" HERE, unlike the UniData arm above.  A leading star names the GLOBAL
@@ -47,7 +46,6 @@ $IFDEF UV
 * cataloged and callable; the bare name resolves through this account's VOC.
    DEFFUN JSONDECODE(A, B) CALLING "MVPKG.JSONDECODE"
    DEFFUN MAPFIELD(A, B, C, D, E) CALLING "MVPKG.MAPFIELD"
-   FMTL22 = "22L" ; FMTL9 = "9L" ; FMTL10 = "10L"
 $ENDIF
    * flags: --long/-l wraps the full description; --all/-a lists every package on
    * the SYSTEM (the store), not just the ones deployed in THIS account.
@@ -73,7 +71,19 @@ $ENDIF
    FOR GI = 1 TO NL
       IF TRIM(SREC<2,GI>) # "" THEN NG = NG + 1
    NEXT GI
-   IF NG = 0 THEN PRINT "no packages installed" ; RETURN
+   IF NG = 0 THEN
+      * EMPTY OR UNREACHABLE?  STOREREAD answers "" to both, and saying "no
+      * packages installed" when the store could not be opened is a statement
+      * of fact about a question that was never asked -- it was printed right
+      * after five successful installs (#67).  Ask before concluding.
+      CALL MVPKGOS("STOREOK", "", "", SOERR)
+      IF SOERR # "" THEN
+         PRINT "mvpkg: " : SOERR
+      END ELSE
+         PRINT "no packages installed"
+      END
+      RETURN
+   END
    SPEC = MAPFIELD("description", 1, "", "", "")
    * a self-registered package (mvpkg) has no store copy — its manifest is this
    * account's own mvpkg.json; read it once to fill that one row's description.
@@ -87,7 +97,10 @@ $ENDIF
    * table uses the real window width (SYSTEM(2) = page width; fall back to 80).
    WID = SYSTEM(2) ; IF WID < 61 THEN WID = 80
    WRAPW = WID - 41            ;* description column = window width minus the 3 fixed cols
-   PRINT FMT("PACKAGE", FMTL22) : FMT("VERSION", FMTL9) : FMT("STATUS", FMTL10) : "DESCRIPTION"
+   CV = "PACKAGE" ; CW = 22 ; GOSUB PADCOL ; HDR = CV
+   CV = "VERSION" ; CW =  9 ; GOSUB PADCOL ; HDR := CV
+   CV = "STATUS"  ; CW = 10 ; GOSUB PADCOL ; HDR := CV
+   PRINT HDR : "DESCRIPTION"
    SHOWN = 0
    FOR GI = 1 TO NL
       NM = TRIM(SREC<2,GI>)
@@ -124,7 +137,9 @@ $ENDIF
             END ELSE
                IF NM = SELFNAME THEN DESC = SELFDESC
             END
-            PREFIX = FMT(NM, FMTL22) : FMT(VER, FMTL9) : FMT(STAT, FMTL10)
+            CV = NM   ; CW = 22 ; GOSUB PADCOL ; PREFIX = CV
+            CV = VER  ; CW =  9 ; GOSUB PADCOL ; PREFIX := CV
+            CV = STAT ; CW = 10 ; GOSUB PADCOL ; PREFIX := CV
             IF LONG THEN
                GOSUB WRAPDESC
             END ELSE
@@ -168,4 +183,18 @@ WRAPDESC:
          IF LI = 1 THEN PRINT PREFIX : MOUT<LI> ELSE PRINT INDENT : MOUT<LI>
       NEXT LI
    END
+   RETURN
+
+* PADCOL — CV becomes exactly CW characters: clipped if longer, padded if
+* shorter.  This is what FMT was being asked for and does not do; see the note
+* at the top.  A column that has to lose characters loses them at the end, where
+* the reader can see it happened, rather than gaining a text mark mid-row.
+PADCOL:
+* A COLUMN HAS TO KEEP ITS SEPARATOR.  Clipping to exactly CW leaves a value that
+* fills the column butted against the next one -- "mvx-lang/mapfiel1.1.0" -- so
+* the content gets CW-1 and the last character is always a space.  A value that
+* did not fit ends in ">", the same mark the description column uses, so a
+* truncated cell is visibly truncated rather than quietly wrong.
+   IF LEN(CV) >= CW THEN CV = CV[1, CW - 2] : ">"
+   CV = CV : SPACE(CW - LEN(CV))
    RETURN

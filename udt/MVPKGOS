@@ -243,6 +243,18 @@ $ENDIF
          * P1 = record id.  Remove an account state record.
          OPEN MVMASTER TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open " : MVMASTER ; RETURN
          DELETE MDF, P1
+      CASE OP = "STOREOK"
+         * RESULT = "" when the shared store is readable, else why not.  EMPTY IS
+         * NOT THE SAME AS UNREACHABLE: STOREREAD returns "" for both, and
+         * MVPKG list read that as an empty inventory and reported "no packages
+         * installed" -- a statement of fact about a question it never got to
+         * ask, printed right after five successful installs (#67).
+         GOSUB STOREOPEN
+         RESULT = ""
+         IF NOT(STFOK) THEN
+            RESULT = "cannot open the package store MVPKG.STORE"
+            IF STOPATH # "" THEN RESULT := " (owned by " : STONAME : " at " : STOPATH : ")"
+         END
       CASE OP = "STOREREAD"
          * Read a record from the shared SYSTEM store file MVPKG.STORE — the
          * per-system inventory of installed packages (record "installed": <2>
@@ -620,12 +632,19 @@ $ENDIF
 * STOREOPEN — open the shared system store file MVPKG.STORE, self-healing the
 * account's access first if it does not open.  STFOK = 1 when STF is usable.
 STOREOPEN:
-   STFOK = 0
+   STFOK = 0 ; STOPATH = "" ; STONAME = ""
    OPEN "MVPKG.STORE" TO STF THEN
       STFOK = 1
    END ELSE
       GOSUB STOREHEAL
       OPEN "MVPKG.STORE" TO STF THEN STFOK = 1
+$IFDEF JBASE
+* jBASE opens an absolute path as a file, so the owner's store is reachable
+* without a pointer of any kind.
+      IF STFOK = 0 AND STOPATH # "" THEN
+         OPEN STOPATH : "/MVPKG.STORE" TO STF THEN STFOK = 1
+      END
+$ENDIF
    END
    RETURN
 
@@ -653,8 +672,23 @@ STOREHEAL:
       CASE OPATH = MYPATH
          NFN = "MVPKG.STORE" ; NFT = "" ; NFM = 7 ; GOSUB NEWFILE
       CASE 1
+* BY PATH, NOT BY ACCOUNT NAME.  A Q-pointer's second attribute is an account
+* NAME, resolved through UD.ACCOUNT -- and a second operator account created by
+* this installer is not registered there, so the pointer named something the
+* account could not resolve and the store was simply unreachable:
+*
+*     :CT MVPKG.STORE installed
+*     MVPKG.STORE is not a desired record in VOC file.
+*
+* A file pointer carrying the owner's absolute paths needs no registry at all.
+* Verified on UniData 8.3 and UniVerse 14.2.1 (#67).
+$IFNDEF JBASE
          OPEN MVMASTER TO SVF THEN
-            WRITE ("Q" : @FM : ONAME : @FM : "MVPKG.STORE") ON SVF, "MVPKG.STORE"
+            WRITE ("F" : @FM : OPATH : "/MVPKG.STORE" : @FM : OPATH : "/D_MVPKG.STORE") ON SVF, "MVPKG.STORE"
          END
+$ENDIF
+* jBASE needs no pointer: it opens a path directly, which STOREOPEN does below.
    END CASE
+   STOPATH = OPATH
+   STONAME = ONAME
    RETURN
