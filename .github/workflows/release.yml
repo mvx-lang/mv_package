@@ -5,10 +5,14 @@
 #   source -> mvpkg-<ver>-source.tar.gz
 #   mvx    -> mvpkg-<ver>-mvx-<os>-<arch>-<endian>.tar.gz  (compiled, native)
 #   udt    -> mvpkg-<ver>-udt-any-any-le.tar.gz            (BASIC, portable)
+#   uv     -> mvpkg-<ver>-uv-any-any-le.tar.gz             (BASIC, portable)
+#   jbase  -> mvpkg-<ver>-jbase-any-any-le.tar.gz          (BASIC, portable)
 #
 # The mvx account is compiled with the published mvx toolchain (mkpkg.sh); the
-# udt account is pure BASIC + shell (cataloged on the target by install.sh), so
-# it just stages + tars on a hosted runner — no container, no native code.
+# other three are pure BASIC + shell (cataloged on the target by install.sh), so
+# they just stage + tar on a hosted runner — no container, no native code.  They
+# differ only in their installer, because the three platforms are provisioned
+# and cataloged differently; see each job.
 # Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only.
 #
 # Tag the bare version to release, e.g.:  git tag 1.0 && git push origin 1.0
@@ -122,18 +126,43 @@ jobs:
             ${{ steps.pkg.outputs.checksum }}
           fail_on_unmatched_files: true
 
-  # ---- what kind of release is this? ----------------------------------------
-  # LAST, because it is correcting the publish steps rather than joining them.
-  # Both of them create the release as a side effect of uploading to it, and
-  # neither is told what the release is: publish-source marks a pre-release with
-  # `contains(ref_name, '-')`, which is FALSE for `dev`; udt-build hands
-  # softprops only a tag_name, and its defaults are `prerelease: false` and
-  # latest.  So whichever finishes last decides, and left alone a nightly dev
-  # build would present itself as the newest stable one -- to the registry, and
-  # to anyone installing this package by name.
+  # ---- uv account: the client as a self-installing UniVerse account ----------
+  # Pure BASIC and shell, like the udt and jbase accounts -- staged and tarred on
+  # a hosted runner, os/arch-independent (uv-any-any-le).  Unpacks to mvpkg/;
+  # then `cd mvpkg && ./install.sh`.
   #
-  # Both directions are set explicitly, for the same reason: leaving the stable
-  # case alone means it keeps whatever that race happened to leave behind.
+  # The installer is uv/install.sh, not udt/install.sh: an unpacked directory is
+  # not a UniVerse account and a directory is not a UniVerse FILE, so BP, BP.O
+  # and MVPKG.INC each have to be registered before anything can compile; and
+  # UniVerse catalogs PER ACCOUNT, so packages are cataloged LOCAL rather than
+  # into a system catalog -- which needs no sudo.
+  uv-account:
+    needs: [source]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Stage the uv account package
+        id: pkg
+        shell: bash
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME}"
+          BASE="mvpkg-$VER-uv-any-any-le"
+          rm -rf dist && mkdir -p dist
+          sh uv/build-uv.sh dist
+          tar czf "$BASE.tar.gz" -C dist mvpkg
+          sha256sum "$BASE.tar.gz" > "$BASE.tar.gz.sha256"
+          echo "tarball=$BASE.tar.gz" >> "$GITHUB_OUTPUT"
+          echo "checksum=$BASE.tar.gz.sha256" >> "$GITHUB_OUTPUT"
+      - name: Publish the uv account asset
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: |
+            ${{ steps.pkg.outputs.tarball }}
+            ${{ steps.pkg.outputs.checksum }}
+          fail_on_unmatched_files: true
+
   # ---- jbase account: the client as a self-installing jBASE account -----------
   # Pure BASIC and shell, like the udt account -- staged and tarred on a hosted
   # runner, os/arch-independent (jbase-any-any-le).  Unpacks to mvpkg/; then
@@ -171,8 +200,20 @@ jobs:
             ${{ steps.pkg.outputs.checksum }}
           fail_on_unmatched_files: true
 
+  # ---- what kind of release is this? ----------------------------------------
+  # LAST, because it is correcting the publish steps rather than joining them.
+  # Both of them create the release as a side effect of uploading to it, and
+  # neither is told what the release is: publish-source marks a pre-release with
+  # `contains(ref_name, '-')`, which is FALSE for `dev`; udt-build hands
+  # softprops only a tag_name, and its defaults are `prerelease: false` and
+  # latest.  So whichever finishes last decides, and left alone a nightly dev
+  # build would present itself as the newest stable one -- to the registry, and
+  # to anyone installing this package by name.
+  #
+  # Both directions are set explicitly, for the same reason: leaving the stable
+  # case alone means it keeps whatever that race happened to leave behind.
   mark:
-    needs: [source, mvx-binary, udt-binary, jbase-account]
+    needs: [source, mvx-binary, udt-binary, uv-account, jbase-account]
     runs-on: ubuntu-latest
     steps:
       - name: Say what this release is

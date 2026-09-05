@@ -21,20 +21,28 @@ UDT="$ROOT/udt"                              # the shared non-mvx arm
 ACCT="$STAGE/mvpkg"
 mkdir -p "$ACCT/BP"
 
-# Shared client programs live canonically in the repo BP/ as a single $IFDEF
-# source; a program may still carry a platform-specific copy under udt/, which
-# serves every non-mvx port.  Prefer that if present, else take BP/.
-SHARED="MVPKG MVPKG.CONFIG MVPKG.FIXPERMS MVPKG.HAS MVPKG.INFO MVPKG.INIT \
-        MVPKG.INSTALL MVPKG.LIST MVPKG.META MVPKG.NOTIFY MVPKG.ONE MVPKG.REBUILD \
-        MVPKG.REG MVPKG.REGISTER MVPKG.REMOVE MVPKG.SEARCH MVPKG.SETUP MVPKG.UPDATE SEMVER"
-for p in $SHARED; do
-   if [ -f "$UDT/$p" ]; then cp "$UDT/$p" "$ACCT/BP/"; else cp "$ROOT/BP/$p" "$ACCT/BP/"; fi
+# EVERY client program in the repo BP/, never a hardcoded list.  A hardcoded one
+# silently drops a newly added program, and this one did: MVPKG.ENV, MVPKG.FILE,
+# MVPKG.SH and MVPKG.SH.RM were in BP/ and in no release.  It went unseen because
+# udt catalogs system-wide and jBASE per user, so on a machine that had ever
+# installed mvpkg the missing programs were still resolvable from an older copy.
+# A fresh account is where it surfaces -- "Unable to load subroutine MVPKG.ENV".
+#
+# Shared programs live canonically in BP/ as a single $IFDEF source; a program may
+# still carry a platform-specific copy under udt/, which serves every non-mvx
+# port.  Prefer that if present, else take BP/ -- so deleting udt/<prog> is what
+# promotes it to canonical, with no further change here.  (MVPKGOS is exactly
+# that case: BP/MVPKGOS is the mvx seam, udt/MVPKGOS serves udt, uv and jbase.)
+for f in "$ROOT"/BP/*; do
+   [ -f "$f" ] || continue
+   p=$(basename "$f")
+   if [ -f "$UDT/$p" ]; then cp "$UDT/$p" "$ACCT/BP/"; else cp "$f" "$ACCT/BP/"; fi
 done
 
 # The per-platform OS seam and the record includes.  CALLC.EXISTS comes too: it
 # is a probe a package may call to ask whether native code is available, and it
 # answers "no" perfectly well on a platform with no CallC.
-cp "$UDT"/MVPKGOS "$UDT"/MVPKGDEP \
+cp "$UDT"/MVPKGDEP \
    "$UDT"/MVPKG.LOCK.H "$UDT"/MVPKG.MANIFEST.H "$UDT"/MVPKG.CONF.H \
    "$UDT"/MVPKG.HTTPGET "$UDT"/MVPKG.HTTPGETFILE "$UDT"/MVPKG.JSONDECODE "$UDT"/MVPKG.MAPFIELD \
    "$UDT"/CALLC.EXISTS "$ACCT/BP/"

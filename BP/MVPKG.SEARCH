@@ -31,9 +31,14 @@ $IFDEF UDT
    S = @SENTENCE
 $ENDIF
 $IFDEF UV
-   DEFFUN HTTPGET(A) CALLING "*MVPKG.HTTPGET"
-   DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
-   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
+* NO "*" HERE, unlike the UniData arm above.  A leading star names the GLOBAL
+* catalog, and UniVerse packages are cataloged LOCAL -- per account, which is
+* also what makes each program typeable as a verb.  Asking for "*MVPKG.MAPFIELD"
+* therefore fails with "is not in the CATALOG space" even though the program is
+* cataloged and callable; the bare name resolves through this account's VOC.
+   DEFFUN HTTPGET(A) CALLING "MVPKG.HTTPGET"
+   DEFFUN JSONDECODE(A, B) CALLING "MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "MVPKG.MAPFIELD"
    S = @SENTENCE
 $ENDIF
    A1 = FIELD(S, " ", 3)
