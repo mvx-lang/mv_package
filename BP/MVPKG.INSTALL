@@ -81,10 +81,28 @@ $ENDIF
    * through the seam so a D3/UniVerse port keeps account state in the master
    * dictionary too.  INSTALLED / VERS are the parallel working lists.
    CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", IREC)
-   INSTALLED = "" ; VERS = ""
+* NINST COUNTS THE PAIRS, BECAUSE `X<-1> = ""` DOES NOT APPEND.  Adding an empty
+* value with the append form is a NO-OP -- the array does not grow -- so two
+* arrays kept in parallel fall out of step the moment one of them takes an
+* empty.  Measured on UniVerse 14.2.1:
+*
+*   A<-1>="one"   ; B<-1>="1.0"      names   : 3  one|two|three
+*   A<-1>="two"   ; B<-1>=""         versions: 2  1.0|3.0
+*   A<-1>="three" ; B<-1>="3.0"      so B<2> is "3.0", not ""
+*
+* VERS takes an empty for every provided virtual name, so from the first one on
+* every package was paired with the NEXT package's version -- json reported
+* 1.1.0 and getopt 1.4.1, and MVPKG list called a freshly installed package an
+* upgrade (#81).  An explicit index is the fix, and it is what NEED/CONS/OPT
+* already do a few lines below.
+   INSTALLED = "" ; VERS = "" ; NINST = 0
    FOR I = 1 TO DCOUNT(IREC<2>, @VM)
       MLN = TRIM(IREC<2,I>)
-      IF MLN # "" THEN INSTALLED<-1> = MLN ; VERS<-1> = IREC<3,I>
+      IF MLN # "" THEN
+         NINST = NINST + 1
+         INSTALLED<NINST> = MLN
+         VERS<NINST> = IREC<3,I>
+      END
    NEXT I
 
    * ---- seed the NEED set (with parallel CONS / OPT) from the invocation ----
@@ -214,10 +232,21 @@ $ENDIF
                IF DOINST THEN
                   CALL MVPKG.ONE(META, REG, OERR)
                   IF OERR = "" THEN
-                     INSTALLED<-1> = P ; VERS<-1> = META<2>
+                     * THE PACKAGE'S OWN NAME, NOT THE ONE THAT WAS ASKED FOR.  A dependency
+                     * written bare -- "mapfield", "curl" -- is a name some package PROVIDES,
+                     * and recording it as though it were the package left the lock with an
+                     * entry the store inventory cannot be joined to: the store keys on
+                     * "mvx-lang/mapfield" and the lock said "mapfield" (#81).
+                     NINST = NINST + 1
+                     INSTALLED<NINST> = META<1>
+                     VERS<NINST> = META<2>
                      FOR PV = 1 TO DCOUNT(META<7>, " ")   ;* provides now satisfied
                         VN = FIELD(META<7>, " ", PV)
-                        IF VN # "" THEN INSTALLED<-1> = VN ; VERS<-1> = ""
+                        IF VN # "" THEN
+                           NINST = NINST + 1
+                           INSTALLED<NINST> = VN
+                           VERS<NINST> = ""
+                        END
                      NEXT PV
                      PROGRESS = 1
                   END ELSE
@@ -408,7 +437,11 @@ OPTMISS:
    FATAL = 0
    IF OPT<I> THEN
       PRINT "mvpkg: optional dependency " : P : " unavailable (" : MISSWHY : ") - skipping"
-      INSTALLED<-1> = P ; VERS<-1> = "" ; SKIPPED<-1> = P ; PROGRESS = 1
+      NINST = NINST + 1
+      INSTALLED<NINST> = P
+      VERS<NINST> = ""
+      SKIPPED<-1> = P                  ;* parallel to nothing, and never empty
+      PROGRESS = 1
    END ELSE
       PRINT P : ": " : MISSWHY
       FATAL = 1
