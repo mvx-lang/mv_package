@@ -92,13 +92,17 @@ $ENDIF
    CALL MVPKG.FILE("READ", "mvpkg.json", SELFJ, MVFOK)
    SELFNAME = "" ; SELFDESC = ""
    IF SELFJ # "" THEN SM = JSONDECODE(SELFJ, SELFSPEC) ; SELFNAME = TRIM(SM<1>) ; SELFDESC = TRIM(SM<2>)
-   INDENT = SPACE(41)          ;* 22 + 9 + 10 — aligns wrapped lines under DESCRIPTION
+   * VERSION IS 14 WIDE, NOT 9.  A pre-release carries its tag ("1.4.0-beta2" is
+   * 11) and PADCOL truncates to CW-1, so the nine-wide column turned every
+   * pre-release into "1.4.0-be>" — the one part of the string that says WHAT
+   * KIND of build this is was the part that got cut (mv_package#30).
+   INDENT = SPACE(46)          ;* 22 + 14 + 10 — aligns wrapped lines under DESCRIPTION
    * DESCRIPTION fills the rest of the terminal instead of a fixed column, so the
    * table uses the real window width (SYSTEM(2) = page width; fall back to 80).
-   WID = SYSTEM(2) ; IF WID < 61 THEN WID = 80
-   WRAPW = WID - 41            ;* description column = window width minus the 3 fixed cols
+   WID = SYSTEM(2) ; IF WID < 66 THEN WID = 80
+   WRAPW = WID - 46            ;* description column = window width minus the 3 fixed cols
    CV = "PACKAGE" ; CW = 22 ; GOSUB PADCOL ; HDR = CV
-   CV = "VERSION" ; CW =  9 ; GOSUB PADCOL ; HDR := CV
+   CV = "VERSION" ; CW = 14 ; GOSUB PADCOL ; HDR := CV
    CV = "STATUS"  ; CW = 10 ; GOSUB PADCOL ; HDR := CV
    PRINT HDR : "DESCRIPTION"
    SHOWN = 0
@@ -138,7 +142,7 @@ $ENDIF
                IF NM = SELFNAME THEN DESC = SELFDESC
             END
             CV = NM   ; CW = 22 ; GOSUB PADCOL ; PREFIX = CV
-            CV = VER  ; CW =  9 ; GOSUB PADCOL ; PREFIX := CV
+            CV = VER  ; CW = 14 ; GOSUB PADCOL ; PREFIX := CV
             CV = STAT ; CW = 10 ; GOSUB PADCOL ; PREFIX := CV
             IF LONG THEN
                GOSUB WRAPDESC

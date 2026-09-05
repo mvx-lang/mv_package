@@ -33,8 +33,16 @@
 *                   "F <name>:<type>" a deployed account file (recorded, not
 *                   auto-removed — files hold data).  Empty on MVX, where the
 *                   whole package is linked/unlinked as a unit.             [#33]
+*   STABILITY   8   the resolved version's stability (dev|alpha|beta|rc|stable),
+*                   parallel to NAMES.  Recorded so a reader can see WHAT KIND
+*                   of build is pinned without re-deriving it from the version
+*                   string, and so a since-raised minimum-stability can point at
+*                   the pins it would no longer choose.  Empty for a provided
+*                   name and for a source working copy — neither is a release.
+*                   NOT <4>: that is SOURCE, reserved for the git-ref install.
+*                                                                          [#30]
 *
-   DIM LOCK.REC(7)
+   DIM LOCK.REC(8)
 *  --- attribute numbers (dynamic array:  REC<LOCK$FIELD> ) ---
    EQUATE LOCK$MARKER    TO 1
    EQUATE LOCK$NAMES     TO 2
@@ -43,6 +51,7 @@
    EQUATE LOCK$REF       TO 5
    EQUATE LOCK$COMMIT    TO 6
    EQUATE LOCK$FOOTPRINT TO 7
+   EQUATE LOCK$STABILITY TO 8
 *  --- dimensioned-array element aliases (MAT:  LOCK.REC ), subscripted by the
 *      $ constants so the position lives in exactly one place ---
    EQUATE LOCK.MARKER    TO LOCK.REC(LOCK$MARKER)
@@ -52,3 +61,4 @@
    EQUATE LOCK.REF       TO LOCK.REC(LOCK$REF)
    EQUATE LOCK.COMMIT    TO LOCK.REC(LOCK$COMMIT)
    EQUATE LOCK.FOOTPRINT TO LOCK.REC(LOCK$FOOTPRINT)
+   EQUATE LOCK.STABILITY TO LOCK.REC(LOCK$STABILITY)
