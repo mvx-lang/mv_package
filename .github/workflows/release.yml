@@ -94,6 +94,11 @@ jobs:
           for d in BP CATALOG LIB VOC VOC.DICT CMD.BP CMD.BP.DICT PKG mvpkg.json LICENSE README.md; do
             [ -e "$d" ] && cp -a "$d" "$DIST/" || true
           done
+          # the tag, into the manifests this artifact ships — mvpkg registers
+          # itself from PKG line 2 (mv_package#72).  The account builds do the
+          # same through their own build script.
+          . ./version.sh
+          mvpkg_stamp_manifests "$DIST" "$VER"
           find "$DIST" -name '*.dSYM' -prune -exec rm -rf {} + 2>/dev/null || true
           tar czf "$BASE.tar.gz" -C "$DIST" .
           sha256sum "$BASE.tar.gz" > "$BASE.tar.gz.sha256"
