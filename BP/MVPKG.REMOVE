@@ -68,9 +68,14 @@ $ENDIF
    * drop it from the SYSTEM store inventory (name + parallel version)
    CALL MVPKGOS("STOREREAD", "installed", "", SREC)
    LOCATE(NM, SREC, 2; SPOS) THEN
+      * the version that is leaving, read before the record forgets it
+      TKVER = TRIM(SREC<3,SPOS>)
       SREC = DELETE(SREC, 2, SPOS, 0)
       SREC = DELETE(SREC, 3, SPOS, 0)
       CALL MVPKGOS("STOREWRITE", "installed", SREC, SERR)
+      * The SYSTEM store changed.  Only here -- undeploying from an account
+      * leaves the package installed on the machine and is not a removal.
+      CALL MVPKG.TRACK("remove", NM, TKVER, "")
    END
    * drop the source working-copy marker too, if any
    CALL MVPKGOS("STOREDELETE", "SRC." : PKGKEY, "", SERR)

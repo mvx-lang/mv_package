@@ -1,0 +1,103 @@
+      SUBROUTINE MVPKG.TRACK(TACTION, TNAME, TVER, TFROM)
+* mv_package — tell the registry a package was installed, updated or removed on
+* this system.  Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only.
+*
+*   TACTION  "install" | "update" | "remove"
+*   TNAME    the package's own name (mvx-lang/getopt)
+*   TVER     the version now in the store; for a remove, the one that left
+*   TFROM    on an update, the version it moved from; "" otherwise
+*
+* SYSTEM-WIDE, NOT PER-ACCOUNT.  Called where the SYSTEM store inventory
+* changes, never from the per-account deploy -- so putting a package that is
+* already installed into a second account is not a second installation.  That
+* distinction is the whole point of the two inventories, and it is easy to lose
+* by calling this from the wrong place.
+*
+* IT MUST NEVER BREAK AN INSTALL.  A registry that is down, slow or unreachable
+* is not an installation failure: everything here is best-effort, every error is
+* swallowed, and MVPKG.HTTPPOST caps the request with --max-time so an install
+* cannot hang on it.  Nothing is printed -- an install that says "could not
+* reach the registry" every time is worse than one that quietly did not.
+$INCLUDE MVPKG.INC PLATFORM.H
+$IFDEF JBASE
+      DEFFUN MVPKG.HTTPPOST(A, B, C)
+$ENDIF
+$IFDEF UDT
+      DEFFUN MVPKG.HTTPPOST(A, B, C) CALLING "*MVPKG.HTTPPOST"
+$ENDIF
+$IFDEF UV
+      DEFFUN MVPKG.HTTPPOST(A, B, C) CALLING "MVPKG.HTTPPOST"
+$ENDIF
+      IF TRIM(TACTION) = "" OR TRIM(TNAME) = "" THEN RETURN
+      GOSUB TRACKOFF
+      IF TOFF THEN RETURN
+      CALL MVPKG.REG(TREG)
+      IF TRIM(TREG) = "" THEN RETURN
+      GOSUB TRACKID
+      IF TID = "" THEN RETURN
+      CALL MVPKGOS("PLATFORM", "", "", TPL)
+      DQ = CHAR(34)
+      TJ = "{"
+      GOSUB TJSEND
+      RETURN
+
+* --- the parts ---------------------------------------------------------------
+
+* TRACKOFF — TOFF = 1 when this system has asked not to report.  Two ways, and
+* both are honoured: $MVPKG_NO_TRACK for a single run or a whole host, and a
+* "track" record of "off" in the store for a site that wants it settled.  A
+* private or air-gapped site should not be posting anywhere, and should not pay
+* a timeout per package to find that out.
+TRACKOFF:
+      TOFF = 0
+      CALL MVPKG.ENV("MVPKG_NO_TRACK", TENV)
+      IF TRIM(TENV) # "" AND TRIM(TENV) # "0" THEN TOFF = 1 ; RETURN
+      CALL MVPKGOS("STOREREAD", "track", "", TREC)
+      IF OCONV(TRIM(TREC<2>), "MCL") = "off" THEN TOFF = 1
+      RETURN
+
+* TRACKID — TID = this installation's opaque id, made once and kept in the
+* store.  It distinguishes installations without saying whose they are: no
+* hostname, no user, no path -- just enough to stop one machine reinstalling a
+* package from looking like ten machines installing it.
+*
+* /dev/urandom rather than RND(): the id only has to be unique, but a seeded
+* pseudo-random one drawn at install time on identical images is exactly the
+* case where "unique" quietly fails.
+TRACKID:
+      TID = ""
+      CALL MVPKGOS("STOREREAD", "installid", "", TIREC)
+      TID = TRIM(TIREC<2>)
+      IF TID # "" THEN RETURN
+      CALL MVPKG.SH("od -An -tx1 -N16 /dev/urandom 2>/dev/null | tr -d ' ' | tr -d '\n'", TOUT, TST)
+      TID = TRIM(FIELD(FIELD(FIELD(TOUT, @AM, 1), CHAR(10), 1), CHAR(13), 1))
+      IF LEN(TID) < 8 THEN
+*        No urandom to be had.  A clock-and-session id is weaker, and it is
+*        still better than reporting nothing: the alternative is every machine
+*        sharing one id, which would be worse than having none.
+         TID = "t" : OCONV(DATE(), "MD0") : OCONV(TIME(), "MD0") : "-" : @USERNO
+      END
+      TIREC = "MVPKG-STORE" ; TIREC<2> = TID
+      CALL MVPKGOS("STOREWRITE", "installid", TIREC, TIERR)
+      RETURN
+
+* TJSEND — build and send the event.  Written out rather than looped because
+* the fields are not uniform: version and from are omitted when empty, and the
+* platform is four values from one string.
+TJSEND:
+      TSYS = FIELD(TPL, ":", 1)
+      TOS  = FIELD(TPL, ":", 2)
+      TARCH = FIELD(TPL, ":", 3)
+      TEND = FIELD(TPL, ":", 4)
+      TJ := DQ : "id" : DQ : ":" : DQ : TID : DQ
+      TJ := "," : DQ : "action" : DQ : ":" : DQ : TRIM(TACTION) : DQ
+      IF TRIM(TVER) # "" THEN TJ := "," : DQ : "version" : DQ : ":" : DQ : TRIM(TVER) : DQ
+      IF TRIM(TFROM) # "" THEN TJ := "," : DQ : "from" : DQ : ":" : DQ : TRIM(TFROM) : DQ
+      IF TSYS # "" THEN TJ := "," : DQ : "system" : DQ : ":" : DQ : TSYS : DQ
+      IF TOS # "" THEN TJ := "," : DQ : "os" : DQ : ":" : DQ : TOS : DQ
+      IF TARCH # "" THEN TJ := "," : DQ : "arch" : DQ : ":" : DQ : TARCH : DQ
+      IF TEND # "" THEN TJ := "," : DQ : "endian" : DQ : ":" : DQ : TEND : DQ
+      TJ := "}"
+      TURL = TREG : "/installs/" : TRIM(TNAME)
+      TCODE = MVPKG.HTTPPOST(TURL, "application/json", TJ)
+      RETURN
