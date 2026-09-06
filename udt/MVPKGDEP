@@ -5,11 +5,12 @@
 *   verbs     = ["v", ...]                       -> VERBS  "v v"
 *   files     = [{"name":n,"type":t}, ...]       -> FILES  "n:t n:t"
 *   fallback  = {"dep":["dir", ...], ...}        -> FBACK  "dep:dir dep:dir"
+*   include   = "BP.INC"                         -> INCF   "BP.INC"
 * Space-separated so the caller splits with FIELD(...," ",i).  MV INDEX takes
 * an OCCURRENCE, not a start position, so searches consume tail substrings.
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only.
-   SUBROUTINE MVPKGDEP(JSON, VERBS, FILES, FBACK)
-   VERBS = "" ; FILES = "" ; FBACK = ""
+   SUBROUTINE MVPKGDEP(JSON, VERBS, FILES, FBACK, INCF)
+   VERBS = "" ; FILES = "" ; FBACK = "" ; INCF = ""
    DQ = CHAR(34)
    DP = INDEX(JSON, DQ : "deploy" : DQ, 1)
    IF DP = 0 THEN RETURN
@@ -68,6 +69,17 @@
       END
    REPEAT
    FBACK = TRIM(FBACK)
+
+* --- include: the master-dictionary NAME this package's sources $INCLUDE from.
+* A package with its own compile-time header ("$INCLUDE BP.INC PLATFORM.H")
+* names it here; mvpkg points that name at the package's own tree for the
+* duration of the compile.  See MVPKGOS INCPTR for why it cannot simply be a
+* directory in the package.
+   IP = INDEX(J, DQ : "include" : DQ, 1)
+   IF IP > 0 THEN
+      SRC = J ; P = IP ; GOSUB QVAL
+      INCF = TRIM(QV)
+   END
    RETURN
 
 * SEGV = the substring from the first OCH after "KEY" through the next CCH.

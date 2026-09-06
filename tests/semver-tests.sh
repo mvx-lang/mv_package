@@ -1,7 +1,7 @@
 #!/bin/sh
 # mv_package — run the portable BASIC unit tests.  GPL-2.0-only.
 #
-#   MVX_HOME=/path/to/mvx-lang tests/run.sh
+#   MVX_HOME=/path/to/mvx-lang tests/semver-tests.sh
 #
 # SEMVER IS PURE LOGIC AND DESERVES A TEST THAT IS NOT AN INSTALL.  Version
 # ranges and stability floors decide which build every platform downloads, and

@@ -370,7 +370,7 @@ $IFNDEF MVX
          FKEY = CHANGE(FNM, "/", "_")
          CALL MVPKG.FILE("READ", FSTORE : "/" : FKEY : "/mvpkg.json", FMJ, MVFOK)
          IF FMJ # "" THEN
-            CALL MVPKGDEP(FMJ, FVERBS, FFILES, FFB)
+            CALL MVPKGDEP(FMJ, FVERBS, FFILES, FFB, FINC)
             FPK = ""
             FOR FVI = 1 TO DCOUNT(FVERBS, " ")
                VV = FIELD(FVERBS, " ", FVI)

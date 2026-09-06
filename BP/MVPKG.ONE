@@ -151,6 +151,11 @@ $ELSE
    IF MSCOPE = "local" THEN RETURN
    GOSUB PARSEDEPLOY
    PRINT "cataloging " : META<1> : " ..."
+   * A package with its own compile-time header gets it lent to the compile, and
+   * taken away after: the compile runs from THIS account, so the name its
+   * sources $INCLUDE has to resolve here (mv_git#212).  Around the fallback
+   * dirs too -- CATIFNEW compiles as well.
+   CALL MVPKGOS("INCPTR", DEST, DINC, IERR) ; IF IERR # "" THEN PRINT IERR
    CALL MVPKGOS("CATALOG", DEST, "BP", ERR) ; IF ERR # "" THEN PRINT ERR
    * fallback dirs: catalog each only when its programs aren't already there.
    NF = DCOUNT(DFALL, " ")
@@ -159,6 +164,7 @@ $ELSE
       FBD = FIELD(PR, ":", 2)
       IF FBD # "" THEN CALL MVPKGOS("CATIFNEW", DEST, FBD, ERR)
    NEXT I
+   CALL MVPKGOS("INCDROP", DEST, DINC, IERR)
 $ENDIF
    RETURN
 
@@ -178,12 +184,14 @@ $ELSE
       * driven by MVPKGOS) — global build was skipped, and a LOCAL catalog also
       * registers each program as a verb here, so no separate VOC-pointer step.
       PRINT "cataloging " : META<1> : " (local) ..."
+      CALL MVPKGOS("INCPTR", DEST, DINC, IERR) ; IF IERR # "" THEN PRINT IERR
       CALL MVPKGOS("CATALOG", DEST, "BP", ERR) ; IF ERR # "" THEN PRINT ERR
       NF = DCOUNT(DFALL, " ")
       FOR I = 1 TO NF
          PR = FIELD(DFALL, " ", I) ; FBD = FIELD(PR, ":", 2)
          IF FBD # "" THEN CALL MVPKGOS("CATIFNEW", DEST, FBD, ERR)
       NEXT I
+      CALL MVPKGOS("INCDROP", DEST, DINC, IERR)
    END ELSE
       * global scope: the code is already globally cataloged; make each verb
       * typeable in this account with a VOC pointer.
@@ -208,10 +216,11 @@ $ENDIF
 $IFNDEF MVX
 * --- flatten the mvpkg.json "deploy" block in BASIC (no shell/python) -------
 * MVPKGDEP walks the nested block (the flat JSON seam only reads flat strings),
-* yielding space-separated DVERBS, DFILES ("name:type"), DFALL ("dep:dir").
+* yielding space-separated DVERBS, DFILES ("name:type"), DFALL ("dep:dir") and
+* DINC (the include name the package's sources compile against, "" for none).
 PARSEDEPLOY:
    CALL MVPKG.FILE("READ", DEST : "/mvpkg.json", MJ, MVFOK)
-   CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL)
+   CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL, DINC)
    RETURN
 
 * --- preflight declared OS C libraries -------------------------------------
