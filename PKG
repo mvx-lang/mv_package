@@ -1,8 +1,8 @@
 mvpkg
 1.16.0
 MVPKG — the MultiValue package manager client
-mvx udt jbase
-http@mvx
+mvx udt uv jbase
 curl@!mvx
-json@!mvx
-?cmd
+mvx-lang/json@!mvx
+?mvx-lang/cmd
+?mvx-lang/git
