@@ -194,6 +194,31 @@ $ENDIF
          HAV = "0"
          IF DCOUNT(ITEMS, @AM) > 0 THEN NCK = ITEMS<1> ; GOSUB HAVECHK
          IF HAV = "0" THEN GOSUB DOCAT ELSE GOSUB DROPPTR
+      CASE OP = "INCPTR"
+         * P1 = package dir, P2 = the master-dictionary NAME this package's
+         * sources $INCLUDE from ("$INCLUDE BP.INC PLATFORM.H" -> "BP.INC").
+         * Point that name at the package's OWN tree for the duration of the
+         * compile, and INCDROP takes it away again.
+         *
+         * WHY IT CANNOT JUST BE A DIRECTORY IN THE PACKAGE.  The compile does
+         * not run IN the package: CATALOG reaches the tree through a temporary
+         * MVPKG.SRC pointer and compiles from the OPERATOR account's session, so
+         * $INCLUDE resolves against the OPERATOR's master dictionary.  A package
+         * that ships its own header therefore compiled fine from its own
+         * install.sh (which registers the name in its own account) and failed
+         * under `MVPKG install` with "can't find file BP.INC" -- every program,
+         * every port (mv_git#212).
+         *
+         * The pointer names the package ROOT, which is where each port's build
+         * writes its PLATFORM.H.
+         INAME = TRIM(P2)
+         IF INAME # "" THEN GOSUB INCPTR
+      CASE OP = "INCDROP"
+         * P1 = package dir, P2 = the name INCPTR was given.  Removes the
+         * pointer only when it still names THIS package, so an account that has
+         * its own file of that name keeps it (see INCPTR).
+         INAME = TRIM(P2)
+         IF INAME # "" THEN GOSUB INCDROP
       CASE OP = "VERB"
          * P1 = verb name.  Deploy a per-account VOC pointer to the globally
          * cataloged object so the verb is typeable in THIS account (a global
@@ -546,6 +571,53 @@ $ENDIF
 $IFDEF UV
    DELETE LVF, "MVPKG.SRC.O"
 $ENDIF
+   RETURN
+
+* INCPTR / INCDROP -- lend the compile the include file a package names.
+*
+* NEVER OVERWRITE AN EXISTING ENTRY, AND NEVER DELETE ONE WE DID NOT WRITE.  The
+* operator account may legitimately hold a file of the same name -- the package
+* installed standalone puts one there -- and that one is right, so leave it.
+* INCDROP re-reads before deleting and keeps anything that no longer names this
+* package, which makes the pair safe to call around any compile.
+INCPTR:
+$IFDEF JBASE
+* jBASE resolves an include by directory layout rather than through a pointer
+* (see INCSETUP), so the package's tree joins the file search path instead.
+* Prepended, so the package's own header wins over a same-named one elsewhere.
+   CALL MVPKG.ENV("JEDIFILEPATH", IOLD)
+   IF IOLD = "" THEN
+      IJB = PUTENV("JEDIFILEPATH=" : P1)
+   END ELSE
+      IJB = PUTENV("JEDIFILEPATH=" : P1 : ":" : IOLD)
+   END
+   RETURN
+$ENDIF
+   OPEN MVMASTER TO IPF ELSE RESULT = "MVPKGOS INCPTR: cannot open " : MVMASTER ; RETURN
+   READ IPREC FROM IPF, INAME THEN
+      * something already answers to this name here -- do not touch it
+      RETURN
+   END
+   IPT = "DIR"
+$IFDEF UV
+   IPT = "F"
+$ENDIF
+   WRITE (IPT : @FM : P1 : @FM : "D_BP") ON IPF, INAME
+   RETURN
+INCDROP:
+$IFDEF JBASE
+   CALL MVPKG.ENV("JEDIFILEPATH", IOLD)
+   IF IOLD[1, LEN(P1) + 1] = P1 : ":" THEN
+      IJB = PUTENV("JEDIFILEPATH=" : IOLD[LEN(P1) + 2, LEN(IOLD)])
+   END ELSE
+      IF IOLD = P1 THEN IJB = PUTENV("JEDIFILEPATH=")
+   END
+   RETURN
+$ENDIF
+   OPEN MVMASTER TO IPF ELSE RETURN
+   READ IPREC FROM IPF, INAME THEN
+      IF TRIM(IPREC<2>) = P1 THEN DELETE IPF, INAME
+   END
    RETURN
 
 * NEWFILE -- create the account file NFN if it is not already there.  NFT is

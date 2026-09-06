@@ -1,11 +1,12 @@
 # mvpkg tests
 
-Three suites, in increasing order of what they need to run.
+Four suites, in increasing order of what they need to run.
 
 | suite | needs | what it is for |
 |---|---|---|
 | `source-checks.sh` | nothing | portability rules the sources must obey |
 | `self-check.sh` | nothing | proves `source-checks.sh` can actually fail |
+| `semver-tests.sh` | `mvx-basic` | version ranges and stability floors, as answers |
 | `mvpkg-tests.sh` | a built account | the seam and the client, run for real |
 
 ## `source-checks.sh` — no MV system required
@@ -25,6 +26,20 @@ valued `$DEFINE` inside a guard (leaks on jBASE regardless of the guard);
 `$IFDEF` combining symbols (no system supports it); a hardcoded `OPEN "VOC"`
 (jBASE has `MD`); jBASE reserved words as identifiers; `LOCATE` Format 2; and an
 unguarded `DEFFUN … CALLING`.
+
+## `semver-tests.sh` — version resolution, without a registry
+
+```bash
+MVX_HOME=/path/to/mvx-lang sh tests/semver-tests.sh
+```
+
+Compiles the real `BP/SEMVER` — no copy, no stub — against a driver and asserts
+its answers: 53 checks over the version ranges, the stability floors added for
+minimum-stability (#30), and the stable-only rules those must not have changed.
+
+It exists because SEMVER decides which build every platform downloads, and the
+only way that had ever been exercised was end-to-end against a live registry,
+where a wrong answer looks like a network problem.
 
 ## `self-check.sh` — proves the checks are not decoration
 
