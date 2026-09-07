@@ -7,7 +7,7 @@
   "systems": ["mvx", "udt", "uv", "jbase"],
   "dependencies": [
     "curl@!mvx",
-    "mvx-lang/json@!mvx",
+    "mvx-lang/json@!mvx:^1.5",
     "?mvx-lang/cmd",
     "?mvx-lang/git"
   ],
