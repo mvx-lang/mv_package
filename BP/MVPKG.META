@@ -18,7 +18,20 @@
 * seam functions, so declare those only off MVX.
    SUBROUTINE MVPKG.META(NAME, VER, REG, META)
    $INCLUDE MVPKG.INC PLATFORM.H
-$IFNDEF MVX
+* THE OUTER "NOT MVX" IS GONE, and the three platform blocks stay.  It wrapped
+* these declarations because MVX could not parse them at all: it spelled the
+* arity as a COUNT, `DEFFUN NAME(5)`, so the parameter-list form every other MV
+* system requires was a syntax error here (mvx#169 accepts both, and a DEFFUN of
+* a name codegen implements now declares its signature and lets the builtin keep
+* it).  With that fixed the guard says nothing: JBASE, UDT and UV are all
+* undefined on MVX, so the blocks below are already skipped.
+*
+* They do not collapse further, though a bare `DEFFUN NAME(args)` -- no CALLING
+* -- was measured to resolve on all four.  What differs is WHICH implementation
+* answers: bare resolves the cataloged name, which is the PACKAGE's, while
+* CALLING reaches mvpkg's own seam wrappers.  That is a deliberate choice about
+* what the package manager depends on, not a platform quirk, so it stays where
+* it can be read.
 * jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
 * at a cataloged one, and mvpkg uses it to reach its own seam wrappers.  jBASE
 * resolves a DEFFUN by NAME against the catalog instead -- and the names are
@@ -49,7 +62,6 @@ $IFDEF UV
    DEFFUN HTTPGET(A) CALLING "MVPKG.HTTPGET"
    DEFFUN JSONDECODE(A, B) CALLING "MVPKG.JSONDECODE"
    DEFFUN MAPFIELD(A, B, C, D, E) CALLING "MVPKG.MAPFIELD"
-$ENDIF
 $ENDIF
    SPEC = ""
    SPEC<-1> = MAPFIELD("name", 1, "", "", "")
