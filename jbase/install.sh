@@ -150,7 +150,12 @@ if [ -f "$HERE/mvpkg-jblib" ]; then
    # LD_LIBRARY_PATH are set in, and where jBASE itself documents JBCOBJECTLIST.
    say "installed mvpkg-jblib -> $MVPKG_STORE/mvpkg-jblib"
    say "NOTE: installing a package adds its library directory to JBCOBJECTLIST in"
-   say "      ${JBCGLOBALDIR:-/opt/jbase/global}/config/jbase_config.json (one managed line; \$HOME/lib stays first)"
+   say "      ${JBCGLOBALDIR:-/opt/jbase/global}/config/jbase_config.json (one managed line)"
+   say "      Packages go FIRST, \$HOME/lib LAST. jBASE searches the list in order,"
+   say "      and \$HOME/lib holds this client's bootstrap HTTPGET/HTTPGETFILE/"
+   say "      JSONDECODE/MAPFIELD -- the cut-down copies that exist only so MVPKG"
+   say "      can fetch the packages providing those same names. Last is what lets"
+   say "      a real package take the name over; first would shadow it forever."
    if ! "$MVPKG_STORE/mvpkg-jblib" show >/dev/null 2>&1; then
       say "WARNING: that config is not readable/writable by $(id -un) — package"
       say "         subroutines will not resolve until it is (group 'jbase' on a stock install)"
