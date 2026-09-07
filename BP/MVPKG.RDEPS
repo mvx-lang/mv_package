@@ -1,4 +1,4 @@
-      SUBROUTINE MVPKG.RDEPS(RNAME, RHARD, RSOFT, RPROV)
+      SUBROUTINE MVPKG.RDEPS(RNAME, RHARD, RSOFT, RPROV, RCONS)
 * mv_package — which INSTALLED packages still depend on RNAME.
 * Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
 *
@@ -7,6 +7,13 @@
 *   RPROV  the virtual names this package provides, which the caller needs too:
 *          the lock records them beside the package and has to drop both, and
 *          the store copy is gone by the time it gets there
+*   RCONS  space-separated "dependent:constraint" for every HARD dependent that
+*          declared a version constraint on it.  Removal only needs to know WHO
+*          depends; changing the version needs to know WITH WHAT -- an explicit
+*          downgrade is safe exactly when every one of these still holds, and
+*          the scan already has the constraint in its hand when it throws it
+*          away (mv_package#114).  A constraint never contains a space (commas
+*          mean AND), so the pairs separate on spaces like everything else here.
 *
 * MVX has had this since it linked packages: UNLINK-PKG refuses when another
 * linked package still needs the one being unlinked.  The MV vendors had
@@ -35,7 +42,7 @@ $IFDEF UV
       DEFFUN JSONDECODE(A, B) CALLING "MVPKG.JSONDECODE"
       DEFFUN MAPFIELD(A, B, C, D, E) CALLING "MVPKG.MAPFIELD"
 $ENDIF
-      RHARD = "" ; RSOFT = "" ; RPROV = ""
+      RHARD = "" ; RSOFT = "" ; RPROV = "" ; RCONS = ""
       IF TRIM(RNAME) = "" THEN RETURN
       CALL MVPKGOS("STORE", "", "", RSTORE)
       RKEY = CHANGE(RNAME, "/", "_")
@@ -59,7 +66,7 @@ $ENDIF
             END
          END
       NEXT RI
-      RHARD = TRIM(RHARD) ; RSOFT = TRIM(RSOFT)
+      RHARD = TRIM(RHARD) ; RSOFT = TRIM(RSOFT) ; RCONS = TRIM(RCONS)
       RETURN
 
 * RSELF — a package in the inventory with NO store copy.  mvpkg is the case:
@@ -90,7 +97,16 @@ RSCAN:
          IF DSPEC # "" THEN
             DOPT = 0
             IF DSPEC[1,1] = "?" THEN DOPT = 1 ; DSPEC = DSPEC[2, LEN(DSPEC)]
-            DCP = INDEX(DSPEC, ":", 1) ; IF DCP > 0 THEN DSPEC = DSPEC[1, DCP - 1]
+            DCON = ""
+            DCP = INDEX(DSPEC, ":", 1)
+            IF DCP > 0 THEN
+               DCON = DSPEC[DCP + 1, LEN(DSPEC)]
+               DSPEC = DSPEC[1, DCP - 1]
+*              a trailing "@word" on the constraint is a stability floor, not
+*              part of the range (DEPAPPLY reads it the same way)
+               DSA = INDEX(DCON, "@", 1)
+               IF DSA > 0 THEN DCON = DCON[1, DSA - 1]
+            END
             DAP = INDEX(DSPEC, "@", 1) ; IF DAP > 0 THEN DSPEC = DSPEC[1, DAP - 1]
             DHIT = 0
             FOR DNI = 1 TO DCOUNT(RNAMES, " ")
@@ -103,6 +119,7 @@ RSCAN:
                   IF INDEX(" " : RSOFT : " ", " " : ROTHER : " ", 1) = 0 THEN RSOFT := ROTHER : " "
                END ELSE
                   IF INDEX(" " : RHARD : " ", " " : ROTHER : " ", 1) = 0 THEN RHARD := ROTHER : " "
+               IF TRIM(DCON) # "" THEN RCONS := ROTHER : ":" : TRIM(DCON) : " "
                END
             END
          END

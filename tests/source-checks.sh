@@ -165,6 +165,81 @@ fi
 # parses GETENV(x) as an undimensioned array and `OSREAD X FROM p` as a variable
 # being assigned.  Both live behind one subroutine each so uv needs one arm, not
 # sixty-two.
+# --- a CALL must agree with its SUBROUTINE about how many arguments ---------
+# MV BASIC does not check this at compile time.  The mismatch surfaces at RUN
+# time, as SUBROUTINE_PARM_ERROR, on whichever path happens to reach the call --
+# so it hides in the commands nobody exercised that day.  Adding a parameter to
+# MVPKGDEP for mv_package#105 updated two of its five callers, and `remove`,
+# `update` and `fixperms` shipped in 1.22.0 calling it with four arguments
+# against a five-argument declaration.
+#
+# Argument counting is PAREN-AWARE: `CALL X(FIELD(A, ",", 1), B)` is two
+# arguments, not four, and a naive comma count reports the wrong thing about
+# code that is fine -- which is worse than not checking.
+say "call arity"
+arity_report=$(awk '
+  FILENAME != last { last = FILENAME }
+  # declarations: SUBROUTINE NAME(a, b, c)
+  /^[[:space:]]*SUBROUTINE[[:space:]]+[A-Z0-9._]+\(/ {
+      line = $0
+      sub(/^[[:space:]]*SUBROUTINE[[:space:]]+/, "", line)
+      name = line; sub(/\(.*$/, "", name)
+      args = line; sub(/^[^(]*\(/, "", args); sub(/\).*$/, "", args)
+      decl[name] = count_args(args)
+      next
+  }
+  # calls: CALL NAME(a, b, c) -- skip CALL @VAR (dispatch by name)
+  /CALL[[:space:]]+[A-Z0-9._]+[[:space:]]*\(/ {
+      rest = $0
+      while (match(rest, /CALL[[:space:]]+[A-Z0-9._]+[[:space:]]*\(/)) {
+          seg = substr(rest, RSTART, RLENGTH)
+          nm = seg; sub(/^CALL[[:space:]]+/, "", nm); sub(/[[:space:]]*\($/, "", nm)
+          after = substr(rest, RSTART + RLENGTH)
+          depth = 1; buf = ""; qq = ""
+          for (i = 1; i <= length(after); i++) {
+              c = substr(after, i, 1)
+              if (qq != "") { if (c == qq) qq = ""; buf = buf c; continue }
+              if (c == "\"" || c == "'"'"'") qq = c
+              else if (c == "(") depth++
+              else if (c == ")") { depth--; if (depth == 0) break }
+              buf = buf c
+          }
+          calls[nm "\t" FILENAME "\t" FNR] = count_args(buf)
+          rest = substr(after, i + 1)
+      }
+  }
+  # Paren-aware AND quote-aware.  A comma inside a string is not a separator:
+  # CMD.ADD("FIXPERMS", "hand them over, or move to a new one", "MVPKG.FIXPERMS")
+  # is three arguments, and counting four reported a fault in correct code --
+  # which is the one thing a check like this must never do.
+  function count_args(a,   i, c, d, n, q) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", a)
+      if (a == "") return 0
+      d = 0; n = 1; q = ""
+      for (i = 1; i <= length(a); i++) {
+          c = substr(a, i, 1)
+          if (q != "") { if (c == q) q = ""; continue }
+          if (c == "\"" || c == "'"'"'") q = c
+          else if (c == "(") d++
+          else if (c == ")") d--
+          else if (c == "," && d == 0) n++
+      }
+      return n
+  }
+  END {
+      for (k in calls) {
+          split(k, p, "\t")
+          if (p[1] in decl && calls[k] != decl[p[1]])
+              printf "%s:%s calls %s with %d, declared with %d\n", p[2], p[3], p[1], calls[k], decl[p[1]]
+      }
+  }
+' $SRC)
+if [ -n "$arity_report" ]; then
+  bad "every CALL matches its SUBROUTINE's argument count" "$(printf '%s' "$arity_report" | head -6)"
+else
+  ok "every CALL matches its SUBROUTINE's argument count"
+fi
+
 say "the environment and file seams"
 envleak=""
 for f in $SRC; do

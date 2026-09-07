@@ -1,0 +1,52 @@
+* mv_package — pick the version to resolve to.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG.PICK(VLIST, PCONS, FLOOR, PREFST, TGT)
+*
+*   VLIST   the registry's published versions, space-separated, NEWEST FIRST
+*   PCONS   a version constraint ("" = any); commas mean AND, which SEMVER
+*           spells as space-separated ranges
+*   FLOOR   the least stable build acceptable: dev|alpha|beta|rc|stable
+*   PREFST  1 = prefer-stable: take the newest STABLE that satisfies, and drop
+*           to a pre-release only when nothing stable does
+*   TGT     out: the version to use, "" when nothing qualifies
+*
+* ONE PLACE, BECAUSE TWO COMMANDS ANSWER THE SAME QUESTION.  `install` and
+* `update` both have to pick a version out of the registry's list under this
+* account's stability policy, and they did it differently: install resolved
+* against the floor while update simply took the registry's CURRENT version --
+* which is the promoted STABLE one.  So an account that had deliberately
+* installed a release candidate was told
+*
+*     updating mvx-lang/git 2.1.0-rc1 -> 2.0.3
+*
+* and rolled backwards, with "updating" on the line that did it (mv_package#113).
+*
+* PREFER-STABLE IS A SEPARATE PASS, NOT A SORT.  The floor says which
+* pre-releases are ADMISSIBLE; it does not say a newer pre-release beats an
+* older release.  Pass 1 asks the stable-only question; only when nothing
+* answers it does pass 2 append the floor and ask again.
+   SUBROUTINE MVPKG.PICK(VLIST, PCONS, FLOOR, PREFST, TGT)
+$INCLUDE MVPKG.INC PLATFORM.H
+   TGT = ""
+   PFL = TRIM(FLOOR) ; IF PFL = "" THEN PFL = "stable"
+   PC = CHANGE(PCONS, ",", " ")
+   RPASS = 1
+   IF PREFST = 0 OR PFL = "stable" THEN RPASS = 2
+   LOOP WHILE TGT = "" AND RPASS <= 2 DO
+      RCONS = PC
+      IF RPASS = 2 AND PFL # "stable" THEN
+         IF RCONS = "" THEN RCONS = "*"
+         RCONS = RCONS : "@" : PFL
+      END
+      FOR VI = 1 TO DCOUNT(VLIST, " ")
+         CV = FIELD(VLIST, " ", VI)
+         IF CV # "" AND TGT = "" THEN
+            CALL SEMVER("SAT", CV, RCONS, SR)
+            IF SR = 1 THEN TGT = CV
+         END
+      NEXT VI
+      RPASS = RPASS + 1
+   REPEAT
+   RETURN
+END
