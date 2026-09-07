@@ -18,51 +18,25 @@
 * seam functions, so declare those only off MVX.
    SUBROUTINE MVPKG.META(NAME, VER, REG, META)
    $INCLUDE MVPKG.INC PLATFORM.H
-* THE OUTER "NOT MVX" IS GONE, and the three platform blocks stay.  It wrapped
-* these declarations because MVX could not parse them at all: it spelled the
-* arity as a COUNT, `DEFFUN NAME(5)`, so the parameter-list form every other MV
-* system requires was a syntax error here (mvx#169 accepts both, and a DEFFUN of
-* a name codegen implements now declares its signature and lets the builtin keep
-* it).  With that fixed the guard says nothing: JBASE, UDT and UV are all
-* undefined on MVX, so the blocks below are already skipped.
+* ONE DECLARATION, ALL FOUR SYSTEMS.  A DEFFUN with no CALLING clause resolves
+* the name against the catalog, and every platform answers it:
 *
-* They do not collapse further, though a bare `DEFFUN NAME(args)` -- no CALLING
-* -- was measured to resolve on all four.  What differs is WHICH implementation
-* answers: bare resolves the cataloged name, which is the PACKAGE's, while
-* CALLING reaches mvpkg's own seam wrappers.  That is a deliberate choice about
-* what the package manager depends on, not a platform quirk, so it stays where
-* it can be read.
-* jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
-* at a cataloged one, and mvpkg uses it to reach its own seam wrappers.  jBASE
-* resolves a DEFFUN by NAME against the catalog instead -- and the names are
-* already there, because the packages mvpkg depends on catalog them: HTTPGET and
-* HTTPGETFILE from curl (curl-cmd), JSONDECODE from json, MAPFIELD from mapfield.
-* So the indirection is not needed there; the dependency IS the seam.
+*   mvx        the builtin / the extension the system account exports
+*   UniData    the cataloged name -- measured
+*   UniVerse   the cataloged name -- measured
+*   jBASE      already this form; it has no CALLING clause at all
 *
-* UNIVERSE TAKES THE SAME CLAUSE AS UNIDATA BUT NOT THE SAME NAME.  A leading
-* "*" names the GLOBAL catalog, and UniVerse packages are cataloged LOCAL -- per
-* account, which is also what makes each program typeable as a verb.  Asking for
-* "*MVPKG.MAPFIELD" there fails with "is not in the CATALOG space" even though
-* the program is cataloged and callable; the bare name resolves through the
-* account's VOC.
-*
-* FLAT GUARDS, one per platform: an $IFDEF nested inside an $ELSE compiles on
-* UniData and FAILS on UniVerse, which is what this block used to be.
-$IFDEF JBASE
+* THE NAME IS THE PACKAGE'S, WHICH IS THE POINT.  These used to reach mvpkg's
+* own seam wrappers (*MVPKG.HTTPGET on UniData, MVPKG.HTTPGET on UniVerse -- the
+* "*" is the global catalog, which UniVerse rejects because it catalogs LOCAL).
+* Three spellings of one idea, each carrying a platform's catalog rules into a
+* declaration that only wanted to say "this is a function".  What answers now is
+* what the dependency installs: HTTPGET/HTTPGETFILE from curl, JSONDECODE from
+* json, MAPFIELD from mapfield.  The dependency IS the seam, which is what the
+* jBASE arm already said and the other two worked around.
    DEFFUN HTTPGET(A)
    DEFFUN JSONDECODE(A, B)
    DEFFUN MAPFIELD(A, B, C, D, E)
-$ENDIF
-$IFDEF UDT
-   DEFFUN HTTPGET(A) CALLING "*MVPKG.HTTPGET"
-   DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
-   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
-$ENDIF
-$IFDEF UV
-   DEFFUN HTTPGET(A) CALLING "MVPKG.HTTPGET"
-   DEFFUN JSONDECODE(A, B) CALLING "MVPKG.JSONDECODE"
-   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "MVPKG.MAPFIELD"
-$ENDIF
    SPEC = ""
    SPEC<-1> = MAPFIELD("name", 1, "", "", "")
    SPEC<-1> = MAPFIELD("version", 2, "", "", "")
