@@ -317,8 +317,19 @@ $ENDIF
 $IFDEF UDT
          CALL MVPKG.SH('"':BUILDER:'" remove "':P1:'"', MVSHOUT, MVSHST)
 $ENDIF
-      CASE OP = "RMDIR"
-         * P1 = directory.  Remove it (the store copy on uninstall).
+      CASE OP = "RMRF" OR OP = "RMDIR"
+         * P1 = directory.  Remove it and everything under it -- the store copy
+         * on uninstall, and the previous version's tree before a new one is
+         * unpacked over it.
+         *
+         * TWO NAMES FOR ONE OP, because the seams had grown two.  MVX's MVPKGOS
+         * spells this RMRF and has no RMDIR; this one spelled it RMDIR and had
+         * no RMRF -- so MVPKG.ONE's unguarded CALL MVPKGOS("RMRF", DEST, ...)
+         * reached nothing here and fell through to "unknown op", on every one of
+         * UniData, UniVerse and jBASE.  The destination was never cleared, and
+         * the error saying so was overwritten by the next call before anyone
+         * looked at it (mv_package#130).  RMRF is the name the callers use, so
+         * it answers to that; RMDIR stays because MVPKG.REMOVE still says it.
          CALL MVPKG.SH('rm -rf "':P1:'"', MVSHOUT, MVSHST)
       CASE OP = "CHOWN"
          * P1 = path, P2 = user (or user:group).  Hand ownership to the operator —

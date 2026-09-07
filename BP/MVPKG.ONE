@@ -87,7 +87,18 @@ $ENDIF
       IF TURL[1, 4] # "http" THEN TURL = REG : TURL
       ST = HTTPGETFILE(TURL, TMP)
       IF ST < 200 OR ST >= 300 THEN RESULT = "download failed (status " : ST : ")" ; PRINT RESULT ; RETURN
+      * CLEAR THE OLD TREE FIRST, AND SAY SO IF IT CANNOT BE.  Unpacking over a
+      * previous version leaves behind every file the new one does not replace,
+      * and on UniData a leftover _<PROG> object is preferred to the source
+      * shipped beside it -- so the package runs the OLD program while every
+      * check says otherwise.  A stray file is not merely inert either: it gets
+      * compiled and cataloged as if it were part of the package.
+      *
+      * The result of THIS call was read into ERR and then overwritten by the
+      * UNTAR below before anything tested it, which is how the seam answering
+      * "unknown op RMRF" on all three MV ports went unnoticed (#130).
       CALL MVPKGOS("RMRF", DEST, "", ERR)
+      IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
       CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
       IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
       CALL MVPKG.SH('rm -f "' : TMP : '"', MVSHOUT, MVSHST)

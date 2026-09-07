@@ -188,6 +188,10 @@ arity_report=$(awk '
       decl[name] = count_args(args)
       next
   }
+  # A COMMENT IS NOT A CALL.  This read every line, so writing `CALL FOO(a, b)`
+  # in a comment to explain what a caller does was reported as a real call with
+  # the wrong arity -- a check that fails on its own documentation.
+  /^[[:space:]]*\*/ { next }
   # calls: CALL NAME(a, b, c) -- skip CALL @VAR (dispatch by name)
   /CALL[[:space:]]+[A-Z0-9._]+[[:space:]]*\(/ {
       rest = $0
@@ -269,6 +273,50 @@ for f in $SRC; do
 done
 if [ -z "$nested" ]; then ok "no \$IFDEF nested inside an \$ELSE (uv rejects it)"
 else bad "no \$IFDEF nested inside an \$ELSE" "found in:$nested"; fi
+
+# --- 9. an unguarded MVPKGOS op must exist in BOTH seams --------------------
+# MVPKGOS is two files -- BP/MVPKGOS is the MVX seam, udt/MVPKGOS serves udt, uv
+# and jbase -- and they had grown two names for one operation: MVX spelled the
+# recursive delete RMRF and had no RMDIR, the other spelled it RMDIR and had no
+# RMRF.  MVPKG.ONE called RMRF with no guard, so on all three MV ports it
+# reached nothing, fell through to "unknown op", and the package directory was
+# never cleared before the new version was unpacked over it.  A leftover _<PROG>
+# object then shadowed the source shipped beside it, and stray files were
+# compiled and cataloged as if they belonged to the package (#130).
+#
+# Nothing failed.  The one call that would have said so had its RESULT
+# overwritten by the next call before it was read.
+#
+# A call INSIDE a platform guard is fine -- that is how MVPKG.REMOVE reaches
+# each seam's own spelling -- so only unguarded calls are checked here.
+say "the MVPKGOS seam"
+mvxops=$(grep -oE 'CASE OP = "[A-Z.]+"' BP/MVPKGOS | grep -oE '"[A-Z.]+"' | tr -d '"' | sort -u)
+mvops=$(grep -oE 'CASE OP = "[A-Z.]+"( OR OP = "[A-Z.]+")*' udt/MVPKGOS | grep -oE '"[A-Z.]+"' | tr -d '"' | sort -u)
+missing=""
+for f in $SRC; do
+  case "$f" in */MVPKGOS) continue;; esac
+  # ops called at guard depth 0 only
+  for op in $(awk '
+      /^[[:space:]]*[$]IFDEF/ || /^[[:space:]]*[$]IFNDEF/ { d++; next }
+      /^[[:space:]]*[$]ENDIF/ { if (d>0) d--; next }
+      /^[[:space:]]*\*/ { next }
+      d == 0 && /CALL MVPKGOS\(/ {
+         while (match($0, /CALL MVPKGOS\("[A-Z.]+"/)) {
+            s = substr($0, RSTART, RLENGTH); gsub(/.*"/, "", s)
+            t = substr($0, RSTART, RLENGTH); sub(/CALL MVPKGOS\("/, "", t); sub(/"$/, "", t)
+            print t
+            $0 = substr($0, RSTART + RLENGTH)
+         }
+      }' "$f"); do
+    echo "$mvxops" | grep -qx "$op" || missing="$missing $f:$op:missing-from-BP/MVPKGOS"
+    echo "$mvops"  | grep -qx "$op" || missing="$missing $f:$op:missing-from-udt/MVPKGOS"
+  done
+done
+if [ -z "$missing" ]; then
+  ok "every unguarded MVPKGOS op exists in both seams"
+else
+  bad "every unguarded MVPKGOS op exists in both seams" "$(printf '%s' "$missing" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ' ')"
+fi
 
 printf '\n%s\n' "source-checks: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
