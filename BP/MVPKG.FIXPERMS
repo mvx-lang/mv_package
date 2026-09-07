@@ -88,7 +88,7 @@ $IFNDEF MVX
             PKGKEY = CHANGE(NM, "/", "_")
             CALL MVPKG.FILE("READ", STORE : "/" : PKGKEY : "/mvpkg.json", PJ, MVFOK)
             IF PJ # "" THEN
-               CALL MVPKGDEP(PJ, DVERBS, DFILES, DFALL)
+               CALL MVPKGDEP(PJ, DVERBS, DFILES, DFALL, DINC)
                FOR VI = 1 TO DCOUNT(DVERBS, " ")
                   V = FIELD(DVERBS, " ", VI)
                   IF V # "" THEN GOSUB CTLG1

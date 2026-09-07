@@ -52,5 +52,14 @@ $INCLUDE MVPKG.INC PLATFORM.H
 ' "$M/BP/MVPKG.REG" > "$M/BP/MVPKG.REG.tmp" && mv "$M/BP/MVPKG.REG.tmp" "$M/BP/MVPKG.REG"
                                              probe "PLATFORM.H included before SUBROUTINE"
 
+# A CALL that disagrees with its SUBROUTINE.  Not appended to MVPKG.INFO like the
+# rest: the check compares a call against a declaration, so the mutation has to
+# be a real call site -- drop the argument mv_package#105 added to MVPKGDEP, which
+# is exactly what shipped in 1.22.0 and broke remove, update and fixperms.
+reset
+sed 's/CALL MVPKGDEP(UMJ, UVERBS, UFILES, UFB, UINC)/CALL MVPKGDEP(UMJ, UVERBS, UFILES, UFB)/' \
+    "$M/BP/MVPKG.UPDATE" > "$M/BP/MVPKG.UPDATE.tmp" && mv "$M/BP/MVPKG.UPDATE.tmp" "$M/BP/MVPKG.UPDATE"
+                                             probe "a CALL with the wrong number of arguments"
+
 printf '\nself-check: %s checks proven able to fail, %s decoration\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
