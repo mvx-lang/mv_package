@@ -527,13 +527,42 @@ $IFDEF JBASE
 $ENDIF
    NI = DCOUNT(ITEMS, @AM)
    IF NI > 0 THEN
-      NEEDBAS = ""
+* COMPILE IN BATCHES: `BASIC <file> <item> ...` SEGFAULTS AT 26 ITEMS.  UniData
+* takes an item list on the verb, and a list of 26 or more crashes the session
+* with SIGSEGV -- after compiling every one of them successfully, so the output
+* reads like a clean run right up to the point it dies:
+*
+*     item id =GIT.AGENT
+*     Compiling Unibasic: .../BP/GIT.AGENT in mode 'u'.
+*     compilation finished
+*     Segmentation fault
+*
+* Measured on UniData 8.3: 25 items compile, 26 crash, with two disjoint sets of
+* the same size behaving identically.  It is the COUNT, not the length -- 26
+* four-character names (130 bytes of list) crash where 25 twenty-one-character
+* names (550 bytes) do not.  So this is not a command-line limit to be worked
+* around by shortening anything; the list simply has to be shorter than 26.
+*
+* mvpkg handed it 59 for mvx-lang/git, so that package could not be installed at
+* all on a machine that did not already have its objects built (#125).  It read
+* as intermittent because a partial install leaves the package dir in the store
+* and the NEXT install then finds objects, compiles nothing, and succeeds.
+*
+* BATSZ is 20, not 25: the ceiling is measured on one UniData release and this
+* leaves room for it to be lower elsewhere.  The cost of a smaller batch is one
+* extra EXECUTE per 20 programs.
+      BATSZ = 20
+      NEEDBAS = "" ; NBAT = 0
       FOR CI = 1 TO NI
          OBJID = "_" : ITEMS<CI>
          READ OBJREC FROM LSF, OBJID THEN
             HASOBJ = 1
          END ELSE
-            NEEDBAS := ITEMS<CI> : " "
+            NEEDBAS := ITEMS<CI> : " " ; NBAT = NBAT + 1
+            IF NBAT >= BATSZ THEN
+               EXECUTE "BASIC MVPKG.SRC " : NEEDBAS
+               NEEDBAS = "" ; NBAT = 0
+            END
          END
       NEXT CI
       IF NEEDBAS # "" THEN EXECUTE "BASIC MVPKG.SRC " : NEEDBAS
