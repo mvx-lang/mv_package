@@ -144,6 +144,10 @@ $ENDIF
          VERS<NINST> = IREC<3,I>
       END
    NEXT I
+   * WHAT WAS ALREADY HERE BEFORE THIS RUN.  INSTALLED grows as packages install,
+   * so the count taken now is the line between "was here" and "this run put it
+   * here" -- which is what lets the end of the run say which it was.
+   NPRE = NINST
 
    * ---- seed the NEED set (with parallel CONS / OPT / STAB) from the invocation
    * CONS<i> is the version constraint NEED<i> was requested with ("" = latest);
@@ -165,6 +169,10 @@ $ENDIF
          RETURN
       END
    END
+
+   * THE SEED IS WHAT WAS ASKED FOR; the closure below appends to NEED, so the
+   * count has to be taken here to tell a named package from one pulled in for it.
+   NSEED = DCOUNT(NEED, @AM)
 
    * ---- phase 1: transitive closure; DEPSOF<i> parallel NEED<i> ------------
    * (NEED / CONS / OPT are seeded above; the closure extends them with deps.)
@@ -321,7 +329,49 @@ $ENDIF
       END
    REPEAT
 
+   GOSUB SAYSTATE
    GOSUB WRITELOCK
+   RETURN
+
+* SAYSTATE — an install that did nothing has to say so.
+*
+* A package already in THIS ACCOUNT'S lock is skipped by phase 2, and the skip
+* was silent: `MVPKG install mvx-lang/git` on an account that already had it
+* printed nothing at all and exited 0.  Nothing distinguishes that from a
+* failure that produced no output, and it reads as one -- twice in a day of
+* testing it was mistaken for a broken install before the lock was checked by
+* hand.  "Did nothing because it is done" and "did nothing because it broke"
+* have to look different.
+*
+* Only the packages the caller NAMED are reported.  A dependency already
+* present is ordinary and saying so for each one is noise; the whole-account
+* install says it once instead.
+SAYSTATE:
+   NEWNOW = 0
+   IF DCOUNT(INSTALLED, @AM) > NPRE THEN NEWNOW = 1
+   IF A1 # "" THEN
+      FOR SSI = 1 TO NSEED
+         SSN = NEED<SSI>
+         SSWAS = 0 ; SSVER = ""
+         FOR SSX = 1 TO NPRE
+            IF INSTALLED<SSX> = SSN THEN SSWAS = 1 ; SSVER = TRIM(VERS<SSX>)
+         NEXT SSX
+         IF SSWAS THEN
+            IF SSVER # "" THEN
+               PRINT SSN : " " : SSVER : " is already installed in this account"
+            END ELSE
+               PRINT SSN : " is already installed in this account"
+            END
+            PRINT "  MVPKG update " : SSN : "   to take a newer version"
+            PRINT "  MVPKG remove " : SSN : "   to install it again from scratch"
+         END
+      NEXT SSI
+      RETURN
+   END
+   * the whole-account install: one line, not one per package
+   IF NEWNOW = 0 THEN
+      PRINT "mvpkg: nothing to do — every declared dependency is already installed"
+   END
    RETURN
 
 * WRITELOCK — persist this account's lock (the resolved/installed set) from
