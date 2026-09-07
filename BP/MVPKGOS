@@ -124,6 +124,20 @@ $INCLUDE MVPKG.INC PLATFORM.H
          * P1 = record id.  Remove an account state record.
          OPEN MVMASTER TO MDF ELSE RESULT = "MVPKGOS MDDELETE: cannot open " : MVMASTER ; RETURN
          DELETE MDF, P1
+      CASE OP = "STOREOK"
+         * RESULT = "" when the shared store is readable, else why not.  EMPTY IS
+         * NOT THE SAME AS UNREACHABLE: STOREREAD answers "" to both, so MVPKG
+         * list asks this before concluding "no packages installed" (#67).
+         *
+         * THIS SEAM DID NOT HAVE IT.  Only the udt/uv/jbase seam did, and the
+         * call in MVPKG.LIST is unguarded -- so on MVX an EMPTY store printed
+         *   mvpkg: MVPKGOS: unknown op STOREOK
+         * where it meant to print "no packages installed".  It hid because it
+         * needs an empty store to reach, and the same-named op existing on the
+         * other three made the call look answered (#130).
+         GOSUB STOREOPEN
+         RESULT = ""
+         IF NOT(STFOK) THEN RESULT = "cannot open the package store " : SF
       CASE OP = "STOREREAD"
          * Read a record from the shared SYSTEM store MVPKG.STORE — the
          * per-system inventory of installed packages (record "installed": <2>
