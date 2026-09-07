@@ -26,26 +26,43 @@ account — there is nothing to import.
 Commands are case-insensitive (MV developers work with Caps Lock on):
 
 ```
-MVPKG install <name> [<dest>]   install a package and its dependencies
-                                (<dest> defaults to a directory named <name>)
-MVPKG info <name>               show a package's registry metadata
-MVPKG search <term>             list packages whose name/description matches
-MVPKG setup <url>               set (and persist) the registry base URL
-MVPKG config                    show the registry URL and stability policy
+MVPKG install <name> [<dest>]     install a package and its dependencies
+                                  (<dest> defaults to a directory named <name>)
+MVPKG install <name>:<version>    install exactly that version, up or down
+MVPKG install <name>@<stability>  raise the stability floor for this install
+MVPKG install                     install this account's declared set (the lock)
+MVPKG update [<name>]             move installed packages to the newest version
+                                  the account's stability policy admits
+MVPKG remove <name>               uninstall it, if nothing still needs it
+MVPKG list [-a] [-l]              what is installed here (-a: the whole system)
+MVPKG info <name>                 show a package's registry metadata
+MVPKG search <term>               list packages whose name/description matches
+MVPKG register <name> [<version>] adopt an already-installed package
+MVPKG config                      show the registry URL and stability policy
 MVPKG config <setting> [<value>]  show or set one setting
+MVPKG setup <url>                 set (and persist) the registry base URL
+MVPKG init [<url>]                provision this account for package management
+MVPKG rebuild                     rebuild the host's native library (UniData)
+MVPKG fixperms [<user>]           hand MVPKG's files to the operator
+MVPKG notify                      login-proc check: is a deployed package behind
 ```
+
+`--force` overrides a refusal (see **Changing a version**, below); `--source`
+builds from a git working copy instead of a release.
 
 `install` resolves the package's **dependencies** first: a package names the
 packages it needs in its registry metadata, and the client installs the
-whole transitive set, dependencies before dependents. Installed package
-names are recorded in `mvpkg.installed` in the account, so a dependency
-already present is not reinstalled. On UniData this means installing an app
-that depends on `curses` pulls the native bridge in and rebuilds the shared
-library — one command, nothing manual.
+whole transitive set, dependencies before dependents. What is installed here is
+recorded in `MVPKG.LOCK`, a record in the account's own master dictionary (VOC,
+or MD on jBASE) — not an OS file — so a dependency already present is not
+reinstalled, and an install that did nothing says so rather than exiting
+quietly. On UniData this means installing an app that depends on `curses` pulls
+the native bridge in and rebuilds the shared library — one command, nothing
+manual.
 
 **Dependency syntax.** Each entry in the `dependencies` list is a package name
-with an optional `?` prefix and two optional suffixes,
-`[?]name[@system][:constraint]`:
+with an optional `?` prefix and three optional suffixes,
+`[?]name[@system][:constraint][@stability]`:
 
 - `?` — **optional**. The dependency is installed like any other when the
   registry has it, but a missing one is skipped with a warning instead of
@@ -62,12 +79,15 @@ with an optional `?` prefix and two optional suffixes,
   the **newest published version** satisfying it.
 
 - `@stability` — a **stability floor** for this one dependency, raising it above
-  the project's: `thing@beta`, or after a constraint, `thing:^1.2@beta`. The
-  word decides which `@` this is: the stability vocabulary is closed (`dev`,
-  `alpha`, `beta`, `rc`, `stable`) and shares no member with the system names,
-  so `thing@udt` is still a platform gate.
+  the project's: `thing@beta`, or after a constraint, `thing:^1.2@beta`.
 
-All may appear together, in that order: `?udt_curses@udt:^1.0`.
+All may appear together, in that order: `?udt_curses@udt:^1.0@beta`.
+
+> **`@` carries two meanings, and the word decides.** `@udt` is a platform gate;
+> `@beta` is a stability floor. The stability vocabulary is closed — `dev`,
+> `alpha`, `beta`, `rc`, `stable` — and shares no member with the system names,
+> so the two never collide. On the *command line* a third reading applies:
+> `name@<git-ref>` builds from source (`--source` settles it).
 
 **Release channels.** A registry version is *stable* unless it carries a
 pre-release suffix (`1.3.0-beta.1`, `2.0.0-rc.2`, `1.0.0-dev`). The default
@@ -117,6 +137,34 @@ pre-release opts in for that one package without any floor, e.g.
 
 `MVPKG.LOCK` records each resolved version's stability beside it, so a lock
 shows what kind of build it pins.
+
+### Changing a version
+
+`update` moves forward, never back: it resolves under the account's stability
+policy — the same rules `install` uses — and leaves a package alone when what is
+installed is already newer than anything the policy admits.
+
+```
+MVPKG update mvx-lang/git
+mvx-lang/git 2.1.0-rc1 is newer than 2.0.3, the newest stable release — leaving it
+```
+
+To move to a particular version, say so. That works in either direction:
+
+```
+MVPKG install mvx-lang/getopt:1.0
+```
+
+A version is not a private decision, though — other installed packages declared
+ranges against this one, and a downgrade can walk out from under them. So it is
+checked first, and refused rather than warned:
+
+```
+mvpkg: mvx-lang/cmd needs mvx-lang/getopt ^1.1, and 1.0 does not satisfy it
+  refusing to install mvx-lang/getopt 1.0 (use --force to do it anyway)
+```
+
+`--force` does it anyway, and prints what it is overriding.
 
 The registry URL is taken from `$MVPKG_REGISTRY`, then a persisted `mvpkg.conf`,
 then the built-in default (`https://mv-package.heydon.io`).

@@ -34,7 +34,7 @@ $ENDIF
    FOR FI = 3 TO DCOUNT(S, " ")
       IF FIELD(S, " ", FI) = "--force" THEN RFORCE = 1
    NEXT FI
-   CALL MVPKG.RDEPS(NM, RHARD, RSOFT, RPROV)
+   CALL MVPKG.RDEPS(NM, RHARD, RSOFT, RPROV, RRCONS)
    IF RHARD # "" AND RFORCE = 0 THEN
       PRINT NM : " is still required by: " : RHARD
       PRINT "  removing it would break them: their code is cataloged against"
@@ -69,7 +69,7 @@ $ELSE
       NEXT I
    END ELSE
       CALL MVPKG.FILE("READ", DEST : "/mvpkg.json", MJ, MVFOK)
-      CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL)
+      CALL MVPKGDEP(MJ, DVERBS, DFILES, DFALL, DINC)
    END
    FOR I = 1 TO DCOUNT(DVERBS, " ")
       V = FIELD(DVERBS, " ", I)

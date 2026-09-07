@@ -26,15 +26,19 @@ $ENDIF
    * optional target dir, and flags.  --source / -s selects source mode: clone
    * the package's account-repo into a git working copy instead of unpacking a
    * release tar.
-   SRCMODE = 0 ; A1 = "" ; TGTDIR = "" ; REF = ""
+   SRCMODE = 0 ; A1 = "" ; TGTDIR = "" ; REF = "" ; FORCE = 0
    FOR FI = 3 TO DCOUNT(S, " ")
       W = FIELD(S, " ", FI)
+      IF W = "--force" OR W = "-f" THEN
+         FORCE = 1
+      END ELSE
       IF W = "--source" OR W = "-s" THEN
          SRCMODE = 1
       END ELSE
          IF W # "" THEN
             IF A1 = "" THEN A1 = W ELSE IF TGTDIR = "" THEN TGTDIR = W
          END
+      END
       END
    NEXT FI
    CALL MVPKG.REG(REG)
@@ -60,6 +64,19 @@ $ENDIF
          A1 = FIELD(A1, "@", 1)
          SRCMODE = 1
       END
+   END
+
+   * "name:1.2.3" — AN EXPLICIT VERSION IS AN INSTRUCTION, and it may point
+   * BACKWARDS.  Only the manifest could carry a constraint before, so the one
+   * way to move an account to a particular version was to edit a record by
+   * hand.  A named version therefore also overrides the "already installed"
+   * skip: the caller is asking for a different version of something that is
+   * here, which is the whole point (mv_package#114).
+   ACONS = "" ; AEXPL = 0
+   IF A1 # "" AND INDEX(A1, ":", 1) THEN
+      ACONS = FIELD(A1, ":", 2, 99)
+      A1 = FIELD(A1, ":", 1)
+      IF TRIM(ACONS) # "" THEN AEXPL = 1
    END
 
    IF SRCMODE THEN
@@ -156,7 +173,7 @@ $ENDIF
    IF A1 # "" THEN
       * `MVPKG install <pkg>` — install it (+deps) and declare it in the manifest
       * (composer require): the package becomes a stated dependency of this account.
-      NEED = A1 ; CONS<1> = "" ; OPT<1> = 0 ; STAB<1> = ASTAB
+      NEED = A1 ; CONS<1> = ACONS ; OPT<1> = 0 ; STAB<1> = ASTAB
       GOSUB MANIFESTADD
    END ELSE
       * `MVPKG install` (no name) — install the account's declared set, lock-first
@@ -230,6 +247,7 @@ $ENDIF
    * ---- phase 2: install deps-first (topological) ---------------------
    NP = DCOUNT(NEED, @AM)
    DONE = 0
+   AONCE = 0
    LOOP UNTIL DONE DO
       PROGRESS = 0 ; PENDING = 0
       FOR I = 1 TO NP
@@ -238,6 +256,20 @@ $ENDIF
          FOR X = 1 TO DCOUNT(INSTALLED, @AM)
             IF INSTALLED<X> = P THEN DONEP = 1
          NEXT X
+         * The package NAMED with an explicit version is never "already here":
+         * the caller is asking to change which version that is.  Only the
+         * named one -- a lock-pinned seed carries a constraint too, and a bare
+         * `MVPKG install` must not reinstall the whole account because of it.
+         *
+         * ONCE.  Phase 2 goes round until nothing is pending, so an override
+         * that fires on every pass makes the package permanently pending: it
+         * installed, and installed, and installed, and the loop never ended.
+         * After the first pass the ordinary test applies, and by then the
+         * package is in INSTALLED -- or the install failed and returned.
+         IF I = 1 AND AEXPL = 1 AND AONCE = 0 THEN
+            DONEP = 0
+            AONCE = 1
+         END
          IF DONEP = 0 THEN
             PENDING = PENDING + 1
             READY = 1
@@ -287,6 +319,22 @@ $ENDIF
                            IF META = "" THEN PRINT P : " " : TGT : ": not found in registry " : REG ; RETURN
                         END
                      END
+                  END
+               END
+               * An explicitly named version has to keep the account working:
+               * check it against what other installed packages require BEFORE
+               * anything is downloaded.
+               IF DOINST AND I = 1 AND AEXPL = 1 THEN
+                  GOSUB DEPSAFE
+                  * A REFUSAL IS THE END OF THE COMMAND, not a package left
+                  * pending.  Carrying on meant the loop found no progress and
+                  * blamed the dependency graph -- "cannot resolve dependencies
+                  * (cycle or missing)" -- and then SAYSTATE added "nothing to
+                  * do", after a refusal that had just explained itself
+                  * perfectly well.  Two wrong lines under a right one.
+                  IF DEPBAD THEN
+                     GOSUB WRITELOCK
+                     RETURN
                   END
                END
                IF DOINST THEN
@@ -347,9 +395,11 @@ $ENDIF
 * present is ordinary and saying so for each one is noise; the whole-account
 * install says it once instead.
 SAYSTATE:
+   * An explicitly named version reports through the install path itself.
+   IF AEXPL = 1 THEN RETURN
    NEWNOW = 0
    IF DCOUNT(INSTALLED, @AM) > NPRE THEN NEWNOW = 1
-   IF A1 # "" THEN
+   IF A1 # "" AND AEXPL = 0 THEN
       FOR SSI = 1 TO NSEED
          SSN = NEED<SSI>
          SSWAS = 0 ; SSVER = ""
@@ -564,6 +614,46 @@ OPTMISS:
    END
    RETURN
 
+* DEPSAFE — would moving P to META<2> leave an installed package unsatisfied?
+*
+* A VERSION IS NOT A PRIVATE DECISION.  Other packages declared a range against
+* this one, and an explicit install -- a downgrade especially -- can walk out
+* from under them.  MVPKG.RDEPS already finds who depends on P; it carries their
+* CONSTRAINTS out now, so each can be asked the only question that matters:
+* does the version being installed still satisfy it?
+*
+* Refused rather than warned, because the account keeps working either way only
+* if somebody decides.  --force is that decision, and it says what it is
+* overriding rather than going quiet.
+DEPSAFE:
+   DEPBAD = 0
+   CALL MVPKG.RDEPS(P, DSHARD, DSSOFT, DSPROV, DSCONS)
+   IF TRIM(DSCONS) = "" THEN RETURN
+   DSNEW = TRIM(META<2>)
+   DSBROKE = ""
+   FOR DSI = 1 TO DCOUNT(DSCONS, " ")
+      DSPAIR = FIELD(DSCONS, " ", DSI)
+      IF DSPAIR # "" THEN
+         DSWHO = FIELD(DSPAIR, ":", 1)
+         DSC = FIELD(DSPAIR, ":", 2, 99)
+         IF DSC # "" THEN
+            CALL SEMVER("SAT", DSNEW, CHANGE(DSC, ",", " "), DSOK)
+            IF DSOK = 0 THEN DSBROKE<-1> = DSWHO : " needs " : P : " " : DSC
+         END
+      END
+   NEXT DSI
+   IF DSBROKE = "" THEN RETURN
+   FOR DSJ = 1 TO DCOUNT(DSBROKE, @AM)
+      PRINT "mvpkg: " : DSBROKE<DSJ> : ", and " : DSNEW : " does not satisfy it"
+   NEXT DSJ
+   IF FORCE THEN
+      PRINT "  --force given — installing " : DSNEW : " anyway"
+   END ELSE
+      PRINT "  refusing to install " : P : " " : DSNEW : " (use --force to do it anyway)"
+      DEPBAD = 1
+   END
+   RETURN
+
 * PROVDEFER — P was not found as a real package.  If P is a virtual name that a
 * still-pending package provides (a rename: mvx-lang/cursors "provides":
 * ["udt_curses"]), defer it (DEFER=1) rather than failing: it is satisfied once
@@ -588,33 +678,11 @@ PROVDEFER:
 * (>=1.0,<2.0), which SEMVER expresses as space-separated ranges, so normalise
 * "," -> " ".
 *
-* PREFER-STABLE IS A SEPARATE PASS, NOT A SORT.  The floor only says which
-* pre-releases are ADMISSIBLE; it does not say a newer pre-release beats an
-* older release.  So pass 1 asks the stable-only question this has always asked,
-* and only when nothing answers it does pass 2 append the floor and ask again.
-* Composer's rule: take a pre-release when you must, not because one is newer.
-* With prefer-stable off, the newest admissible version wins outright.
+* The choosing itself lives in MVPKG.PICK, because `update` has to answer the
+* same question and did not -- it took the registry's current version, which is
+* the promoted stable one, and rolled a release candidate backwards.
 RESOLVE:
-   TGT = ""
-   PC = CHANGE(PCONS, ",", " ")
-   VLIST = META<6>
-   RPASS = 1
-   IF PREFST = 0 OR EFLOOR = "stable" THEN RPASS = 2
-   LOOP WHILE TGT = "" AND RPASS <= 2 DO
-      RCONS = PC
-      IF RPASS = 2 AND EFLOOR # "stable" THEN
-         IF RCONS = "" THEN RCONS = "*"
-         RCONS = RCONS : "@" : EFLOOR
-      END
-      FOR VI = 1 TO DCOUNT(VLIST, " ")
-         CV = FIELD(VLIST, " ", VI)
-         IF CV # "" AND TGT = "" THEN
-            CALL SEMVER("SAT", CV, RCONS, SR)
-            IF SR = 1 THEN TGT = CV
-         END
-      NEXT VI
-      RPASS = RPASS + 1
-   REPEAT
+   CALL MVPKG.PICK(META<6>, PCONS, EFLOOR, PREFST, TGT)
    RETURN
 
 * DEPAPPLY — parse a dependency "[?]name[@sys][:constraint][@stability]" into
