@@ -344,5 +344,43 @@ else
   bad "nothing reads a PKG manifest" "still read by:$readers"
 fi
 
+# --- 11. a seam function is declared per platform, never bare ----------------
+# HTTPGET, HTTPGETFILE, JSONDECODE and MAPFIELD are the four names the client
+# needs BEFORE the packages that provide them are installed, which is the whole
+# of what mvpkg does first.  It ships its own bootstrap copies: jBASE catalogs
+# them under the BARE names, so a bare DEFFUN finds them; udt and uv catalog
+# them PREFIXED (MVPKG.MAPFIELD ...) and the CALLING clause is what reaches
+# them.
+#
+# #116 collapsed the three arms in MVPKG.META and MVPKG.ONE to one bare
+# declaration, on the premise that the dependency is the seam.  True once a
+# package is deployed; false before one is -- and a fresh UniData or UniVerse
+# account could not install anything at all (#133):
+#
+#     Program "MVPKG.META": Line 41, Unable to load subroutine.
+#
+# So: bare is correct INSIDE $IFDEF JBASE, and wrong at guard depth 0.
+say "the seam declarations"
+seambare=""
+for f in $SRC; do
+  case "$f" in */MVPKG.SH|*/MVPKGOS) continue;; esac
+  hits=$(awk '
+      /^[[:space:]]*[$]IFDEF/ || /^[[:space:]]*[$]IFNDEF/ { d++; next }
+      /^[[:space:]]*[$]ENDIF/ { if (d>0) d--; next }
+      /^[[:space:]]*\*/ { next }
+      d == 0 && /^[[:space:]]*DEFFUN[[:space:]]+(HTTPGET|HTTPGETFILE|JSONDECODE|MAPFIELD)[[:space:]]*\(/ {
+         line = $0
+         sub(/^[[:space:]]*DEFFUN[[:space:]]+/, "", line)
+         sub(/[[:space:]]*\(.*$/, "", line)
+         print line
+      }' "$f")
+  for h in $hits; do seambare="$seambare $f:$h"; done
+done
+if [ -z "$seambare" ]; then
+  ok "no seam function is declared outside a platform guard"
+else
+  bad "no seam function is declared outside a platform guard" "bare:$seambare"
+fi
+
 printf '\n%s\n' "source-checks: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

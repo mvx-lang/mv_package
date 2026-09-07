@@ -15,8 +15,24 @@
 * re-owns the account + store (for changing the operator).
    SUBROUTINE MVPKG.FIXPERMS
 $INCLUDE MVPKG.INC PLATFORM.H
+* The same three-armed declaration every other caller uses, and for the reason
+* #133 records: on udt and uv the client's own bootstrap copies are cataloged
+* PREFIXED (MVPKG.JSONDECODE, MVPKG.MAPFIELD) and the CALLING clause is what
+* reaches them, which matters before any package is deployed.  jBASE ships them
+* under the bare names, so it needs no clause.  MVX has neither symbol defined
+* and gets no declaration -- these are builtins there.
+$IFDEF JBASE
    DEFFUN JSONDECODE(A, B)
    DEFFUN MAPFIELD(A, B, C, D, E)
+$ENDIF
+$IFDEF UDT
+   DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
+$ENDIF
+$IFDEF UV
+   DEFFUN JSONDECODE(A, B) CALLING "MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "MVPKG.MAPFIELD"
+$ENDIF
 $IFDEF MVX
    S = SENTENCE()
    CALL MVPKG.ENV("MVXACCOUNT", ACCT) ; IF ACCT = "" THEN ACCT = "."
