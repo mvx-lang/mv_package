@@ -18,25 +18,59 @@
 * seam functions, so declare those only off MVX.
    SUBROUTINE MVPKG.META(NAME, VER, REG, META)
    $INCLUDE MVPKG.INC PLATFORM.H
-* ONE DECLARATION, ALL FOUR SYSTEMS.  A DEFFUN with no CALLING clause resolves
-* the name against the catalog, and every platform answers it:
+* THE WRAPPERS ARE THE BOOTSTRAP, which is why they are back (#133).
 *
-*   mvx        the builtin / the extension the system account exports
-*   UniData    the cataloged name -- measured
-*   UniVerse   the cataloged name -- measured
-*   jBASE      already this form; it has no CALLING clause at all
+* #116 collapsed these three blocks into one bare declaration on the premise
+* that "the dependency IS the seam".  That is true once a package is deployed.
+* It is false BEFORE one is -- which is exactly when mvpkg has to run, because
+* installing the first package is its job.  On a fresh UniData or UniVerse
+* account nothing answers a bare MAPFIELD and the client cannot bootstrap:
 *
-* THE NAME IS THE PACKAGE'S, WHICH IS THE POINT.  These used to reach mvpkg's
-* own seam wrappers (*MVPKG.HTTPGET on UniData, MVPKG.HTTPGET on UniVerse -- the
-* "*" is the global catalog, which UniVerse rejects because it catalogs LOCAL).
-* Three spellings of one idea, each carrying a platform's catalog rules into a
-* declaration that only wanted to say "this is a function".  What answers now is
-* what the dependency installs: HTTPGET/HTTPGETFILE from curl, JSONDECODE from
-* json, MAPFIELD from mapfield.  The dependency IS the seam, which is what the
-* jBASE arm already said and the other two worked around.
+*     >MVPKG install mvx-lang/json
+*     Program "MVPKG.META": Line 41, Unable to load subroutine.
+*
+* Nothing installs, so the account never gets past "pulling managed deps".
+*
+* jBASE IS DIFFERENT FOR A REASON, not by accident.  Its bootstrap programs are
+* shipped under the BARE names (jbase/MAPFIELD, JSONDECODE, HTTPGET,
+* HTTPGETFILE), so the bare declaration finds the client's own copy first and
+* the real package takes the name over later through JBCOBJECTLIST order.  udt
+* and uv ship the same programs PREFIXED (udt/MVPKG.MAPFIELD ...), and the
+* CALLING clause is what reaches them.
+*
+* AND PREFIXED IS RIGHT ON UNIDATA.  Its catalog is GLOBAL: a bare MAPFIELD
+* cataloged by the client would be a system-wide name competing with the real
+* package, with no search order to separate them -- the hazard mvpkg-jblib
+* describes for jBASE, where the path ordering solves it and UniData has no
+* equivalent.
+*
+* UNIVERSE TAKES THE SAME CLAUSE AS UNIDATA BUT NOT THE SAME NAME.  A leading
+* "*" names the GLOBAL catalog, and UniVerse packages are cataloged LOCAL -- per
+* account, which is also what makes each program typeable as a verb.  Asking for
+* "*MVPKG.MAPFIELD" there fails with "is not in the CATALOG space" even though
+* the program is cataloged and callable; the bare name resolves through the
+* account's VOC.
+*
+* MVX gets none of these: JBASE, UDT and UV are all undefined there, and the
+* names are builtins or extensions the system account exports.
+*
+* FLAT GUARDS, one per platform: an $IFDEF nested inside an $ELSE compiles on
+* UniData and FAILS on UniVerse.
+$IFDEF JBASE
    DEFFUN HTTPGET(A)
    DEFFUN JSONDECODE(A, B)
    DEFFUN MAPFIELD(A, B, C, D, E)
+$ENDIF
+$IFDEF UDT
+   DEFFUN HTTPGET(A) CALLING "*MVPKG.HTTPGET"
+   DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
+$ENDIF
+$IFDEF UV
+   DEFFUN HTTPGET(A) CALLING "MVPKG.HTTPGET"
+   DEFFUN JSONDECODE(A, B) CALLING "MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "MVPKG.MAPFIELD"
+$ENDIF
    SPEC = ""
    SPEC<-1> = MAPFIELD("name", 1, "", "", "")
    SPEC<-1> = MAPFIELD("version", 2, "", "", "")
