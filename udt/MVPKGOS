@@ -465,6 +465,19 @@ $IFDEF UV
 $ENDIF
    WRITE (PTYPE : @FM : SDIR : @FM : "D_BP") ON LVF, "MVPKG.SRC"
    OPEN "MVPKG.SRC" TO LSF ELSE RESULT = "MVPKGOS: cannot open " : SDIR ; RETURN
+* LLIST IS DECLARED BEFORE THE SELECT FILLS IT.  UniData reads `SELECT ... TO
+* var` as USING var, not assigning it, and says so at compile time --
+*
+*     Warning: Variable 'LLIST' never assigned a value
+*
+* -- then again at run time, into the middle of the user's install:
+*
+*     In /usr/ud83/sys/CTLG/m/MVPKGOS at line 468 WARNING: UNINITIALIZED
+*     VARIABLE USED! Zero Assumed!
+*
+* Harmless -- the SELECT overwrites it either way -- but it fires on EVERY
+* package install and reads like a fault in the thing being installed.
+   LLIST = ""
    SELECT LSF TO LLIST
    RDONE = 0
    LOOP UNTIL RDONE DO
