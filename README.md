@@ -197,11 +197,17 @@ release and hosting your own registry are documented in that repo.
 
 ## Manifest
 
-A package's registry metadata mirrors MVX's `PKG` fields (`name`, `version`,
-`description`, a `dependencies` list — space-separated, each entry
-`[?]name[@system][:constraint]` as above — and, for resolution across platforms,
-a `systems` list). `mkrelease.sh` takes the dependencies as its fifth
-argument. The release tar carries the account's own `.mvx` / `PKG`.
+`mvpkg.json` is the manifest, and the only one. It carries `name`, `version`,
+`description`, a `dependencies` list (each entry `[?]name[@system][:constraint]`
+as above) and, for resolution across platforms, a `systems` list.
+`mkrelease.sh` takes the dependencies as its fifth argument. The release tar
+carries the account's own `.mvx` and `mvpkg.json`.
+
+There used to be a second manifest, `PKG`, carrying the same five fields in line
+order. Nothing kept the two in step and they drifted — mvpkg's `PKG` said `1.3`
+where its `mvpkg.json` said `1.3.0`, and the json package shipped the two
+disagreeing about a dependency. The registry only ever read `mvpkg.json`, so
+`PKG` is gone.
 
 **`provides`.** A package may also declare a `provides` list — virtual names it
 satisfies. It is how a package stands in for another: if `udt_curses` is later

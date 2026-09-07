@@ -318,5 +318,31 @@ else
   bad "every unguarded MVPKGOS op exists in both seams" "$(printf '%s' "$missing" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ' ')"
 fi
 
+# --- 10. one manifest, and it is mvpkg.json ------------------------------------
+# There were two: PKG carried name, version, description, systems and
+# dependencies as bare lines, and mvpkg.json carries the same plus what PKG had
+# no room for.  Nothing kept them in step, so they drifted -- mvpkg's PKG line 2
+# said "1.3" while its mvpkg.json said "1.3.0", and the json package shipped the
+# two disagreeing about which system a dependency applied to (mvx-lang/json#23).
+# The registry only ever read mvpkg.json.
+say "one manifest"
+if [ -e PKG ]; then
+  bad "PKG is gone; mvpkg.json is the manifest" "PKG still exists in the repo root"
+else
+  ok "PKG is gone; mvpkg.json is the manifest"
+fi
+readers=""
+for f in $SRC; do
+  grep -vE '^\s*\*' "$f" | grep -qE '"PKG"' && readers="$readers $f"
+done
+for f in $(ls ./*.sh udt/*.sh uv/*.sh jbase/*.sh 2>/dev/null); do
+  grep -vE '^\s*#' "$f" | grep -qE '/PKG"|/PKG |\$HERE/PKG|\$ROOT/PKG' && readers="$readers $f"
+done
+if [ -z "$readers" ]; then
+  ok "nothing reads a PKG manifest"
+else
+  bad "nothing reads a PKG manifest" "still read by:$readers"
+fi
+
 printf '\n%s\n' "source-checks: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -295,10 +295,12 @@ else
 fi
 say "HTTP transport: $HTTPWHICH"
 say "pulling managed deps (json, cmd, ${HTTPPKG#mvx-lang/}) + registering mvpkg over curl  [needs network]"
-# this release's own version (PKG line 2) — released layout has PKG beside
+# this release's own version, from mvpkg.json — released layout has it beside
 # install.sh, the dev tree has it one up — so register records what is actually
-# installed, not whatever the registry currently calls latest.
-MVVER="$(sed -n 2p "$HERE/PKG" 2>/dev/null || true)"; [ -n "$MVVER" ] || MVVER="$(sed -n 2p "$HERE/../PKG" 2>/dev/null || true)"
+# installed, not whatever the registry currently calls latest.  ONE MANIFEST:
+# PKG used to carry the same fields in line order and drifted from this one.
+mvpkg_ver() { sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -1; }
+MVVER="$(mvpkg_ver "$HERE/mvpkg.json")"; [ -n "$MVVER" ] || MVVER="$(mvpkg_ver "$HERE/../mvpkg.json")"
 # ONE MVPKG command per udt session.  Each `MVPKG install` spawns child udt
 # processes (compile + catalog) that talk over SysV message queues; running
 # several commands back-to-back in a single piped session intermittently fails
