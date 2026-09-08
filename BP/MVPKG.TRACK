@@ -19,6 +19,13 @@
 * cannot hang on it.  Nothing is printed -- an install that says "could not
 * reach the registry" every time is worse than one that quietly did not.
 $INCLUDE MVPKG.INC PLATFORM.H
+* NO MVX ARM, AND THAT IS THE POINT.  On MVX the transport is the runtime's own:
+* HTTPPOST is an extension the system account exports, built into mvx through
+* MVX_PACKAGES rather than installed by mvpkg -- so it is always there, the way
+* HTTPGET already is for MVPKG.META, and needs no declaration.  The three below
+* reach mvpkg's OWN wrapper because on those systems the POST would otherwise
+* come from a package mvpkg installs, and the thing reporting an install cannot
+* depend on the install having happened (the same bootstrap rule as #133).
 $IFDEF JBASE
       DEFFUN MVPKG.HTTPPOST(A, B, C)
 $ENDIF
@@ -99,5 +106,12 @@ TJSEND:
       IF TEND # "" THEN TJ := "," : DQ : "endian" : DQ : ":" : DQ : TEND : DQ
       TJ := "}"
       TURL = TREG : "/installs/" : TRIM(TNAME)
+* The intrinsic takes the response file as a fourth argument and returns the
+* status; the wrapper takes three and returns the same.  TCODE is discarded
+* either way -- this is best-effort and every error is swallowed.
+$IFDEF MVX
+      TCODE = HTTPPOST(TURL, "application/json", TJ, "/dev/null")
+$ELSE
       TCODE = MVPKG.HTTPPOST(TURL, "application/json", TJ)
+$ENDIF
       RETURN
