@@ -529,6 +529,74 @@ $ENDIF
 * (GITCLONE, libgit2) — no shell, any tier, and the same call works on mvx-git and
 * udt-git; the package repos are normal source trees (plain BP/*), which a plain
 * working-tree clone materialises directly.
+* SRCCLONE / SRCSHA — clone the package's repo, and read back the commit it
+* landed on.  TWO ROUTES, and the split is not cosmetic.
+*
+* THE ENGINE'S PLAIN CLONE IS WRONG ON UniData AND UniVerse, and mv_git says so
+* in GIT.CLONE: a native account's records live at VOC/<id>, so checking them
+* out writes a DIRECTORY named VOC and the account can then never create its own
+* VOC file -- "the checkout blocks the account it was meant to become".  Clone
+* is also the one operation a session cannot do for itself: it creates an
+* account that does not exist yet, and an agent running in THIS account cannot
+* materialise records into THAT one.
+*
+* So those two hand over to the udt-git / uv-git CLI exactly as GIT.CLONE does,
+* rather than keeping a second implementation of something already known to be
+* broken.  This call used to be an unguarded CALL GITCLONE, which is that very
+* implementation -- and on UniData it does not even resolve, because the engine
+* ops are CallC functions there and nothing catalogs GITCLONE:
+*
+*     In .../MVPKG.INSTALL at line 551 Cannot find (.../CTLG/g/GITCLONE)
+*
+* MVX and jBASE keep the engine call: both have GITCLONE as a real subroutine,
+* and neither materialises into a native account directory the way U2 does.
+*
+* Both routes report the same two things: "cloned " on success, and a first log
+* line of "commit <full-sha>".
+SRCCLONE:
+$IFDEF MVX
+   CALL GITCLONE(REPO, TGTDIR, REF, CLOUT)
+$ENDIF
+$IFDEF JBASE
+   CALL GITCLONE(REPO, TGTDIR, REF, CLOUT)
+$ENDIF
+$IFDEF UDT
+   GITCLI = "udt-git" ; GOSUB SRCCLI
+$ENDIF
+$IFDEF UV
+   GITCLI = "uv-git" ; GOSUB SRCCLI
+$ENDIF
+   RETURN
+
+SRCCLI:
+* 2>&1 because the CLI reports progress and failures on stderr and only the
+* final line on stdout -- without it a clone that FAILED came back as silence
+* (the same trap GIT.CLONE records).
+   CCMD = GITCLI : ' clone "' : REPO : '" "' : TGTDIR : '"'
+   IF REF # "" THEN CCMD := ' "' : REF : '"'
+   CCMD := " 2>&1"
+   CALL MVPKG.SH(CCMD, CLOUT, CLST)
+   RETURN
+
+SRCSHA:
+$IFDEF MVX
+   CALL GITLOG(TGTDIR, 1, LGOUT)
+$ENDIF
+$IFDEF JBASE
+   CALL GITLOG(TGTDIR, 1, LGOUT)
+$ENDIF
+$IFDEF UDT
+   GITCLI = "udt-git" ; GOSUB SRCCLILOG
+$ENDIF
+$IFDEF UV
+   GITCLI = "uv-git" ; GOSUB SRCCLILOG
+$ENDIF
+   RETURN
+
+SRCCLILOG:
+   CALL MVPKG.SH('cd "' : TGTDIR : '" && ' : GITCLI : " log 2>/dev/null", LGOUT, LGST)
+   RETURN
+
 SRCINSTALL:
    GOSUB HASGIT
    IF NOT(GITOK) THEN PRINT "mvpkg: source installs need the git package — MVPKG install mvx-lang/git" ; RETURN
@@ -548,7 +616,7 @@ SRCINSTALL:
    * any tier, portable across mvx-git / udt-git; the clone sets up the working
    * tree + origin, so `MVPKG update` can GIT PULL it later.
    CLOUT = ""
-   CALL GITCLONE(REPO, TGTDIR, REF, CLOUT)
+   GOSUB SRCCLONE
    IF INDEX(CLOUT, "cloned ", 1) = 0 THEN PRINT "mvpkg: clone failed — " : CLOUT ; RETURN
    * A source install COMPILES the package, so its build dependencies have to be
    * here first — mvpkg itself, say, supplies the shared PLATFORM.H that managed
@@ -577,18 +645,54 @@ SRCINSTALL:
       SREC<3,SAN> = "source"
    END
    CALL MVPKGOS("STOREWRITE", "installed", SREC, SERR)
+   * THE RESOLVED COMMIT, NOT THE REF.  A ref is a moving target: "dev" today and
+   * "dev" next week are different trees, so pinning the ref would make an
+   * install-from-lock reproduce a NAME rather than a build.  GITLOG's first line
+   * is the standard `git log` header, "commit <full-sha>" (mv_package#23).
+   *
+   * Best-effort: an engine that cannot answer leaves the pin empty rather than
+   * failing an install that has already succeeded.  A missing SHA costs
+   * reproducibility, not the package.
+   LKSHA = "" ; LGOUT = ""
+   GOSUB SRCSHA
+   LGL1 = FIELD(FIELD(FIELD(LGOUT, @AM, 1), CHAR(10), 1), CHAR(13), 1)
+   IF FIELD(LGL1, " ", 1) = "commit" THEN LKSHA = TRIM(FIELD(LGL1, " ", 2))
+
    * record it in this account's lock too (version "source"), so LIST shows it
-   * deployed here and MVPKG.HAS finds it.
+   * deployed here and MVPKG.HAS finds it -- with <4> SOURCE, <5> REF and <6>
+   * COMMIT, the three the lock has always defined and nothing has ever written.
+   *
+   * AT THE PACKAGE'S OWN POSITION, whether it is new or already pinned.  This
+   * used to write only when the name was ABSENT, so installing the same package
+   * from a different ref left the earlier pin in place -- the lock would name a
+   * commit that was no longer what is built here, which is worse than naming
+   * none.  The parallel multivalues make the position the only thing to get
+   * right.
    CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", LREC)
-   SFND = 0
+   IF LREC = "" THEN LREC = "MVPKG-LOCK"
+   LKPOS = 0
    FOR LI = 1 TO DCOUNT(LREC<2>, @VM)
-      IF TRIM(LREC<2,LI>) = META<1> THEN SFND = 1
+      IF TRIM(LREC<2,LI>) = META<1> THEN LKPOS = LI
    NEXT LI
-   IF SFND = 0 THEN
-      IF LREC = "" THEN LREC = "MVPKG-LOCK"
-      LREC<2,-1> = META<1>
-      LREC<3,-1> = "source"
-      CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", LREC, LERR)
+   IF LKPOS = 0 THEN
+      LKPOS = DCOUNT(LREC<2>, @VM) + 1
+      LREC<2,LKPOS> = META<1>
+   END
+   LREC<3,LKPOS> = "source"
+   LREC<4,LKPOS> = "git"
+   LREC<5,LKPOS> = REF
+   LREC<6,LKPOS> = LKSHA
+   CALL MVPKGOS("MDWRITE", "MVPKG.LOCK", LREC, LERR)
+   IF LERR # "" THEN PRINT "mvpkg: " : LERR
+* SAY WHICH COMMIT, because the ref asked for is not always the ref you get.
+* udt-git clone currently ignores its ref argument and checks out the default
+* branch (mv_git#233), so `install name@main` and `install name@1.1.0` both land
+* on develop -- silently, until someone reads the tree.  Printing the resolved
+* commit is how that becomes visible at the moment it happens, and it is the
+* value the lock pins.
+   IF LKSHA # "" THEN
+      RD = "" ; IF REF # "" THEN RD = REF : " -> "
+      PRINT "  commit: " : RD : LKSHA[1, 12]
    END
    PRINT "source install: " : TGTDIR : " is an editable working copy of " : META<1>
    PRINT "  (built + deployed).  Edit BP/*, then  MVPKG update " : META<1>
