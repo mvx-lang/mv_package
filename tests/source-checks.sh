@@ -188,6 +188,10 @@ arity_report=$(awk '
       decl[name] = count_args(args)
       next
   }
+  # A COMMENT IS NOT A CALL.  This read every line, so writing `CALL FOO(a, b)`
+  # in a comment to explain what a caller does was reported as a real call with
+  # the wrong arity -- a check that fails on its own documentation.
+  /^[[:space:]]*\*/ { next }
   # calls: CALL NAME(a, b, c) -- skip CALL @VAR (dispatch by name)
   /CALL[[:space:]]+[A-Z0-9._]+[[:space:]]*\(/ {
       rest = $0
@@ -269,6 +273,114 @@ for f in $SRC; do
 done
 if [ -z "$nested" ]; then ok "no \$IFDEF nested inside an \$ELSE (uv rejects it)"
 else bad "no \$IFDEF nested inside an \$ELSE" "found in:$nested"; fi
+
+# --- 9. an unguarded MVPKGOS op must exist in BOTH seams --------------------
+# MVPKGOS is two files -- BP/MVPKGOS is the MVX seam, udt/MVPKGOS serves udt, uv
+# and jbase -- and they had grown two names for one operation: MVX spelled the
+# recursive delete RMRF and had no RMDIR, the other spelled it RMDIR and had no
+# RMRF.  MVPKG.ONE called RMRF with no guard, so on all three MV ports it
+# reached nothing, fell through to "unknown op", and the package directory was
+# never cleared before the new version was unpacked over it.  A leftover _<PROG>
+# object then shadowed the source shipped beside it, and stray files were
+# compiled and cataloged as if they belonged to the package (#130).
+#
+# Nothing failed.  The one call that would have said so had its RESULT
+# overwritten by the next call before it was read.
+#
+# A call INSIDE a platform guard is fine -- that is how MVPKG.REMOVE reaches
+# each seam's own spelling -- so only unguarded calls are checked here.
+say "the MVPKGOS seam"
+mvxops=$(grep -oE 'CASE OP = "[A-Z.]+"' BP/MVPKGOS | grep -oE '"[A-Z.]+"' | tr -d '"' | sort -u)
+mvops=$(grep -oE 'CASE OP = "[A-Z.]+"( OR OP = "[A-Z.]+")*' udt/MVPKGOS | grep -oE '"[A-Z.]+"' | tr -d '"' | sort -u)
+missing=""
+for f in $SRC; do
+  case "$f" in */MVPKGOS) continue;; esac
+  # ops called at guard depth 0 only
+  for op in $(awk '
+      /^[[:space:]]*[$]IFDEF/ || /^[[:space:]]*[$]IFNDEF/ { d++; next }
+      /^[[:space:]]*[$]ENDIF/ { if (d>0) d--; next }
+      /^[[:space:]]*\*/ { next }
+      d == 0 && /CALL MVPKGOS\(/ {
+         while (match($0, /CALL MVPKGOS\("[A-Z.]+"/)) {
+            s = substr($0, RSTART, RLENGTH); gsub(/.*"/, "", s)
+            t = substr($0, RSTART, RLENGTH); sub(/CALL MVPKGOS\("/, "", t); sub(/"$/, "", t)
+            print t
+            $0 = substr($0, RSTART + RLENGTH)
+         }
+      }' "$f"); do
+    echo "$mvxops" | grep -qx "$op" || missing="$missing $f:$op:missing-from-BP/MVPKGOS"
+    echo "$mvops"  | grep -qx "$op" || missing="$missing $f:$op:missing-from-udt/MVPKGOS"
+  done
+done
+if [ -z "$missing" ]; then
+  ok "every unguarded MVPKGOS op exists in both seams"
+else
+  bad "every unguarded MVPKGOS op exists in both seams" "$(printf '%s' "$missing" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ' ')"
+fi
+
+# --- 10. one manifest, and it is mvpkg.json ------------------------------------
+# There were two: PKG carried name, version, description, systems and
+# dependencies as bare lines, and mvpkg.json carries the same plus what PKG had
+# no room for.  Nothing kept them in step, so they drifted -- mvpkg's PKG line 2
+# said "1.3" while its mvpkg.json said "1.3.0", and the json package shipped the
+# two disagreeing about which system a dependency applied to (mvx-lang/json#23).
+# The registry only ever read mvpkg.json.
+say "one manifest"
+if [ -e PKG ]; then
+  bad "PKG is gone; mvpkg.json is the manifest" "PKG still exists in the repo root"
+else
+  ok "PKG is gone; mvpkg.json is the manifest"
+fi
+readers=""
+for f in $SRC; do
+  grep -vE '^\s*\*' "$f" | grep -qE '"PKG"' && readers="$readers $f"
+done
+for f in $(ls ./*.sh udt/*.sh uv/*.sh jbase/*.sh 2>/dev/null); do
+  grep -vE '^\s*#' "$f" | grep -qE '/PKG"|/PKG |\$HERE/PKG|\$ROOT/PKG' && readers="$readers $f"
+done
+if [ -z "$readers" ]; then
+  ok "nothing reads a PKG manifest"
+else
+  bad "nothing reads a PKG manifest" "still read by:$readers"
+fi
+
+# --- 11. a seam function is declared per platform, never bare ----------------
+# HTTPGET, HTTPGETFILE, HTTPPOST, JSONDECODE and MAPFIELD are the names the client
+# needs BEFORE the packages that provide them are installed, which is the whole
+# of what mvpkg does first.  It ships its own bootstrap copies: jBASE catalogs
+# them under the BARE names, so a bare DEFFUN finds them; udt and uv catalog
+# them PREFIXED (MVPKG.MAPFIELD ...) and the CALLING clause is what reaches
+# them.
+#
+# #116 collapsed the three arms in MVPKG.META and MVPKG.ONE to one bare
+# declaration, on the premise that the dependency is the seam.  True once a
+# package is deployed; false before one is -- and a fresh UniData or UniVerse
+# account could not install anything at all (#133):
+#
+#     Program "MVPKG.META": Line 41, Unable to load subroutine.
+#
+# So: bare is correct INSIDE $IFDEF JBASE, and wrong at guard depth 0.
+say "the seam declarations"
+seambare=""
+for f in $SRC; do
+  case "$f" in */MVPKG.SH|*/MVPKGOS) continue;; esac
+  hits=$(awk '
+      /^[[:space:]]*[$]IFDEF/ || /^[[:space:]]*[$]IFNDEF/ { d++; next }
+      /^[[:space:]]*[$]ENDIF/ { if (d>0) d--; next }
+      /^[[:space:]]*\*/ { next }
+      d == 0 && /^[[:space:]]*DEFFUN[[:space:]]+(HTTPGET|HTTPGETFILE|HTTPPOST|JSONDECODE|MAPFIELD|MVPKG.HTTPPOST)[[:space:]]*\(/ {
+         line = $0
+         sub(/^[[:space:]]*DEFFUN[[:space:]]+/, "", line)
+         sub(/[[:space:]]*\(.*$/, "", line)
+         print line
+      }' "$f")
+  for h in $hits; do seambare="$seambare $f:$h"; done
+done
+if [ -z "$seambare" ]; then
+  ok "no seam function is declared outside a platform guard"
+else
+  bad "no seam function is declared outside a platform guard" "bare:$seambare"
+fi
 
 printf '\n%s\n' "source-checks: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

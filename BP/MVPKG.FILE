@@ -3,8 +3,38 @@
 *
 *   FOP    in   "READ" | "WRITE" | "DELETE"
 *   FPATH  in   the OS path
-*   FDATA  in/out  the contents, lines separated by @AM
+*   FDATA  in/out  the contents, lines separated by CHAR(10)
 *   FOK    out  1 on success, 0 on failure
+*
+* READ RETURNS THE FILE'S BYTES, NEWLINES AND ALL.  This header used to say @AM
+* and no caller believed it: every one of them parses with CHAR(10) --
+* STOREHEAL's operator marker, MVPKG.FIXPERMS' "am I mvpkg" check,
+* CALLC.EXISTS' function list, MVPKG.REG's registry URL.  Only two of the four
+* ports actually produced @AM, so the contract was three different things at
+* once and the callers were right about one of them.
+*
+* MEASURED, on the same two-line file:
+*
+*   MVX        OSREAD -> raw bytes         DCOUNT nl=3 am=1
+*   UniData    OSREAD -> raw bytes         DCOUNT nl=3 am=1
+*   UniVerse   READSEQ, joined here        DCOUNT nl=1 am=2   <- was wrong
+*   jBASE      OSREAD -> @AM per line      DCOUNT nl=1 am=2   <- was wrong
+*
+* So UniVerse joins with CHAR(10) and jBASE converts back; MVX and UniData
+* already did the right thing.  What this cost: STOREHEAL read the store
+* owner's path as the empty string on both ports, wrote a VOC file pointer to
+* "/MVPKG.STORE", and `MVPKG list` could not open the store (#118).
+*
+* THE TWO PORTS THAT REWRITE ALSO LOSE THE TRAILING NEWLINE, so a file ending
+* "\n" reads back one byte shorter there than on MVX/UniData.  Every caller
+* TRIMs or FIELDs, so nothing depends on it -- but it is not byte-exact and
+* should not be relied on to be.
+*
+* WRITE IS DELIBERATELY LENIENT and takes either separator: UniVerse splits on
+* @AM and writes what is left as one line -- so CHAR(10)-separated data goes
+* out verbatim, correctly -- and jBASE's OSWRITE turns @AM back into newlines.
+* Callers pass both (INCSETUP builds PLATFORM.H with @AM, STOREHEAL writes the
+* marker with CHAR(10)) and both land as proper text files.
 *
 * MVX, UniData and jBASE have OSREAD / OSWRITE.  UNIVERSE HAS NEITHER, and
 * again says so unhelpfully -- it reads `OSREAD X FROM P` as a variable being
@@ -26,12 +56,22 @@ $INCLUDE MVPKG.INC PLATFORM.H
 $IFDEF UV
    BEGIN CASE
       CASE FOP = "READ"
+* JOINED WITH CHAR(10), NOT @AM -- READ RETURNS THE FILE'S BYTES.  See the note
+* at the head of this file: every caller parses with CHAR(10).
+*
+* FFIRST, not `IF FDATA = ""`: a file whose first line is blank left FDATA empty,
+* so the SECOND line became the first and every line number after it was off by
+* one.  The flag says "nothing read yet", which is the actual question.
          FDATA = ""
          OPENSEQ FPATH TO FFV THEN
-            FDONE = 0
+            FDONE = 0 ; FFIRST = 1
             LOOP UNTIL FDONE DO
                READSEQ FLINE FROM FFV THEN
-                  IF FDATA = "" THEN FDATA = FLINE ELSE FDATA<-1> = FLINE
+                  IF FFIRST THEN
+                     FDATA = FLINE ; FFIRST = 0
+                  END ELSE
+                     FDATA := CHAR(10) : FLINE
+                  END
                END ELSE FDONE = 1
             REPEAT
             CLOSESEQ FFV
@@ -78,7 +118,16 @@ $IFDEF JBASE
 * parse OSREAD.  Each platform that has the statements carries its own copy.
    BEGIN CASE
       CASE FOP = "READ"
+* jBASE's OSREAD IS NOT UniData's.  UniData (and MVX) hand back the file's bytes
+* with its newlines; jBASE turns every newline into an @AM on the way in and
+* drops the trailing one.  Convert back, so READ means the same thing here.
+*
+* The CONVERT *statement* is used deliberately: the CONVERT() *function* takes
+* its arguments in the opposite order on jBASE and returns rubbish rather than
+* failing (mv_package#54).  The statement is correct here and MVX -- which
+* rejects it -- never compiles this arm.
          OSREAD FDATA FROM FPATH THEN FOK = 1 ELSE FDATA = ""
+         CONVERT @AM TO CHAR(10) IN FDATA
       CASE FOP = "WRITE"
 * OSWRITE takes no ELSE clause on either system -- that is a syntax error.
          OSWRITE FDATA ON FPATH

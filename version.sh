@@ -31,14 +31,20 @@ mvpkg_version() {
 
 # mvpkg_stamp_manifests <staged-dir> <version>
 #
-# Write the release's version into the PKG and mvpkg.json it ships.
+# Write the release's version into the mvpkg.json it ships.
 #
-# THESE TWO ARE NOT DECORATION.  The registry reads them, and mvpkg REGISTERS
-# ITSELF from PKG line 2 -- so a manifest left behind by the tag makes the
-# package manager install one version and then report another:
+# ONE MANIFEST.  There used to be two -- PKG carried the same five fields in
+# line order (name, version, description, systems, dependencies) and nothing
+# kept them in step, so they drifted: PKG line 2 said "1.3" where mvpkg.json
+# said 1.3.0, and json shipped the two disagreeing about a dependency
+# (mvx-lang/json#23).  The registry only ever read mvpkg.json.
+#
+# IT IS NOT DECORATION.  The registry reads it, and mvpkg REGISTERS ITSELF from
+# the version in it -- so a manifest left behind by the tag makes the package
+# manager install one version and then report another:
 #
 #     installed  mvpkg 1.17.0-beta4       (the tag, via the registry)
-#     registered mvx-lang/mvpkg 1.16.0    (PKG line 2, months stale)
+#     registered mvx-lang/mvpkg 1.16.0    (the manifest, months stale)
 #
 # Keeping them in step by hand does not work; mv_git shipped 2.0.0 declaring
 # itself 2.0.0-rc5 doing exactly that.  So the manifests take the same source of
@@ -50,15 +56,10 @@ mvpkg_stamp_manifests() {
     _dir="$1"; _ver="$2"
     [ -n "$_dir" ] && [ -n "$_ver" ] || return 0
 
-    if [ -f "$_dir/PKG" ]; then
-        # line 2 is the version (line 1 name, 3 description, 4 systems)
-        awk -v v="$_ver" 'NR==2 {print v; next} {print}' "$_dir/PKG" > "$_dir/PKG.$$" \
-            && mv "$_dir/PKG.$$" "$_dir/PKG"
-    fi
     if [ -f "$_dir/mvpkg.json" ]; then
         sed 's/^\([[:space:]]*"version"[[:space:]]*:[[:space:]]*\)"[^"]*"/\1"'"$_ver"'"/' \
             "$_dir/mvpkg.json" > "$_dir/mvpkg.json.$$" \
             && mv "$_dir/mvpkg.json.$$" "$_dir/mvpkg.json"
     fi
-    printf 'stamped manifests: %s\n' "$_ver"
+    printf 'stamped mvpkg.json: %s\n' "$_ver"
 }

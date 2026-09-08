@@ -20,5 +20,11 @@ $ENDIF
    PRINT "version:      " : META<2>
    PRINT "description:  " : META<4>
    PRINT "dependencies: " : META<5>
-   PRINT "tarball:      " : REG : META<3>
+*  The registry returns an ABSOLUTE artifact URL, so prefixing REG glued the two
+*  together ("https://mv-package.heydon.iohttps://github.com/..."). Prefix only a
+*  RELATIVE one, which is what MVPKG.ONE does before it fetches -- and why install
+*  worked while info misreported.
+   TURL = META<3>
+   IF TURL[1, 4] # "http" THEN TURL = REG : TURL
+   PRINT "tarball:      " : TURL
    RETURN

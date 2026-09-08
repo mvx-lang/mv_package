@@ -87,6 +87,7 @@ $IFDEF JBASE
    CALL MVPKG.ENV("MVPKG_STORE", JBSTORE)
    IF JBSTORE = "" THEN JBSTORE = UDT : "/" : MPREFIX : "mvpkg"
    JBLIBTOOL = JBSTORE : "/mvpkg-jblib"
+   JBREBUILD = JBSTORE : "/mvpkg-jbrebuild"
 $ENDIF
    BEGIN CASE
       CASE OP = "MKDIR"
@@ -126,6 +127,27 @@ $ENDIF
          * aggregate -- see CALLC above.
 $IFDEF UDT
          CALL MVPKG.SH('"':BUILDER:'"', MVSHOUT, MVSHST)
+$ENDIF
+$IFDEF JBASE
+* jBASE HAS AN AGGREGATE TOO, and it is the one MVPKG itself lives in: every
+* program a user catalogs lands in $HOME/lib/lib0.so, so one unresolvable DEFC
+* makes it unloadable and takes every account on the machine down with it (#128).
+*
+* THIS POINTS AT THE TOOL RATHER THAN RUNNING IT, which is the whole lesson of
+* #128 and was learned twice.  A rebuild driven from here inherits the shell
+* MVPKG.SH gives it, and that shell does not carry the jBASE environment: `jsh`
+* resolves but every compile fails.  Run that way it cleared the library, could
+* not rebuild it, and left the account in a worse state than the fault it was
+* repairing -- measured, on the account that had just been recovered.
+*
+* And even with a working environment it would be the wrong door: the case that
+* needs this is the one where no MVPKG command loads at all, so the repair has
+* to be reachable without MVPKG.  Saying where it is, is the useful thing this
+* command can do here.
+         RESULT = "jBASE rebuilds the client library from a shell, not from" : CHAR(10)
+         RESULT := "MVPKG -- the library MVPKG's own subroutines live in is what" : CHAR(10)
+         RESULT := "is being replaced.  From this account, run:" : CHAR(10) : CHAR(10)
+         RESULT := "    " : JBREBUILD : " " : @PATH
 $ENDIF
       CASE OP = "PLATFORM"
       * CONVERT() TAKES ITS ARGUMENTS IN THE OPPOSITE ORDER ON jBASE.  U2 and
@@ -317,8 +339,19 @@ $ENDIF
 $IFDEF UDT
          CALL MVPKG.SH('"':BUILDER:'" remove "':P1:'"', MVSHOUT, MVSHST)
 $ENDIF
-      CASE OP = "RMDIR"
-         * P1 = directory.  Remove it (the store copy on uninstall).
+      CASE OP = "RMRF" OR OP = "RMDIR"
+         * P1 = directory.  Remove it and everything under it -- the store copy
+         * on uninstall, and the previous version's tree before a new one is
+         * unpacked over it.
+         *
+         * TWO NAMES FOR ONE OP, because the seams had grown two.  MVX's MVPKGOS
+         * spells this RMRF and has no RMDIR; this one spelled it RMDIR and had
+         * no RMRF -- so MVPKG.ONE's unguarded CALL MVPKGOS("RMRF", DEST, ...)
+         * reached nothing here and fell through to "unknown op", on every one of
+         * UniData, UniVerse and jBASE.  The destination was never cleared, and
+         * the error saying so was overwritten by the next call before anyone
+         * looked at it (mv_package#130).  RMRF is the name the callers use, so
+         * it answers to that; RMDIR stays because MVPKG.REMOVE still says it.
          CALL MVPKG.SH('rm -rf "':P1:'"', MVSHOUT, MVSHST)
       CASE OP = "CHOWN"
          * P1 = path, P2 = user (or user:group).  Hand ownership to the operator —
@@ -465,6 +498,19 @@ $IFDEF UV
 $ENDIF
    WRITE (PTYPE : @FM : SDIR : @FM : "D_BP") ON LVF, "MVPKG.SRC"
    OPEN "MVPKG.SRC" TO LSF ELSE RESULT = "MVPKGOS: cannot open " : SDIR ; RETURN
+* LLIST IS DECLARED BEFORE THE SELECT FILLS IT.  UniData reads `SELECT ... TO
+* var` as USING var, not assigning it, and says so at compile time --
+*
+*     Warning: Variable 'LLIST' never assigned a value
+*
+* -- then again at run time, into the middle of the user's install:
+*
+*     In /usr/ud83/sys/CTLG/m/MVPKGOS at line 468 WARNING: UNINITIALIZED
+*     VARIABLE USED! Zero Assumed!
+*
+* Harmless -- the SELECT overwrites it either way -- but it fires on EVERY
+* package install and reads like a fault in the thing being installed.
+   LLIST = ""
    SELECT LSF TO LLIST
    RDONE = 0
    LOOP UNTIL RDONE DO
@@ -502,8 +548,28 @@ $IFDEF JBASE
 * moves where the catalog is WRITTEN and JBCOBJECTLIST moves where the loader
 * LOOKS, and BOTH are needed: set only the first and every catalog reports
 * success while every CALL fails.  mvpkg-jblib owns the second half.
+* AND THE LIBRARY IS NAMED AFTER THE PACKAGE.  jBASE names it lib%n.so by
+* default, so every package's library is "lib0.so" and the only thing an error
+* names is the path it sits in -- or, for the client's own, nothing useful at
+* all: an unresolvable symbol reports
+*
+*     jBASE: /home/rocky/lib/lib0.so.84: undefined symbol: JBCURLPOST
+*
+* which is the fault, the caller and the package at fault all unnamed (#128).
+* jLibDefinition in the library directory sets that name, and CATALOG reads it
+* from JBCDEV_LIB -- measured: libname = libmvx-lang_demo%n.so produced
+* libmvx-lang_demo0.so.1, and a CALL resolved from it through JBCOBJECTLIST.
+*
+* %n STAYS IN THE PATTERN.  It is jBASE's sequence number and maxsize rolls a
+* second library when one grows past it; drop %n and the second one would
+* collide with the first.
    IF DCOUNT(ITEMS, @AM) > 0 THEN
       CALL MVPKG.SH('mkdir -p "' : PKGLIB : '"', MVSHOUT, MVSHST)
+      * the package key is the directory's own name, which mvpkg already made
+      * filesystem-safe (PKGKEY, "/" -> "_"); JBSAFE is the belt to that braces
+      JBNAME = FIELD(PKGLIB, "/", DCOUNT(PKGLIB, "/") - 1)
+      GOSUB JBSAFE
+      GOSUB JBLIBDEF
       JBSET = PUTENV("JBCDEV_LIB=" : PKGLIB)
       JBSET = PUTENV("JBCDEV_BIN=" : PKGLIB)
       EXECUTE "BASIC " : SDIR : " *"
@@ -511,16 +577,76 @@ $IFDEF JBASE
       CALL MVPKG.SH('"' : JBLIBTOOL : '" add "' : PKGLIB : '"', MVSHOUT, MVSHST)
    END
    RETURN
+
+* JBLIBDEF -- write PKGLIB/jLibDefinition naming the library after JBKEY, and
+* drop any catalog library left there under another name.  Only the catalog's
+* own files are removed: a package's lib directory holds nothing else (its
+* native code, where it has any, goes to $HOME/lib), so this cannot take out a
+* library someone else owns.
+JBLIBDEF:
+   JBDEF = "## GENERATED BY MVPKG -- the shared object is named for the package."
+   JBDEF<-1> = "## Changing libname here without clearing the old library leaves"
+   JBDEF<-1> = "## both on JBCOBJECTLIST, resolving the same name two ways."
+   JBDEF<-1> = "libname = lib" : JBKEY : "%n.so"
+   JBDEF<-1> = "exportname = lib.el"
+   JBDEF<-1> = "objectdir = obj"
+   JBDEF<-1> = "maxsize = 1048576"
+   CALL MVPKG.SH('rm -f "' : PKGLIB : '"/lib0.so* "' : PKGLIB : '"/lib.el', MVSHOUT, MVSHST)
+   CALL MVPKG.FILE("WRITE", PKGLIB : "/jLibDefinition", JBDEF, MVFOK)
+   RETURN
+
+* JBSAFE -- JBKEY = JBNAME reduced to characters a filename and a linker both
+* accept.  Package names are owner/name and mvpkg already folds the "/" to "_"
+* for the store directory, but nothing constrains the rest of a registry name,
+* and a stray character here would name a library that cannot be opened.
+JBSAFE:
+   JBOK = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+   JBKEY = ""
+   FOR JBI = 1 TO LEN(JBNAME)
+      JBCH = JBNAME[JBI, 1]
+      IF INDEX(JBOK, JBCH, 1) > 0 THEN JBKEY := JBCH ELSE JBKEY := "_"
+   NEXT JBI
+   IF JBKEY = "" THEN JBKEY = "pkg"
+   RETURN
 $ENDIF
    NI = DCOUNT(ITEMS, @AM)
    IF NI > 0 THEN
-      NEEDBAS = ""
+* COMPILE IN BATCHES: `BASIC <file> <item> ...` SEGFAULTS AT 26 ITEMS.  UniData
+* takes an item list on the verb, and a list of 26 or more crashes the session
+* with SIGSEGV -- after compiling every one of them successfully, so the output
+* reads like a clean run right up to the point it dies:
+*
+*     item id =GIT.AGENT
+*     Compiling Unibasic: .../BP/GIT.AGENT in mode 'u'.
+*     compilation finished
+*     Segmentation fault
+*
+* Measured on UniData 8.3: 25 items compile, 26 crash, with two disjoint sets of
+* the same size behaving identically.  It is the COUNT, not the length -- 26
+* four-character names (130 bytes of list) crash where 25 twenty-one-character
+* names (550 bytes) do not.  So this is not a command-line limit to be worked
+* around by shortening anything; the list simply has to be shorter than 26.
+*
+* mvpkg handed it 59 for mvx-lang/git, so that package could not be installed at
+* all on a machine that did not already have its objects built (#125).  It read
+* as intermittent because a partial install leaves the package dir in the store
+* and the NEXT install then finds objects, compiles nothing, and succeeds.
+*
+* BATSZ is 20, not 25: the ceiling is measured on one UniData release and this
+* leaves room for it to be lower elsewhere.  The cost of a smaller batch is one
+* extra EXECUTE per 20 programs.
+      BATSZ = 20
+      NEEDBAS = "" ; NBAT = 0
       FOR CI = 1 TO NI
          OBJID = "_" : ITEMS<CI>
          READ OBJREC FROM LSF, OBJID THEN
             HASOBJ = 1
          END ELSE
-            NEEDBAS := ITEMS<CI> : " "
+            NEEDBAS := ITEMS<CI> : " " ; NBAT = NBAT + 1
+            IF NBAT >= BATSZ THEN
+               EXECUTE "BASIC MVPKG.SRC " : NEEDBAS
+               NEEDBAS = "" ; NBAT = 0
+            END
          END
       NEXT CI
       IF NEEDBAS # "" THEN EXECUTE "BASIC MVPKG.SRC " : NEEDBAS

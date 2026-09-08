@@ -19,13 +19,31 @@
 * pointers + declared files (the mvpkg.json deploy block, walked by MVPKGDEP).
    SUBROUTINE MVPKG.ONE(META, REG, RESULT)
    $INCLUDE MVPKG.INC PLATFORM.H
-$IFNDEF MVX
-* jBASE HAS NO `DEFFUN ... CALLING`.  That clause is how U2 points a local name
-* at a cataloged one, and mvpkg uses it to reach its own seam wrappers.  jBASE
-* resolves a DEFFUN by NAME against the catalog instead -- and the names are
-* already there, because the packages mvpkg depends on catalog them: HTTPGET and
-* HTTPGETFILE from curl (curl-cmd), JSONDECODE from json, MAPFIELD from mapfield.
-* So the indirection is not needed there; the dependency IS the seam.
+* THE WRAPPERS ARE THE BOOTSTRAP, which is why they are back (#133).
+*
+* #116 collapsed these three blocks into one bare declaration on the premise
+* that "the dependency IS the seam".  That is true once a package is deployed.
+* It is false BEFORE one is -- which is exactly when mvpkg has to run, because
+* installing the first package is its job.  On a fresh UniData or UniVerse
+* account nothing answers a bare MAPFIELD and the client cannot bootstrap:
+*
+*     >MVPKG install mvx-lang/json
+*     Program "MVPKG.META": Line 41, Unable to load subroutine.
+*
+* Nothing installs, so the account never gets past "pulling managed deps".
+*
+* jBASE IS DIFFERENT FOR A REASON, not by accident.  Its bootstrap programs are
+* shipped under the BARE names (jbase/MAPFIELD, JSONDECODE, HTTPGET,
+* HTTPGETFILE), so the bare declaration finds the client's own copy first and
+* the real package takes the name over later through JBCOBJECTLIST order.  udt
+* and uv ship the same programs PREFIXED (udt/MVPKG.MAPFIELD ...), and the
+* CALLING clause is what reaches them.
+*
+* AND PREFIXED IS RIGHT ON UNIDATA.  Its catalog is GLOBAL: a bare MAPFIELD
+* cataloged by the client would be a system-wide name competing with the real
+* package, with no search order to separate them -- the hazard mvpkg-jblib
+* describes for jBASE, where the path ordering solves it and UniData has no
+* equivalent.
 *
 * UNIVERSE TAKES THE SAME CLAUSE AS UNIDATA BUT NOT THE SAME NAME.  A leading
 * "*" names the GLOBAL catalog, and UniVerse packages are cataloged LOCAL -- per
@@ -34,8 +52,11 @@ $IFNDEF MVX
 * the program is cataloged and callable; the bare name resolves through the
 * account's VOC.
 *
+* MVX gets none of these: JBASE, UDT and UV are all undefined there, and the
+* names are builtins or extensions the system account exports.
+*
 * FLAT GUARDS, one per platform: an $IFDEF nested inside an $ELSE compiles on
-* UniData and FAILS on UniVerse, which is what this block used to be.
+* UniData and FAILS on UniVerse.
 $IFDEF JBASE
    DEFFUN HTTPGETFILE(A, B)
 $ENDIF
@@ -44,7 +65,6 @@ $IFDEF UDT
 $ENDIF
 $IFDEF UV
    DEFFUN HTTPGETFILE(A, B) CALLING "MVPKG.HTTPGETFILE"
-$ENDIF
 $ENDIF
    RESULT = ""
    CALL MVPKGOS("STORE", "", "", STORE)
@@ -97,7 +117,18 @@ $ENDIF
       IF TURL[1, 4] # "http" THEN TURL = REG : TURL
       ST = HTTPGETFILE(TURL, TMP)
       IF ST < 200 OR ST >= 300 THEN RESULT = "download failed (status " : ST : ")" ; PRINT RESULT ; RETURN
+      * CLEAR THE OLD TREE FIRST, AND SAY SO IF IT CANNOT BE.  Unpacking over a
+      * previous version leaves behind every file the new one does not replace,
+      * and on UniData a leftover _<PROG> object is preferred to the source
+      * shipped beside it -- so the package runs the OLD program while every
+      * check says otherwise.  A stray file is not merely inert either: it gets
+      * compiled and cataloged as if it were part of the package.
+      *
+      * The result of THIS call was read into ERR and then overwritten by the
+      * UNTAR below before anything tested it, which is how the seam answering
+      * "unknown op RMRF" on all three MV ports went unnoticed (#130).
       CALL MVPKGOS("RMRF", DEST, "", ERR)
+      IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
       CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
       IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
       CALL MVPKG.SH('rm -f "' : TMP : '"', MVSHOUT, MVSHST)

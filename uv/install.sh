@@ -199,8 +199,11 @@ printf 'MVPKG init %s\nQUIT\n' "$INITFLAGS" | uv 2>&1 \
 # ONE MVPKG PER SESSION.  Each install compiles and catalogs, and keeping that
 # to one command per session is the same rule the client install above follows.
 say "pulling managed deps (json, cmd, curl-cmd) + registering mvpkg  [needs network]"
-MVVER="$(sed -n 2p "$HERE/PKG" 2>/dev/null || true)"
-[ -n "$MVVER" ] || MVVER="$(sed -n 2p "$HERE/../PKG" 2>/dev/null || true)"
+# ONE MANIFEST: the version comes from mvpkg.json.  PKG carried the same
+# fields in line order and drifted from it, so it is gone.
+mvpkg_ver() { sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -1; }
+MVVER="$(mvpkg_ver "$HERE/mvpkg.json")"
+[ -n "$MVVER" ] || MVVER="$(mvpkg_ver "$HERE/../mvpkg.json")"
 for dep in mvx-lang/json mvx-lang/cmd mvx-lang/curl-cmd; do
    ( cd "$HERE" && printf 'MVPKG install %s\nQUIT\n' "$dep" | uv ) 2>&1 \
       | grep -aiE "installed |deployed|up to date|error|not found|refus" | sed 's/^/  /' || true
