@@ -149,6 +149,14 @@ if [ -f "$HERE/mvpkg-jblib" ]; then
    # $JBCGLOBALDIR/config/jbase_config.json -- the same array PATH and
    # LD_LIBRARY_PATH are set in, and where jBASE itself documents JBCOBJECTLIST.
    say "installed mvpkg-jblib -> $MVPKG_STORE/mvpkg-jblib"
+fi
+# The recovery tool, in the store for the same reason and one more: it repairs
+# the library MVPKG's own subroutines live in, so it cannot be an MVPKG command.
+if [ -f "$HERE/mvpkg-jbrebuild" ]; then
+   install -m 0755 "$HERE/mvpkg-jbrebuild" "$MVPKG_STORE/mvpkg-jbrebuild"
+   say "installed mvpkg-jbrebuild -> $MVPKG_STORE/mvpkg-jbrebuild"
+   say "      if \$HOME/lib ever fails to load (\"undefined symbol\"), run it from"
+   say "      this account to rebuild the client: $MVPKG_STORE/mvpkg-jbrebuild"
    say "NOTE: installing a package adds its library directory to JBCOBJECTLIST in"
    say "      ${JBCGLOBALDIR:-/opt/jbase/global}/config/jbase_config.json (one managed line)"
    say "      Packages go FIRST, \$HOME/lib LAST. jBASE searches the list in order,"
