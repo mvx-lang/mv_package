@@ -1,0 +1,204 @@
+* mv_package — MVPKG subcommand: perms.
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG perms                    show the vendor shell-command grant
+* MVPKG perms add <cmd>          add a command to it
+* MVPKG perms remove <cmd>       take one off
+*
+* THE GRANT IS A LINE IN THE OPEN ACCOUNT, and it was already there before this
+* command existed -- .mv-account carries
+*
+*     permit prog:MVPKG = mkdir rmtree untar mkpkg chown
+*
+* in the same syntax .mvx uses, which is why this edits that line rather than
+* inventing a store for it.  The open descriptor is the portable form: it
+* travels with the account and is re-seeded into the native .mvx on checkout.
+*
+* ENFORCED ON MVX, DECLARED EVERYWHERE ELSE.  On MVX this is source #1 of the
+* OSEXEC whitelist (mvx_perm.c) -- a program blessed as MVPKG may run these
+* commands and no others.  UniData, UniVerse and jBASE shell out freely and
+* gate on nothing, so there the same line is a DECLARATION: it says what the
+* package intends to run, for the registry to publish and a reader to check.
+* Editing it on any platform sets up the declaration; only MVX acts on it.
+*
+* BOTH FILES ON MVX.  .mv-account is what travels; .mvx is what the runtime
+* reads.  Writing only the first would leave the account saying one thing and
+* mvx enforcing another until the next checkout re-seeded it.
+   SUBROUTINE MVPKG.PERMS
+$INCLUDE MVPKG.INC PLATFORM.H
+$IFDEF MVX
+   S = SENTENCE()
+   CALL MVPKG.ENV("MVXACCOUNT", ACCT) ; IF ACCT = "" THEN ACCT = "."
+$ELSE
+   S = @SENTENCE
+   ACCT = @PATH
+$ENDIF
+   PACT = OCONV(TRIM(FIELD(S, " ", 3)), "MCL")
+   PCMD = TRIM(FIELD(S, " ", 4))
+   POPEN = ACCT : "/.mv-account"
+   PNATIVE = ACCT : "/.mvx"
+   PTAG = "permit prog:MVPKG = "
+*
+   BEGIN CASE
+      CASE PACT = "" OR PACT = "list"
+         GOSUB PREAD
+         PRINT "account:  " : ACCT
+         IF PFOUND THEN
+            PRINT "permit:   " : PGRANT
+         END ELSE
+            PRINT "permit:   (none declared)"
+         END
+         GOSUB PDECL
+$IFDEF MVX
+         PRINT "enforced: yes — MVX gates OSEXEC on this grant"
+$ELSE
+         PRINT "enforced: no — a declaration here; only MVX gates on it"
+$ENDIF
+      CASE PACT = "add"
+         IF PCMD = "" THEN PRINT "usage: MVPKG perms add <cmd>" ; RETURN
+         GOSUB PREAD
+         GOSUB PHAS
+         IF PIN THEN PRINT PCMD : " is already granted" ; RETURN
+         IF TRIM(PGRANT) = "" THEN PGRANT = PCMD ELSE PGRANT = TRIM(PGRANT) : " " : PCMD
+         GOSUB PWRITE
+         PRINT "permit:   " : PGRANT
+      CASE PACT = "remove"
+         IF PCMD = "" THEN PRINT "usage: MVPKG perms remove <cmd>" ; RETURN
+         GOSUB PREAD
+         GOSUB PHAS
+         IF NOT(PIN) THEN PRINT PCMD : " is not granted" ; RETURN
+         PNEW = ""
+         PN = DCOUNT(TRIM(PGRANT), " ")
+         FOR PI = 1 TO PN
+            PW = TRIM(FIELD(TRIM(PGRANT), " ", PI))
+            IF PW # "" AND PW # PCMD THEN
+               IF PNEW = "" THEN PNEW = PW ELSE PNEW = PNEW : " " : PW
+            END
+         NEXT PI
+         PGRANT = PNEW
+         GOSUB PWRITE
+         IF PGRANT = "" THEN PRINT "permit:   (none)" ELSE PRINT "permit:   " : PGRANT
+      CASE 1
+         PRINT "usage: MVPKG perms [list | add <cmd> | remove <cmd>]"
+   END CASE
+   RETURN
+
+* PREAD — PGRANT = the commands on the grant line, PFOUND = 1 when there is one.
+* The open descriptor is read, not the native one: it is the form that travels,
+* and on the ported systems it is the only one of the two that exists.
+PREAD:
+   PGRANT = "" ; PFOUND = 0
+   CALL MVPKG.FILE("READ", POPEN, PBUF, MVFOK)
+   IF NOT(MVFOK) THEN RETURN
+   PLN = DCOUNT(PBUF, CHAR(10))
+   FOR PI = 1 TO PLN
+      PL = FIELD(PBUF, CHAR(10), PI)
+      IF PL[1, LEN(PTAG)] = PTAG THEN
+         PGRANT = TRIM(PL[LEN(PTAG) + 1, LEN(PL)])
+         PFOUND = 1
+      END
+   NEXT PI
+   RETURN
+
+* PHAS — PIN = 1 when PCMD is already on the grant.  Whole words only: a grant
+* of "mkdir" must not answer for "mkdirs", and INDEX on the joined string would.
+PHAS:
+   PIN = 0
+   PN = DCOUNT(TRIM(PGRANT), " ")
+   FOR PI = 1 TO PN
+      IF TRIM(FIELD(TRIM(PGRANT), " ", PI)) = PCMD THEN PIN = 1
+   NEXT PI
+   RETURN
+
+* PWRITE — put the grant back, into the open descriptor always and the native
+* one when this is MVX.  The line is REPLACED where it stands, so the rest of
+* the descriptor keeps its order and its comments; if there is none yet, it is
+* appended.
+*
+* IT WILL NOT CREATE .mv-account.  A released udt, uv or jbase account has no
+* open descriptor -- the build stages BP, mvpkg.json and the installer, and the
+* descriptor belongs to the account in its open (mvx) form.  Writing a file
+* holding nothing but a permit line would look like a descriptor and not be
+* one, so an install that has none is told where the grant does live.  Nothing
+* is lost by refusing: the grant is enforced only on MVX, and what this install
+* carries is the DECLARATION in mvpkg.json, which list already shows.
+PWRITE:
+   CALL MVPKG.FILE("READ", POPEN, PCHK, PCHKOK)
+   IF NOT(PCHKOK) THEN
+      PRINT "mvpkg: this account has no open descriptor (" : POPEN : ")"
+      PRINT "  the grant lives in the account's OPEN form, where MVX enforces it;"
+      PRINT "  what is installed here carries the declaration in mvpkg.json."
+      RETURN
+   END
+   PTARGET = POPEN ; GOSUB PPUT
+$IFDEF MVX
+   PTARGET = PNATIVE ; GOSUB PPUT
+$ENDIF
+   RETURN
+
+PPUT:
+   CALL MVPKG.FILE("READ", PTARGET, PBUF, MVFOK)
+   IF NOT(MVFOK) THEN PBUF = ""
+   POUT = "" ; PDONE = 0
+   PLN = DCOUNT(PBUF, CHAR(10))
+   FOR PI = 1 TO PLN
+      PL = FIELD(PBUF, CHAR(10), PI)
+      IF PL[1, LEN(PTAG)] = PTAG THEN
+         IF PGRANT # "" THEN
+            IF POUT = "" THEN POUT = PTAG : PGRANT ELSE POUT = POUT : CHAR(10) : PTAG : PGRANT
+         END
+         PDONE = 1
+      END ELSE
+         * the trailing empty field after the file's last newline is not a line
+         IF PI = PLN AND TRIM(PL) = "" THEN
+            PL = PL
+         END ELSE
+            IF POUT = "" THEN POUT = PL ELSE POUT = POUT : CHAR(10) : PL
+         END
+      END
+   NEXT PI
+   IF PDONE = 0 AND PGRANT # "" THEN
+      IF POUT = "" THEN POUT = PTAG : PGRANT ELSE POUT = POUT : CHAR(10) : PTAG : PGRANT
+   END
+   POUT = POUT : CHAR(10)
+   CALL MVPKG.FILE("WRITE", PTARGET, POUT, MVFOK)
+   IF NOT(MVFOK) THEN PRINT "mvpkg: cannot write " : PTARGET
+   RETURN
+
+* PDECL — what the package's own manifest says it runs.  A different thing from
+* the grant and worth seeing beside it: mvpkg.json "shell" is the surface the
+* package DECLARES to the registry, the grant is what a blessed program is
+* ALLOWED to run.  They can disagree, and that is the interesting case.
+PDECL:
+   CALL MVPKG.FILE("READ", ACCT : "/mvpkg.json", PJ, MVFOK)
+   IF NOT(MVFOK) THEN RETURN
+   PSH = ""
+   PP = INDEX(PJ, '"shell"', 1)
+   IF PP = 0 THEN RETURN
+   PTAIL = PJ[PP, LEN(PJ)]
+   PB = INDEX(PTAIL, "[", 1) ; PE = INDEX(PTAIL, "]", 1)
+   IF PB = 0 OR PE <= PB THEN RETURN
+   PLIST = PTAIL[PB + 1, PE - PB - 1]
+* A CHARACTER WALK, NOT `CONVERT ... TO ... IN`.  That statement works on jBASE
+* and UniData and MVX REJECTS IT ("expected '=' in assignment"), so it cannot
+* appear outside a platform guard -- and the CONVERT() function is worse, taking
+* its arguments in the opposite order on jBASE and returning rubbish rather than
+* failing (#54).  Collecting the word characters is the same on all four.
+   POK = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-"
+   PW = ""
+   FOR PI = 1 TO LEN(PLIST)
+      PCH = PLIST[PI, 1]
+      IF INDEX(POK, PCH, 1) > 0 THEN
+         PW := PCH
+      END ELSE
+         IF PW # "" THEN
+            IF PSH = "" THEN PSH = PW ELSE PSH = PSH : " " : PW
+            PW = ""
+         END
+      END
+   NEXT PI
+   IF PW # "" THEN
+      IF PSH = "" THEN PSH = PW ELSE PSH = PSH : " " : PW
+   END
+   IF PSH # "" THEN PRINT "declared: " : PSH
+   RETURN
