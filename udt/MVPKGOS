@@ -87,6 +87,7 @@ $IFDEF JBASE
    CALL MVPKG.ENV("MVPKG_STORE", JBSTORE)
    IF JBSTORE = "" THEN JBSTORE = UDT : "/" : MPREFIX : "mvpkg"
    JBLIBTOOL = JBSTORE : "/mvpkg-jblib"
+   JBREBUILD = JBSTORE : "/mvpkg-jbrebuild"
 $ENDIF
    BEGIN CASE
       CASE OP = "MKDIR"
@@ -126,6 +127,27 @@ $ENDIF
          * aggregate -- see CALLC above.
 $IFDEF UDT
          CALL MVPKG.SH('"':BUILDER:'"', MVSHOUT, MVSHST)
+$ENDIF
+$IFDEF JBASE
+* jBASE HAS AN AGGREGATE TOO, and it is the one MVPKG itself lives in: every
+* program a user catalogs lands in $HOME/lib/lib0.so, so one unresolvable DEFC
+* makes it unloadable and takes every account on the machine down with it (#128).
+*
+* THIS POINTS AT THE TOOL RATHER THAN RUNNING IT, which is the whole lesson of
+* #128 and was learned twice.  A rebuild driven from here inherits the shell
+* MVPKG.SH gives it, and that shell does not carry the jBASE environment: `jsh`
+* resolves but every compile fails.  Run that way it cleared the library, could
+* not rebuild it, and left the account in a worse state than the fault it was
+* repairing -- measured, on the account that had just been recovered.
+*
+* And even with a working environment it would be the wrong door: the case that
+* needs this is the one where no MVPKG command loads at all, so the repair has
+* to be reachable without MVPKG.  Saying where it is, is the useful thing this
+* command can do here.
+         RESULT = "jBASE rebuilds the client library from a shell, not from" : CHAR(10)
+         RESULT := "MVPKG -- the library MVPKG's own subroutines live in is what" : CHAR(10)
+         RESULT := "is being replaced.  From this account, run:" : CHAR(10) : CHAR(10)
+         RESULT := "    " : JBREBUILD : " " : @PATH
 $ENDIF
       CASE OP = "PLATFORM"
       * CONVERT() TAKES ITS ARGUMENTS IN THE OPPOSITE ORDER ON jBASE.  U2 and
