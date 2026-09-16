@@ -167,7 +167,7 @@ mvpkg: mvx-lang/cmd needs mvx-lang/getopt ^1.1, and 1.0 does not satisfy it
 `--force` does it anyway, and prints what it is overriding.
 
 The registry URL is taken from `$MVPKG_REGISTRY`, then a persisted `mvpkg.conf`,
-then the built-in default (`https://mv-package.heydon.io`).
+then the built-in default (`https://packages.mvx-lang.org`).
 
 **Portability.** The only non-MultiValue operations — unpacking a tar, making a
 directory — go through the `MVPKGOS` subroutine, the one per-platform seam. HTTP
@@ -191,9 +191,12 @@ library, all in one command (see below). `search` awaits a fuller JSON seam
 The registry service, website, and release/build tooling live in their own
 repository — **[mv-package-registry](https://github.com/mvx-lang/mv-package-registry)**
 — so installing the client doesn't pull in the server. It is live at
-**https://mv-package.heydon.io**: browse packages there, or hit the JSON API
+**https://packages.mvx-lang.org**: browse packages there, or hit the JSON API
 the client speaks (`/package/<name>`, `/search`, `/tarball/…`). Publishing a
 release and hosting your own registry are documented in that repo.
+
+The registry answered at `mv-package.heydon.io` before the move, and still
+serves the API there, so a client installed earlier keeps working untouched.
 
 ## Manifest
 
