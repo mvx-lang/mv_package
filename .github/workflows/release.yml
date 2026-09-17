@@ -90,6 +90,30 @@ jobs:
         uses: mvx-lang/mvx/.github/actions/setup-mvx@main
         with:
           version: latest
+      # CURL IS A DEPENDENCY OF THIS PACKAGE ON MVX, and part of the build.
+      # MVPKG.TRACK calls HTTPPOST, which only curl provides; without it in the
+      # toolchain that source cannot compile (#154).  It is also the HTTPS
+      # transport -- the toolchain's own `http' package has no TLS (mvx#218) --
+      # so it replaces that package here, rather than competing with it for
+      # HTTPGET.  Latest release, checksum verified, as setup-mvx does for mvx.
+      - name: Install curl into the toolchain
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          ASSET_GLOB="curl-*-mvx-linux-$(uname -m)-le.tar.gz"
+          D="$(mktemp -d)"
+          gh release download --repo mvx-lang/curl --pattern "$ASSET_GLOB" \
+            --pattern "$ASSET_GLOB.sha256" --dir "$D"
+          (cd "$D" && sha256sum -c ./*.sha256)
+          mkdir -p "$D/x" && tar -xzf "$D"/curl-*.tar.gz -C "$D/x"
+          SYS="$MVXHOME/share/mvx/system"
+          sudo rm -f "$SYS"/LIB/libmvxext_http.*
+          sudo cp "$D"/x/LIB/* "$SYS/LIB/"
+          # the compiler learns extension names from the system EXPORTS
+          sudo sh -c "cat '$D/x/EXPORTS' >> '$SYS/EXPORTS'"
+          echo "curl $(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$D/x/mvpkg.json") installed into $SYS"
       - name: Build + stage the mvx account
         id: pkg
         shell: bash
@@ -136,12 +160,10 @@ jobs:
           # bundled sources over a system account -- and run MVPKG from an
           # empty account, the way a fresh install is used.
           #
-          # MVXSYSTEM is set deliberately.  This proves the PACKAGE is whole:
-          # its verb registered and every CALL it makes resolvable from the
-          # system account.  It does not prove a toolchain can FIND that
-          # account -- the published runtime cannot without MVXSYSTEM
-          # (mvx#210).  Once that is fixed, installing into $MVXHOME's own
-          # system account and dropping MVXSYSTEM here would cover both.
+          # MVXSYSTEM points at a COPY of the system account, so the package
+          # can be laid over it without touching the toolchain the next step
+          # tars up.  (The published runtime finds its own system account
+          # since mvx#210; that is covered by mvx's install check.)
           SMOKE="$(mktemp -d)"
           cp -a "$MVXHOME/share/mvx/system" "$SMOKE/system"
           for d in CATALOG VOC LIB CMD.BP CMD.BP.DICT BP; do
@@ -156,7 +178,40 @@ jobs:
             *) echo "::error::the packaged MVPKG does not run from a fresh account"
                printf '%s\n' "$out"; exit 1 ;;
           esac
-          rm -rf "$SMOKE"
+
+          # EVERY SUBROUTINE THE PACKAGE SHIPS SOURCE FOR IS IN IT.  The usage
+          # screen above touches none of MVPKG.META, .ONE, .SEARCH or .TRACK,
+          # which is how 1.24.1 shipped without all four (#154).
+          missing=""
+          for f in BP CMD.BP; do
+            [ -d "$DIST/$f" ] || continue
+            for it in $(ls "$DIST/$f"); do
+              case "$it" in *.H) continue ;; esac
+              [ -e "$DIST/CATALOG/$it" ] || [ -e "$DIST/LIB/$it.so" ] || missing="$missing $it"
+            done
+          done
+          [ -z "$missing" ] || { echo "::error::the package is missing compiled code for:$missing"; exit 1; }
+          echo "smoke: every shipped source is compiled"
+
+          # AND A COMMAND THAT DOES SOMETHING.  MVPKG search goes through
+          # MVPKG.SEARCH, the registry URL and HTTPGET.  The registry is a
+          # local one -- plain http on 127.0.0.1, which MVPKG allows for a
+          # test registry -- so the check does not depend on the live site.
+          REGD="$(mktemp -d)"
+          printf '{"packages":[{"name":"smoke/probe","version":"9.9.9","description":"release smoke"}]}' > "$REGD/search"
+          PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])')"
+          (cd "$REGD" && exec python3 -m http.server "$PORT" --bind 127.0.0.1 >/dev/null 2>&1) &
+          REGPID=$!
+          sleep 1
+          sout="$(cd "$SMOKE/acct" && MVXSYSTEM="$SMOKE/system" MVPKG_REGISTRY="http://127.0.0.1:$PORT" \
+                  mvx -a "$SMOKE/acct" -c "MVPKG search probe" 2>&1 || true)"
+          kill "$REGPID" 2>/dev/null || true
+          case "$sout" in
+            *"smoke/probe"*) echo "smoke: MVPKG search reaches a registry" ;;
+            *) echo "::error::MVPKG search did not reach the registry"
+               printf '%s\n' "$sout"; exit 1 ;;
+          esac
+          rm -rf "$SMOKE" "$REGD"
 
           tar czf "$BASE.tar.gz" -C "$DIST" .
           sha256sum "$BASE.tar.gz" > "$BASE.tar.gz.sha256"
