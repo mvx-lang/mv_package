@@ -6,7 +6,7 @@
   "license": "GPL-2.0-only",
   "systems": ["mvx", "udt", "uv", "jbase"],
   "dependencies": [
-    "curl@!mvx",
+    "curl",
     "mvx-lang/json@!mvx:^1.5",
     "?mvx-lang/cmd",
     "?mvx-lang/git"
