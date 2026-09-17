@@ -66,7 +66,24 @@ jobs:
   # that is already there.
   mvx-binary:
     needs: [source]
-    runs-on: ubuntu-24.04
+    # BOTH ARCHITECTURES mvx publishes a toolchain for (mv_package#149).  The
+    # mvx installer fetches this client at install time, so an architecture
+    # with no build here is a toolchain that installs without a package
+    # manager.  Nothing is cross-compiled: each leg builds natively, setup-mvx
+    # picks the matching toolchain by `uname -m`, and the asset name takes the
+    # same `uname -m` -- aarch64 on arm64, which is also the token the mvx
+    # installer asks for (CMAKE_SYSTEM_PROCESSOR).
+    #
+    # fail-fast: false, as in mvx's own release: one architecture failing must
+    # not cancel the other's upload.  `mark` needs this whole job, so a release
+    # missing either build is still never marked latest.
+    #
+    # Both legs only UPLOAD, into the release `source` created -- see needs.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v5
       - name: Set up the mvx toolchain (latest published build)
@@ -91,15 +108,56 @@ jobs:
           # Compiled account: BP source + CATALOG verb + LIB subroutine .so's + VOC
           # + the cmd bundle + metadata; drop debug + runtime state.
           DIST="dist/$BASE"; rm -rf "$DIST"; mkdir -p "$DIST"
-          for d in BP CATALOG LIB VOC VOC.DICT CMD.BP CMD.BP.DICT mvpkg.json LICENSE README.md; do
+          for d in BP CATALOG LIB CMD.BP CMD.BP.DICT mvpkg.json LICENSE README.md; do
             [ -e "$d" ] && cp -a "$d" "$DIST/" || true
           done
+          # VOC: ONLY the verbs VERBS declares, as mkpkg.sh ships them.  The
+          # account's own VOC also holds derived plumbing (VOC/LIB), and the
+          # mvx installer copies a package's VOC into the SYSTEM account, so
+          # the whole directory would plant this account's file pointers in
+          # every toolchain that installs it (#150).  VOC.DICT is the
+          # platform's, not the account's, and does not ship either.
+          mkdir -p "$DIST/VOC"
+          while IFS= read -r v || [ -n "$v" ]; do
+            case "$v" in ''|'#'*) continue ;; esac
+            cp "VOC/$v" "$DIST/VOC/$v"
+          done < VERBS
           # the tag, into the manifests this artifact ships — mvpkg registers
           # itself from mvpkg.json (mv_package#72).  The account builds do the
           # same through their own build script.
           . ./version.sh
           mvpkg_stamp_manifests "$DIST" "$VER"
           find "$DIST" -name '*.dSYM' -prune -exec rm -rf {} + 2>/dev/null || true
+
+          # THE PACKAGE MUST PRODUCE A WORKING VERB, not merely the files for
+          # one (#150).  Every check above passed for months while MVPKG was
+          # unregistered and its first CALL could not resolve.  So do what the
+          # mvx installer does -- lay the package's CATALOG, VOC, LIB and
+          # bundled sources over a system account -- and run MVPKG from an
+          # empty account, the way a fresh install is used.
+          #
+          # MVXSYSTEM is set deliberately.  This proves the PACKAGE is whole:
+          # its verb registered and every CALL it makes resolvable from the
+          # system account.  It does not prove a toolchain can FIND that
+          # account -- the published runtime cannot without MVXSYSTEM
+          # (mvx#210).  Once that is fixed, installing into $MVXHOME's own
+          # system account and dropping MVXSYSTEM here would cover both.
+          SMOKE="$(mktemp -d)"
+          cp -a "$MVXHOME/share/mvx/system" "$SMOKE/system"
+          for d in CATALOG VOC LIB CMD.BP CMD.BP.DICT BP; do
+            [ -d "$DIST/$d" ] || continue
+            mkdir -p "$SMOKE/system/$d" && cp -a "$DIST/$d/." "$SMOKE/system/$d/"
+          done
+          mkdir -p "$SMOKE/acct"
+          MVXSYSTEM="$SMOKE/system" mvx -a "$SMOKE/acct" -c "CREATE-FILE VOC" >/dev/null 2>&1 || true
+          out="$(cd "$SMOKE/acct" && MVXSYSTEM="$SMOKE/system" mvx -a "$SMOKE/acct" -c MVPKG 2>&1 || true)"
+          case "$out" in
+            *"usage: MVPKG"*) echo "smoke: MVPKG runs from a fresh account" ;;
+            *) echo "::error::the packaged MVPKG does not run from a fresh account"
+               printf '%s\n' "$out"; exit 1 ;;
+          esac
+          rm -rf "$SMOKE"
+
           tar czf "$BASE.tar.gz" -C "$DIST" .
           sha256sum "$BASE.tar.gz" > "$BASE.tar.gz.sha256"
           echo "tarball=$BASE.tar.gz" >> "$GITHUB_OUTPUT"

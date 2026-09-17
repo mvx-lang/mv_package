@@ -49,9 +49,42 @@ $DEFINE GETENV ENV
 PLATEOF
 echo "wrote MVPKG.INC/PLATFORM.H (MVMASTER=VOC, GETENV=ENV)"
 
-for it in $(cd "$HERE/BP" && ls); do
-  MVXPRIV=developer "$MVX" -a "$HERE" -c "CATALOG BP $it"
+# VOC is a directory file, but no VOC record is TRACKED any more -- VERBS
+# declares the verbs and their records are derived (#45) -- and git does not
+# keep an empty directory.  So a fresh checkout has no VOC at all.  CATALOG
+# compiles first and opens VOC second, so without this every program still
+# lands in CATALOG/, CATALOG prints "cannot open VOC" and STOPs with status 0,
+# and the build reports success having registered no verb (#150).
+mkdir -p "$HERE/VOC"
+
+# BP/ plus every bundled source file beside it.  CMD.BP carries the cmd
+# framework (CMD.INIT/ADD/RUN) that the MVPKG verb CALLs, and on mvx nothing
+# else supplies it: cmd is not in the toolchain's system account, and a CALL is
+# resolved only from LIB/, linked packages and the system account (#150).
+# mkpkg.sh compiles the same BP + *.BP set.
+for f in BP $(cd "$HERE" && ls -d *.BP 2>/dev/null); do
+  for it in $(cd "$HERE/$f" && ls); do
+    MVXPRIV=developer "$MVX" -a "$HERE" -c "CATALOG $f $it"
+  done
 done
+
+# CATALOG cannot fail loudly (see above), so check the outcome it was for:
+# every verb VERBS declares has a V record, pointing at a program that exists.
+# A build that registers nothing must not look like one that worked.
+if [ -f "$HERE/VERBS" ]; then
+  while IFS= read -r vname || [ -n "$vname" ]; do
+    case "$vname" in ''|'#'*) continue ;; esac
+    rec="$HERE/VOC/$vname"
+    if [ ! -x "$HERE/CATALOG/$vname" ]; then
+      echo "build.sh: VERBS names $vname but CATALOG/$vname was not built" >&2; exit 1
+    fi
+    if [ ! -f "$rec" ] || [ "$(sed -n 1p "$rec")" != V ] \
+       || [ "$(sed -n 2p "$rec")" != "CATALOG/$vname" ]; then
+      echo "build.sh: VERBS names $vname but VOC/$vname is not a V record for CATALOG/$vname" >&2
+      exit 1
+    fi
+  done < "$HERE/VERBS"
+fi
 
 # Bless the cataloged MVPKG binary in the SYSTEM account so its vendor permit
 # (`permit prog:MVPKG = mkdir rmtree untar mkpkg chown` in .mvx) binds at the
