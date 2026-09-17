@@ -8,7 +8,7 @@
 * $IFDEF handles the structural ones (the conf location, the OSREAD form).
    SUBROUTINE MVPKG.REG(REG)
 $INCLUDE MVPKG.INC PLATFORM.H
-   DEFURL = "https://mv-package.heydon.io"
+   DEFURL = "https://packages.mvx-lang.org"
 $IFDEF MVX
    CALL MVPKG.ENV("MVXACCOUNT", CONF)
    IF CONF = "" THEN CONF = "."

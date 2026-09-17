@@ -35,3 +35,10 @@ jobs:
 
       - name: Portability rules
         run: sh tests/source-checks.sh
+
+      # Not a source rule: it drives udt/udt-callc-build.sh against a fake
+      # UDTHOME.  Worth a CI step because the thing it guards is system-wide --
+      # UniData has ONE libu2callc.so, so a bad fragment takes functions away
+      # from every account rather than only failing its own package (#143).
+      - name: The CallC aggregator refuses a fragment with no code
+        run: sh tests/callc-guard.sh
