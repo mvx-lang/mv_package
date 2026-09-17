@@ -68,6 +68,25 @@ for f in BP $(cd "$HERE" && ls -d *.BP 2>/dev/null); do
   done
 done
 
+# EVERY SOURCE MUST HAVE COMPILED.  CATALOG reports a failed compile and STOPs
+# with status 0 as well, so without this a source that did not compile simply
+# goes missing from the package: 1.24.1 shipped without MVPKG.META, .ONE,
+# .SEARCH and .TRACK -- install, info and search -- and the build said nothing
+# (#154).  Each source is a verb (CATALOG/<name>) or a subroutine (LIB/<name>).
+case "$(uname)" in Darwin) LIBSFX=dylib ;; *) LIBSFX=so ;; esac
+missing=""
+for f in BP $(cd "$HERE" && ls -d *.BP 2>/dev/null); do
+  for it in $(cd "$HERE/$f" && ls); do
+    case "$it" in *.H) continue ;; esac
+    [ -e "$HERE/CATALOG/$it" ] || [ -e "$HERE/LIB/$it.$LIBSFX" ] || missing="$missing $f/$it"
+  done
+done
+if [ -n "$missing" ]; then
+  echo "build.sh: these sources did not compile:$missing" >&2
+  echo "  (CATALOG's own messages above say why)" >&2
+  exit 1
+fi
+
 # CATALOG cannot fail loudly (see above), so check the outcome it was for:
 # every verb VERBS declares has a V record, pointing at a program that exists.
 # A build that registers nothing must not look like one that worked.
