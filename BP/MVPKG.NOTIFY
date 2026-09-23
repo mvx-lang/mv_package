@@ -7,29 +7,51 @@
 * MVPKG.LOCK version), pop up a modal listing them; the user presses OK to
 * acknowledge and login continues.
 *
-* It is a silent no-op in any NON-interactive session — @USER.TYPE # 0 covers
-* RedBack/U2-web, phantom, batch, and piped sessions (no terminal to draw a
-* modal on).  @USER.TYPE is the portable session-type test: 0 = interactive on
-* UniData/UniVerse and mvx alike (D3 would map its user-vs-phantom PIB onto it).
+* TWO questions have to be asked, and neither answers the other:
+*
+*   IS THERE A TERMINAL?  @USER.TYPE, where it can be asked.
+*   IS A PROGRAM ABOVE US?  @LEVEL, everywhere.
+*
+* The second is not optional.  An account's LOGIN runs on every LOGTO,
+* including one from inside a RUNNING PROGRAM -- a session that is genuinely
+* interactive, so @USER.TYPE passes it -- and drawing a modal there covers
+* that program's screen and eats the keystroke it was waiting for.
    SUBROUTINE MVPKG.NOTIFY
 $INCLUDE MVPKG.INC PLATFORM.H
-* @USER.TYPE is UniData's session-type test and UniVerse has no such variable,
-* so the check is guarded rather than the whole program.  Where it cannot be
-* asked, assume interactive -- the notify is advisory, and staying silent in a
-* real terminal is a worse failure than printing in a phantom.
+* @USER.TYPE is UniData's session-type test, so the check is guarded rather
+* than the whole program.  Where it cannot be asked, assume interactive -- the
+* notify is advisory, and staying silent in a real terminal is a worse failure
+* than printing in a phantom.
+*
+* WHERE IT CANNOT BE ASKED IS TWO PLATFORMS, NOT ONE.  UniVerse has no such
+* variable and says so at compile time.  jBASE COMPILES IT AND RETURNS AN
+* EMPTY STRING -- and "" # 0 is TRUE there (measured on 6.2.1.1, and on
+* UniData and mvx alike), so `IF @USER.TYPE # 0' fired ALWAYS and notify
+* silently never ran on jBASE, on any terminal.  It must assume interactive
+* for the same reason UniVerse does.
 $IFDEF UV
+   MVNOTIFYOK = 1
+$ENDIF
+$IFDEF JBASE
    MVNOTIFYOK = 1
 $ENDIF
 $IFDEF UDT
    MVNOTIFYOK = 1 ; IF @USER.TYPE # 0 THEN MVNOTIFYOK = 0
 $ENDIF
-$IFDEF JBASE
-   MVNOTIFYOK = 1 ; IF @USER.TYPE # 0 THEN MVNOTIFYOK = 0
-$ENDIF
 $IFDEF MVX
    MVNOTIFYOK = 1 ; IF @USER.TYPE # 0 THEN MVNOTIFYOK = 0
 $ENDIF
-   IF NOT(MVNOTIFYOK) THEN RETURN          ;* not a terminal (web/phantom/batch/pipe)
+   IF NOT(MVNOTIFYOK) THEN RETURN          ;* no terminal at all
+
+* AND NOT OVER SOMEONE ELSE'S SCREEN.  @LEVEL compiles on all four -- measured
+* on UniData 8.3, UniVerse 14.2.1, jBASE 6.2.1.1 and mvx -- and reads 0 at a
+* fresh login, 1 when a LOGTO from a running program fired the LOGIN.
+*
+* It is not portable as a BOOLEAN: ScarletDME (OpenQM) counts from 1, so this
+* test would be true at the top level there and disable notify the same way
+* jBASE's @USER.TYPE did.  mvpkg does not target it; a port needs a captured
+* base rather than a truth test.
+   IF @LEVEL THEN RETURN                   ;* a program is above us
 
    * find packages deployed here that the system store has a newer version of
    CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", LREC)
