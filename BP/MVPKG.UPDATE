@@ -213,6 +213,17 @@ SRCUPDATE:
    CALL MVPKGOS("STOREREAD", "SRC." : PKGKEY, "", WCDIR)
    WCDIR = TRIM(WCDIR)
    IF WCDIR = "" THEN PRINT NM : ": source working-copy path not recorded" ; RETURN
+   * A SOURCE INSTALL IS NOT ALWAYS A CLONE (#160).  Without the git package the
+   * source is fetched as a tarball, which leaves a perfectly good tree with no
+   * origin to pull from -- so say what to do instead of reporting that a pull
+   * this tree could never do has failed.
+   CALL MVPKG.FILE("READ", WCDIR : "/.git/HEAD", WCHEAD, WCFOK)
+   IF NOT(WCFOK) THEN
+      PRINT NM : ": " : WCDIR : " is a source tree with no repository (fetched"
+      PRINT "  as a tarball), so there is nothing to pull.  Re-fetch it with:"
+      PRINT "  MVPKG install " : NM : " --source " : WCDIR
+      RETURN
+   END
    PRINT "updating " : NM : " (git pull in " : WCDIR : ") ..."
    TMPF = "/tmp/mvpkg_pull_" : @USERNO
    CALL MVPKG.SH('cd "' : WCDIR : '" && git pull --ff-only; echo $? > "' : TMPF : '"', MVSHOUT, MVSHST)
