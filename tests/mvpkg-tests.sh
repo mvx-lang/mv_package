@@ -140,17 +140,30 @@ t  "the file seam deletes"                  "AFTERDEL=0"     "$OUT"
 
 # ===========================================================================
 say "the client"
+# THE COMMAND FRAMEWORK IS A DEPENDENCY, NOT PART OF THE CLIENT (#158).  mvpkg
+# used to carry a copy of cmd under cmd's own names, so the usage screen worked
+# in any account the client was cataloged in -- and collided with the real cmd
+# package wherever both landed.  It is mvx-lang/cmd's job now, which means an
+# account that has the client but not its dependency cannot print a usage
+# screen, and says so instead.  Skip the framework-driven checks there rather
+# than report a failure the account explains: MVPKG install mvx-lang/cmd.
 OUT=$(RUN "MVPKG")
-t  "no arguments prints the usage"          "usage: MVPKG"   "$OUT"
-t  "usage lists install"                    "install"        "$OUT"
+HAVECMD=1
+case "$OUT" in *"the cmd package is not installed"*) HAVECMD=0 ;; esac
+tcmd() { # tcmd <name> <needle> <output> — a check that needs the framework
+  if [ "$HAVECMD" = 1 ]; then t "$1" "$2" "$3"
+  else skip "$1" "mvx-lang/cmd is not installed in this account"; fi
+}
+tcmd "no arguments prints the usage"        "usage: MVPKG"   "$OUT"
+tcmd "usage lists install"                    "install"        "$OUT"
 tn "usage does not leak a shell error"      "!mkdir"         "$OUT"
 
 OUT=$(RUN "MVPKG help")
-t  "help prints the usage"                  "usage: MVPKG"   "$OUT"
+tcmd "help prints the usage"                  "usage: MVPKG"   "$OUT"
 
 OUT=$(RUN "MVPKG config")
-t  "config reports the registry"            "registry:"      "$OUT"
-t  "config reports the store"               "store:"         "$OUT"
+tcmd "config reports the registry"            "registry:"      "$OUT"
+tcmd "config reports the store"               "store:"         "$OUT"
 tn "config store is not the filesystem root" "store:    /mvpkg" "$OUT"
 tn "config does not leak a shell error"     "No such file or directory" "$OUT"
 
@@ -158,7 +171,7 @@ OUT=$(RUN "MVPKG list")
 tn "list does not leak a shell error"       "!"              "$OUT"
 
 OUT=$(RUN "MVPKG definitely-not-a-command")
-t  "an unknown command is rejected"         "unknown command" "$OUT"
+tcmd "an unknown command is rejected"         "unknown command" "$OUT"
 
 # ===========================================================================
 say "init does not damage the account it initialises"

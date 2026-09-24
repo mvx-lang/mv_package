@@ -12,9 +12,11 @@
 *
 * The verb is built on the cmd command framework: it declares its subcommands
 * and dispatches to one handler subroutine each (MVPKG.INSTALL, MVPKG.INFO, …),
-* which read the invocation sentence themselves.  A cut-down copy of cmd is
-* bundled in CMD.BP so MVPKG runs standalone; the full mv_cmd overrides it when
-* installed.
+* which read the invocation sentence themselves.  mvx-lang/cmd is a REQUIRED
+* dependency: a cut-down copy used to be bundled here under cmd's own names,
+* which did not "override" anything -- it collided, and which copy a CALL bound
+* was the order the directory was read (#158).  Whatever installs mvpkg fetches
+* cmd; the one case that cannot is INIT, below.
 *
 * INIT is the account bootstrap: it lays down MVPKG.INC/PLATFORM.H, the store and
 * lock pointers, and whatever else a fresh account needs — the very things the
@@ -25,8 +27,45 @@ $IFDEF MVX
 $ELSE
    BSENT = @SENTENCE
 $ENDIF
-   IF OCONV(FIELD(BSENT, " ", 2), "MCU") = "INIT" THEN
+   BVERB = OCONV(FIELD(BSENT, " ", 2), "MCU")
+   IF BVERB = "INIT" THEN
       CALL MVPKG.INIT
+      STOP
+   END
+   * AND INSTALL, WHILE cmd IS NOT HERE YET.  cmd is a required dependency, so
+   * the very first thing a fresh account does is fetch it -- and it cannot ask
+   * the command framework to dispatch the command that installs the command
+   * framework.  Bundling a copy of cmd was the old answer and it collided with
+   * the real package (#158); this is the same trick INIT already uses.
+   *
+   * ONLY while cmd is absent.  Once it is in the lock the normal path runs, so
+   * `install --help` and the usage screen behave like every other subcommand.
+   * MVPKG.INSTALL reads its own sentence (every handler does), so dispatching
+   * it directly is the same call CMD.RUN would have made.
+   * IS THE FRAMEWORK HERE?  Same probe HASGIT uses in MVPKG.INSTALL, for the
+   * same reasons: the lock answers on every platform, and on MVX a LINKed or
+   * system-account package is callable without being in this account's lock --
+   * which is how a toolchain install arrives, so asking the lock alone would
+   * refuse to run on a perfectly good install.  Probing rather than calling
+   * also matters on jBASE, where an unresolved CALL traps into the debugger
+   * instead of returning an error (mv_package#54).
+   BHAVECMD = 0
+   CALL MVPKG.HAS("mvx-lang/cmd", BHAVECMD)
+$IFDEF MVX
+   IF CATALOGED("CMD.INIT") THEN BHAVECMD = 1
+$ENDIF
+   IF NOT(BHAVECMD) THEN
+      IF BVERB = "INSTALL" THEN
+         CALL MVPKG.INSTALL
+         STOP
+      END
+      * ANY OTHER COMMAND, WITH NO FRAMEWORK, IS A BOOTSTRAP THAT DID NOT
+      * FINISH.  Without this the answer is a raw runtime error naming CMD.INIT,
+      * which tells the operator nothing about what to do next.
+      PRINT "mvpkg: the cmd package is not installed, so only these work here:"
+      PRINT "  MVPKG init {<url>}              provision this account"
+      PRINT "  MVPKG install mvx-lang/cmd      fetch the command framework"
+      PRINT "Whatever installed mvpkg normally does the second one for you."
       STOP
    END
    CALL CMD.INIT("MVPKG", "MultiValue package manager")

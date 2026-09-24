@@ -58,7 +58,6 @@ for f in "$UDT"/*; do
    case "$p" in (*.sh|_*|.*) continue ;; esac
    [ -f "$ACCTBP/$p" ] || cp "$f" "$ACCTBP/"
 done
-cp "$ROOT"/CMD.BP/CMD.INIT "$ROOT"/CMD.BP/CMD.ADD "$ROOT"/CMD.BP/CMD.RUN "$ACCT/BP/"
 
 # THE HTTP SEAM NEEDS THE NAME jBASE WILL LOOK FOR.  U2 points a local name at a
 # differently-named cataloged one with `DEFFUN ... CALLING`; jBASE has no such

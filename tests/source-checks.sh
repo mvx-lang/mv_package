@@ -16,7 +16,7 @@ ok()  { PASS=$((PASS+1)); printf '  ok   %s\n' "$1"; }
 bad() { FAIL=$((FAIL+1)); printf '  FAIL %s\n       %s\n' "$1" "$2"; }
 
 # Every BASIC source in the client.  BP first, then the per-platform overrides.
-SRC=$(ls BP/* udt/* CMD.BP/* 2>/dev/null | grep -vE '\.sh$|\.H$|README|/\._')
+SRC=$(ls BP/* udt/* 2>/dev/null | grep -vE '\.sh$|\.H$|README|/\._')
 
 say() { printf '\n%s\n' "$*"; }
 

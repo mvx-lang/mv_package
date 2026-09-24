@@ -8,7 +8,7 @@
   "dependencies": [
     "curl",
     "mvx-lang/json@!mvx:^1.5",
-    "?mvx-lang/cmd",
+    "mvx-lang/cmd",
     "?mvx-lang/git"
   ],
   "shell": [
@@ -34,11 +34,6 @@
   "deploy": {
     "verbs": [
       "MVPKG"
-    ],
-    "fallback": {
-      "cmd": [
-        "CMD.BP"
-      ]
-    }
+    ]
   }
 }
