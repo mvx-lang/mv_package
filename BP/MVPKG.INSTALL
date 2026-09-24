@@ -728,7 +728,13 @@ SRCINSTALL:
    * failing an install that has already succeeded.  A missing SHA costs
    * reproducibility, not the package.
    LKSHA = "" ; LGOUT = ""
-   GOSUB SRCSHA
+   * ONLY WHEN THERE IS A REPOSITORY TO ASK.  #160 let this path run without the
+   * git package, and SRCSHA went straight to CALL GITLOG regardless -- an
+   * unresolved CALL, which on MVX is a runtime error beside a successful
+   * install and on jBASE traps into the DEBUGGER rather than returning
+   * (mv_package#54).  A tarball tree has no commit to read anyway: the ref it
+   * was fetched at is recorded, the SHA is simply not knowable without a repo.
+   IF GITOK THEN GOSUB SRCSHA
    LGL1 = FIELD(FIELD(FIELD(LGOUT, @AM, 1), CHAR(10), 1), CHAR(13), 1)
    IF FIELD(LGL1, " ", 1) = "commit" THEN LKSHA = TRIM(FIELD(LGL1, " ", 2))
 
