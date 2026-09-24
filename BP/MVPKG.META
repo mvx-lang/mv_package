@@ -7,7 +7,10 @@
 * META<1>=name <2>=version <3>=tarball <4>=description <5>=dependencies
 * <6>=versions (space-separated, newest-first) <7>=provides (virtual names this
 * package satisfies, space-separated) <8>=source (repo URL, for --source clones)
-* <9>=clibs (OS C libraries the package's CallC needs, space-separated sonames);
+* <9>=clibs (OS C libraries the package's CallC needs, space-separated sonames)
+* <10>=selected ("binary" or "source" -- which asset the registry picked for
+* this system+machine) <11>=devDependencies (build-only deps, needed when what
+* was selected is source: mv_package#160);
 * META = "" on a miss.  (Client code uses META<20> for a --source working-copy
 * path override — a high slot the registry never fills.)
 *
@@ -82,6 +85,7 @@ $ENDIF
    SPEC<-1> = MAPFIELD("srcrepo", 8, "", "", "")
    SPEC<-1> = MAPFIELD("clibs", 9, "", "", "")
    SPEC<-1> = MAPFIELD("selected", 10, "", "", "")
+   SPEC<-1> = MAPFIELD("devDependencies", 11, "", "", "")
    PLATQ = ""
    CALL MVPKGOS("PLATFORM", "", "", PLAT)
    IF PLAT # "" AND INDEX(PLAT, ":", 1) THEN

@@ -17,15 +17,29 @@
 *                   <8> parallel stabilities (dev|alpha|beta|rc|stable)
    SUBROUTINE MVPKG.INSTALL
 $INCLUDE MVPKG.INC PLATFORM.H
+* SRCTAR downloads, so this needs the same HTTP declaration MVPKG.ONE carries.
+* MVX gets none of them: the name is an extension the system account exports.
+* FLAT GUARDS, one per platform -- an $IFDEF nested inside an $ELSE compiles on
+* UniData and FAILS on UniVerse.
+$IFDEF JBASE
+   DEFFUN HTTPGETFILE(A, B)
+$ENDIF
+$IFDEF UDT
+   DEFFUN HTTPGETFILE(A, B) CALLING "*MVPKG.HTTPGETFILE"
+$ENDIF
+$IFDEF UV
+   DEFFUN HTTPGETFILE(A, B) CALLING "MVPKG.HTTPGETFILE"
+$ENDIF
 $IFDEF MVX
    S = SENTENCE()
 $ELSE
    S = @SENTENCE
 $ENDIF
    * args after "MVPKG install": the package name (first non-flag word), an
-   * optional target dir, and flags.  --source / -s selects source mode: clone
-   * the package's account-repo into a git working copy instead of unpacking a
-   * release tar.
+   * optional target dir, and flags.  --source / -s selects source mode: put the
+   * package's own tree in a working copy and build it there, instead of
+   * unpacking a release tar.  With the git package that is a clone, which can
+   * be pulled later; without it, a tarball, which cannot (#160).
    SRCMODE = 0 ; A1 = "" ; TGTDIR = "" ; REF = "" ; FORCE = 0
    FOR FI = 3 TO DCOUNT(S, " ")
       W = FIELD(S, " ", FI)
@@ -84,22 +98,28 @@ $ENDIF
       GOSUB SRCINSTALL ; RETURN
    END
 
-   * Automatic source fallback: no --source, no @ref, but if the registry serves no
-   * binary for this system+machine (META<10> selected # "binary") and the package
-   * names a srcrepo, build from source — the git package (its GIT verb) is the one
-   * requirement.  No binary AND no git -> a clear per-platform error, not a silent
-   * "installed nothing".
+   * A SOURCE RELEASE IS A DOWNLOAD, NOT A CLONE (#160).  With no binary for this
+   * system+machine the registry selects the package's SOURCE tarball and puts it
+   * in META<3> — the same field, the same HTTPGETFILE, the same UNTAR a binary
+   * install uses.  The only difference is that BUILDGLOBAL then compiles what
+   * was unpacked, which it does anyway.  So there is nothing to divert to: fall
+   * through to the normal path.
+   *
+   * This used to clone instead, and refuse without the git package — which put
+   * the heaviest requirement on the lightest case.  A platform with no published
+   * binary is exactly what a NEW platform hits first, and it was told to install
+   * a package with native libgit2 code before it could install anything at all.
+   * git is for developing a package now, not for installing one.
+   *
+   * Build dependencies are the one thing the normal path does not do, because a
+   * binary install has none: a source build compiles, so whatever it compiles
+   * against has to be here first.  The registry publishes them, so take them
+   * from META<11> rather than needing the tree before it is unpacked.
    IF A1 # "" THEN
       CALL MVPKG.META(A1, "", REG, FBMETA)
-      IF FBMETA # "" AND TRIM(FBMETA<10>) # "binary" AND TRIM(FBMETA<8>) # "" THEN
-         GOSUB HASGIT
-         IF GITOK THEN
-            SRCMODE = 1 ; GOSUB SRCINSTALL ; RETURN
-         END ELSE
-            CALL MVPKGOS("PLATFORM", "", "", PL)
-            PRINT "mvpkg: no compatible release for " : FIELD(PL, ":", 1) : "/" : FIELD(PL, ":", 3) : " — install the git package to build from source"
-            RETURN
-         END
+      IF FBMETA # "" AND TRIM(FBMETA<10>) = "source" THEN
+         DEVSPECS = TRIM(FBMETA<11>)
+         IF DEVSPECS # "" THEN GOSUB DEVLIST
       END
    END
 
@@ -553,6 +573,45 @@ $ENDIF
 *
 * Both routes report the same two things: "cloned " on success, and a first log
 * line of "commit <full-sha>".
+* SRCTAR — materialise the source into TGTDIR with no git at all (#160).
+*
+* Two sources, in order.  With no ref, the registry's own source asset when it
+* selected one: that is a released tree, checksummed and served from the same
+* place the binary would be.  Otherwise — and for ANY ref — GitHub serves every
+* ref as a tar.gz from its archive endpoint, HEAD included, so a branch, a tag
+* and a commit all work without asking the seam for an unzip op it does not
+* have.  UNTAR already unwraps a single top directory, which is exactly the
+* <repo>-<ref>/ wrapper an archive comes in.
+*
+* What this does NOT give is an origin, so the tree cannot be pulled; SRCUPDATE
+* re-fetches instead.  That is the whole cost of not having git.
+SRCTAR:
+   STERR = ""
+   STURL = ""
+   IF REF = "" AND TRIM(META<10>) = "source" THEN STURL = TRIM(META<3>)
+   IF STURL = "" THEN
+      STREPO = REPO
+      IF STREPO[LEN(STREPO), 1] = "/" THEN STREPO = STREPO[1, LEN(STREPO) - 1]
+      STREF = REF ; IF STREF = "" THEN STREF = "HEAD"
+      STURL = STREPO : "/archive/" : STREF : ".tar.gz"
+   END
+   IF STURL[1, 4] # "http" THEN STURL = REG : STURL
+   PRINT "fetching " : META<1> : RD : " from " : STURL : " -> " : TGTDIR : " ..."
+   STTMP = "/tmp/mvpkg_src_" : CHANGE(META<1>, "/", "_") : ".tar.gz"
+   STST = HTTPGETFILE(STURL, STTMP)
+   IF STST < 200 OR STST >= 300 THEN
+      STERR = "source download failed (status " : STST : ") — " : STURL
+      RETURN
+   END
+   * Same order MVPKG.ONE uses: clear the tree before unpacking, or every file
+   * the new tree does not replace survives into it.
+   CALL MVPKGOS("RMRF", TGTDIR, "", STERR)
+   IF STERR # "" THEN RETURN
+   CALL MVPKGOS("UNTAR", STTMP, TGTDIR, STERR)
+   IF STERR # "" THEN RETURN
+   CALL MVPKG.SH('rm -f "' : STTMP : '"', STSHOUT, STSHST)
+   RETURN
+
 SRCCLONE:
 $IFDEF MVX
    CALL GITCLONE(REPO, TGTDIR, REF, CLOUT)
@@ -598,12 +657,22 @@ SRCCLILOG:
    RETURN
 
 SRCINSTALL:
+   * GIT IS PREFERRED HERE, NOT REQUIRED (#160).  A clone leaves a working copy
+   * with an origin, which is what lets `MVPKG update` fast-forward it later --
+   * so when the git package is installed, clone.  Without it a tarball still
+   * gives an editable tree at the same path; it just has to be re-fetched
+   * rather than pulled, which SRCUPDATE handles.
    GOSUB HASGIT
-   IF NOT(GITOK) THEN PRINT "mvpkg: source installs need the git package — MVPKG install mvx-lang/git" ; RETURN
    CALL MVPKG.META(A1, "", REG, META)
    IF META = "" THEN PRINT A1 : ": not found in registry " : REG ; RETURN
    REPO = TRIM(META<8>)
-   IF REPO = "" THEN PRINT META<1> : ": no source repository recorded — cannot clone" ; RETURN
+   * A repository is needed to clone, and to build an archive URL for a ref.
+   * Neither applies when the registry already selected a source release and no
+   * ref was asked for -- that tarball stands on its own (#160).
+   IF REPO = "" AND (GITOK OR REF # "" OR TRIM(META<10>) # "source") THEN
+      PRINT META<1> : ": no source repository recorded — cannot fetch the source"
+      RETURN
+   END
    * default target: the package's short name, under $HOME so it is writable
    IF TGTDIR = "" THEN TGTDIR = FIELD(META<1>, "/", DCOUNT(META<1>, "/"))
    IF TGTDIR[1, 1] # "/" THEN
@@ -611,13 +680,18 @@ SRCINSTALL:
       TGTDIR = MVENVT : "/" : TGTDIR
    END
    RD = "" ; IF REF # "" THEN RD = " @ " : REF
-   PRINT "cloning " : META<1> : RD : " from " : REPO : " -> " : TGTDIR : " ..."
-   * Clone (and check REF out) through the git engine — libgit2, no shell, runs at
-   * any tier, portable across mvx-git / udt-git; the clone sets up the working
-   * tree + origin, so `MVPKG update` can GIT PULL it later.
-   CLOUT = ""
-   GOSUB SRCCLONE
-   IF INDEX(CLOUT, "cloned ", 1) = 0 THEN PRINT "mvpkg: clone failed — " : CLOUT ; RETURN
+   IF GITOK THEN
+      PRINT "cloning " : META<1> : RD : " from " : REPO : " -> " : TGTDIR : " ..."
+      * Clone (and check REF out) through the git engine — libgit2, no shell, runs
+      * at any tier, portable across mvx-git / udt-git; the clone sets up the
+      * working tree + origin, so `MVPKG update` can GIT PULL it later.
+      CLOUT = ""
+      GOSUB SRCCLONE
+      IF INDEX(CLOUT, "cloned ", 1) = 0 THEN PRINT "mvpkg: clone failed — " : CLOUT ; RETURN
+   END ELSE
+      GOSUB SRCTAR
+      IF STERR # "" THEN PRINT "mvpkg: " : STERR ; RETURN
+   END
    * A source install COMPILES the package, so its build dependencies have to be
    * here first — mvpkg itself, say, supplies the shared PLATFORM.H that managed
    * packages $INCLUDE.  They are declared in the manifest's "devDependencies"
@@ -960,25 +1034,42 @@ DEVDEPS:
          END ELSE
             DNM = DSEG[1, DB - 1]
             DSEG = DSEG[DB + 1, LEN(DSEG) - DB]
-            IF DNM # "" THEN
-               DHAVE = 0
-               LOCATE(DNM, DLK, 2; DPOS) THEN DHAVE = 1
-               IF DHAVE THEN
-                  PRINT "build dependency " : DNM : " is already installed"
-               END ELSE
-                  PRINT "installing build dependency " : DNM : " ..."
-                  CALL MVPKG.META(DNM, "", REG, DMETA)
-                  IF DMETA = "" THEN
-                     PRINT "mvpkg: build dependency " : DNM : " not found in registry " : REG
-                  END ELSE
-                     CALL MVPKG.ONE(DMETA, REG, DERR)
-                     IF DERR # "" THEN PRINT "mvpkg: build dependency " : DNM : " failed — " : DERR
-                  END
-               END
-            END
+            IF DNM # "" THEN GOSUB DEVONE
          END
       END
    REPEAT
+   RETURN
+
+* DEVLIST — install the build dependencies named in DEVSPECS, a space-separated
+* list as the REGISTRY publishes them (META<11>).  DEVDEPS above reads the same
+* thing out of a cloned working copy's mvpkg.json; a source RELEASE is not
+* cloned, so there is no tree to read until it is already unpacked (#160).
+DEVLIST:
+   CALL MVPKGOS("MDREAD", "MVPKG.LOCK", "", DLK)
+   DLN = DCOUNT(DEVSPECS, " ")
+   FOR DLI = 1 TO DLN
+      DNM = TRIM(FIELD(DEVSPECS, " ", DLI))
+      IF DNM # "" THEN GOSUB DEVONE
+   NEXT DLI
+   RETURN
+
+* DEVONE — install build dependency DNM unless this account's lock (DLK) already
+* has it.  Shared by DEVDEPS and DEVLIST so both report it the same way.
+DEVONE:
+   DHAVE = 0
+   LOCATE(DNM, DLK, 2; DPOS) THEN DHAVE = 1
+   IF DHAVE THEN
+      PRINT "build dependency " : DNM : " is already installed"
+   END ELSE
+      PRINT "installing build dependency " : DNM : " ..."
+      CALL MVPKG.META(DNM, "", REG, DMETA)
+      IF DMETA = "" THEN
+         PRINT "mvpkg: build dependency " : DNM : " not found in registry " : REG
+      END ELSE
+         CALL MVPKG.ONE(DMETA, REG, DERR)
+         IF DERR # "" THEN PRINT "mvpkg: build dependency " : DNM : " failed — " : DERR
+      END
+   END
    RETURN
 
 * SPECNAME — SN = the bare package name of dependency spec SP: strip a leading
