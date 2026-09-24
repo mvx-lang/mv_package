@@ -10,7 +10,8 @@
 * <9>=clibs (OS C libraries the package's CallC needs, space-separated sonames)
 * <10>=selected ("binary" or "source" -- which asset the registry picked for
 * this system+machine) <11>=devDependencies (build-only deps, needed when what
-* was selected is source: mv_package#160);
+* was selected is source: mv_package#160) <12>=systems (the MV systems the
+* package declares, space-separated; empty when none are declared: #164);
 * META = "" on a miss.  (Client code uses META<20> for a --source working-copy
 * path override — a high slot the registry never fills.)
 *
@@ -117,5 +118,52 @@ $ENDIF
       * Otherwise the caller "installs" an empty package: blank name -> blank
       * store dir -> it rm's/untars the whole store root and catalogs nothing.
       IF META<1> = "" THEN META = ""
+      IF META # "" THEN GOSUB SYSLIST
    END
+   RETURN
+
+* SYSLIST — META<12>, the systems the package declares, space-separated.
+*
+* NOT THROUGH THE SPEC, because it cannot be.  The registry flattens every other
+* list it publishes -- dependencies, provides, devDependencies, shell -- to a
+* space-separated string, and leaves `systems` as a JSON ARRAY:
+*
+*     "dependencies":"mvx-lang/getopt"      "systems":["udt","uv","jbase"]
+*
+* JSONDECODE against a scalar spec answers empty for an array (measured), so the
+* field never reached the client at all -- which is how MVPKG came to download
+* and BUILD a package on a system its own manifest excludes (#164).  Scanned out
+* of the raw body, the way DEVDEPS reads devDependencies out of a manifest.
+*
+* EMPTY MEANS "DO NOT REFUSE".  A registry that does not publish systems, and a
+* package that declares none, must both install exactly as before: the check
+* this feeds refuses only a package that names its systems and omits this one.
+SYSLIST:
+   SLQ = CHAR(34)
+   SLP = INDEX(BODY, SLQ : "systems" : SLQ, 1)
+   IF SLP = 0 THEN RETURN
+   SLT = BODY[SLP, LEN(BODY) - SLP + 1]
+   SLO = INDEX(SLT, "[", 1) ; SLC = INDEX(SLT, "]", 1)
+   IF SLO = 0 OR SLC <= SLO THEN RETURN
+   SLSEG = SLT[SLO, SLC - SLO + 1]
+   SLOUT = "" ; SLDONE = 0
+   LOOP UNTIL SLDONE DO
+      SLA = INDEX(SLSEG, SLQ, 1)
+      IF SLA = 0 THEN
+         SLDONE = 1
+      END ELSE
+         SLSEG = SLSEG[SLA + 1, LEN(SLSEG) - SLA]
+         SLB = INDEX(SLSEG, SLQ, 1)
+         IF SLB = 0 THEN
+            SLDONE = 1
+         END ELSE
+            SLNM = TRIM(SLSEG[1, SLB - 1])
+            SLSEG = SLSEG[SLB + 1, LEN(SLSEG) - SLB]
+            IF SLNM # "" THEN
+               IF SLOUT = "" THEN SLOUT = SLNM ELSE SLOUT := " " : SLNM
+            END
+         END
+      END
+   REPEAT
+   META<12> = SLOUT
    RETURN

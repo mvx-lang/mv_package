@@ -72,6 +72,18 @@ $ENDIF
    * so a later rm/untar would target the whole store.  Callers should have
    * caught a registry miss (MVPKG.META returns "" for one), but guard here too.
    IF TRIM(META<1>) = "" THEN RESULT = "empty package metadata" ; PRINT "mvpkg: " : RESULT : " — skipping" ; RETURN
+   * DOES THIS PACKAGE RUN HERE AT ALL?  Preflighted like the C libraries below,
+   * and for the same reason: answer before the download rather than after a
+   * compiler has been run over sources written for another dialect.  Nothing
+   * asked until now -- the registry publishes `systems` and reports it
+   * correctly, and MVPKG.META could not read it (#164), so `MVPKG install
+   * curl-cmd` on mvx fetched a udt/uv/jbase package and got as far as
+   * `HTTPPOST:85: expected '=' in assignment`.
+   *
+   * HERE, not in MVPKG.INSTALL, so it covers every way a package arrives: asked
+   * for by name, pulled in as a dependency, or pulled in as a build dependency.
+   GOSUB SYSCHECK
+   IF SYSERR # "" THEN RESULT = SYSERR ; RETURN
    PKGKEY = CHANGE(META<1>, "/", "_")
 $IFNDEF MVX
    * Preflight the OS C libraries the package declares (META<9>): if any are
@@ -242,6 +254,32 @@ $ELSE
    NEXT I
    PRINT "deployed " : META<1> : " into this account"
 $ENDIF
+   RETURN
+
+* --- preflight: does this package even run here? ---------------------------
+* SYSCHECK — SYSERR names the mismatch when the package declares the MV systems
+* it targets and this is not one of them; empty otherwise.
+*
+* A package that declares NOTHING is not refused: plenty predate the field, and
+* a registry that does not publish it leaves META<12> empty.  Refusing on
+* silence would turn a missing field into an uninstallable package.
+SYSCHECK:
+   SYSERR = ""
+   SCDECL = TRIM(META<12>)
+   IF SCDECL = "" THEN RETURN
+   CALL MVPKGOS("PLATFORM", "", "", SCPLAT)
+   SCME = FIELD(SCPLAT, ":", 1)
+   IF SCME = "" THEN RETURN
+   SCHIT = 0
+   SCN = DCOUNT(SCDECL, " ")
+   FOR SCI = 1 TO SCN
+      IF FIELD(SCDECL, " ", SCI) = SCME THEN SCHIT = 1
+   NEXT SCI
+   IF SCHIT THEN RETURN
+   * NO PRINT HERE.  Every caller of MVPKG.ONE reports RESULT with the context
+   * that fits it -- "not installed", "source build failed", "build dependency
+   * ... failed", "rebuild failed" -- so printing as well said it twice.
+   SYSERR = "supports " : CHANGE(SCDECL, " ", ", ") : ", not " : SCME
    RETURN
 
 $IFNDEF MVX
