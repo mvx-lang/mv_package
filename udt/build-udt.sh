@@ -38,7 +38,8 @@ done
 
 # udt-only records: the per-platform OS seam (MVPKGOS — mvx has its own in BP/),
 # the udt deploy helper, the record include files, the bundled deps (native
-# intrinsics on mvx), and the cmd framework.  (MVPKG.NOTIFY is now shared — the
+# intrinsics on mvx).  The cmd framework is NOT staged here: it is a
+# required dependency the installer fetches (#158).  (MVPKG.NOTIFY is now shared — the
 # login update-notifier is platform-agnostic and builds for mvx too, issue #35.)
 ACCTBP="$ACCT/BP"
 # AND EVERY udt/ PROGRAM THAT HAS NO BP/ COUNTERPART.  The per-platform OS seam
@@ -53,7 +54,6 @@ for f in "$HERE"/*; do
    case "$p" in (*.sh|_*|.*) continue ;; esac
    [ -f "$ACCTBP/$p" ] || cp "$f" "$ACCTBP/"
 done
-cp "$ROOT"/CMD.BP/CMD.INIT "$ROOT"/CMD.BP/CMD.ADD "$ROOT"/CMD.BP/CMD.RUN "$ACCT/BP/"
 
 # The self-installer, the CallC aggregator it deploys, and the package metadata.
 cp "$HERE"/install.sh          "$ACCT/install.sh";          chmod +x "$ACCT/install.sh"

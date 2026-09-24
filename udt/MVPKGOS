@@ -208,8 +208,14 @@ $ENDIF
          GOSUB DOCAT
       CASE OP = "CATIFNEW"
          * P1 = package dir, P2 = subdir.  Catalog it only when its programs
-         * are NOT already cataloged — the fallback: a bundled copy (git's
-         * CMD.BP) is cataloged just when the real dependency is absent.
+         * are NOT already cataloged — a package's declared "fallback": a
+         * bundled copy is cataloged just when the real dependency is absent.
+         * NOTHING SHIPS ONE NOW.  mvpkg's was removed in #158: a bundle under
+         * the dependency's own names collides with it in a shared account, and
+         * on a prebuilt platform (mvx) the copy is compiled into the artifact
+         * at release time, before anyone knows what else is installed -- so
+         * there is no deploy-time moment in which to skip it.  The op stays
+         * for a package cataloged on the target that still wants one.
          SDIR = P1 : "/" : P2
          PKGLIB = P1 : "/lib"
          GOSUB LISTSRC

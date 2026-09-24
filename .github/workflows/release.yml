@@ -130,9 +130,10 @@ jobs:
           MVX="$(command -v mvx)" MVX_DRIVERS="$MVXHOME/lib" sh build.sh
           test -x CATALOG/MVPKG
           # Compiled account: BP source + CATALOG verb + LIB subroutine .so's + VOC
-          # + the cmd bundle + metadata; drop debug + runtime state.
+          # + metadata; drop debug + runtime state.  No cmd bundle since #158 --
+          # cmd is a required dependency, fetched by whatever installs mvpkg.
           DIST="dist/$BASE"; rm -rf "$DIST"; mkdir -p "$DIST"
-          for d in BP CATALOG LIB CMD.BP CMD.BP.DICT mvpkg.json LICENSE README.md; do
+          for d in BP CATALOG LIB mvpkg.json LICENSE README.md; do
             [ -e "$d" ] && cp -a "$d" "$DIST/" || true
           done
           # VOC: ONLY the verbs VERBS declares, as mkpkg.sh ships them.  The
@@ -166,7 +167,7 @@ jobs:
           # since mvx#210; that is covered by mvx's install check.)
           SMOKE="$(mktemp -d)"
           cp -a "$MVXHOME/share/mvx/system" "$SMOKE/system"
-          for d in CATALOG VOC LIB CMD.BP CMD.BP.DICT BP; do
+          for d in CATALOG VOC LIB BP; do
             [ -d "$DIST/$d" ] || continue
             mkdir -p "$SMOKE/system/$d" && cp -a "$DIST/$d/." "$SMOKE/system/$d/"
           done
@@ -183,7 +184,7 @@ jobs:
           # screen above touches none of MVPKG.META, .ONE, .SEARCH or .TRACK,
           # which is how 1.24.1 shipped without all four (#154).
           missing=""
-          for f in BP CMD.BP; do
+          for f in BP; do
             [ -d "$DIST/$f" ] || continue
             for it in $(ls "$DIST/$f"); do
               case "$it" in *.H) continue ;; esac

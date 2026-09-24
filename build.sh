@@ -57,11 +57,12 @@ echo "wrote MVPKG.INC/PLATFORM.H (MVMASTER=VOC, GETENV=ENV)"
 # and the build reports success having registered no verb (#150).
 mkdir -p "$HERE/VOC"
 
-# BP/ plus every bundled source file beside it.  CMD.BP carries the cmd
-# framework (CMD.INIT/ADD/RUN) that the MVPKG verb CALLs, and on mvx nothing
-# else supplies it: cmd is not in the toolchain's system account, and a CALL is
-# resolved only from LIB/, linked packages and the system account (#150).
-# mkpkg.sh compiles the same BP + *.BP set.
+# BP/ plus any bundled source dir beside it.  There is none: mvpkg used to
+# carry a cut-down cmd under cmd's OWN names, which collided with the real cmd
+# package in a shared account and made which copy ran a matter of readdir order
+# (#158).  cmd is a required dependency now and the installer fetches it.  The
+# *.BP glob stays because mkpkg.sh compiles the same BP + *.BP set for any
+# package that does bundle sources.
 for f in BP $(cd "$HERE" && ls -d *.BP 2>/dev/null); do
   for it in $(cd "$HERE/$f" && ls); do
     MVXPRIV=developer "$MVX" -a "$HERE" -c "CATALOG $f $it"

@@ -60,7 +60,6 @@ for f in "$UDT"/*; do
    case "$p" in (*.sh|_*|.*) continue ;; esac
    [ -f "$ACCTBP/$p" ] || cp "$f" "$ACCTBP/"
 done
-cp "$ROOT"/CMD.BP/CMD.INIT "$ROOT"/CMD.BP/CMD.ADD "$ROOT"/CMD.BP/CMD.RUN "$ACCT/BP/"
 
 # EVERY STAGED BP ITEM GETS A TRAILING NEWLINE.  UniVerse's compiler rejects a
 # source whose last line is unterminated -- "End of File unexpected" -- and the
