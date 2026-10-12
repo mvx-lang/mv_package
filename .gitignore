@@ -7,6 +7,26 @@
 # accidentally committed binary store is a real hazard.  mvx's own .gitignore
 # uses this same pattern for the same reason.
 mvxdata.*
+
+# ACCOUNT STATE, for the same reason and with the same hazard.  This repo IS an
+# account, so MVPKG install writes its state here: PACKAGES is the link
+# registry mvx reads to find extensions, and mvpkg.installed is a fossil of the
+# manifest MVPKG.LOCK replaced (udt/MVPKG.LOCK.H).  Both were COMMITTED, and
+# PACKAGES shipped four absolute paths into a macOS temp directory that no
+# longer exists -- left by a hand-run of mv-package-registry's test/run.sh, so
+# every clone started life believing them (#168).
+#
+# It is not inert: the committed mvpkg.installed named `demo`, which told MVPKG
+# that package was already installed.  mv-package-registry#69's install loop
+# restored it between scenarios and its dependency test stopped reinstalling
+# demo, while its leaf test went GREEN for the shipped file's sake rather than
+# because anything had been recorded.
+#
+# mvx tolerates PACKAGES being absent -- it reads it with ifstream/getline, so
+# no file means no linked packages and no error (compiler/src/main.cpp) -- so
+# nothing is shipped in its place.
+PACKAGES
+mvpkg.installed
 CATALOG/
 LIB/
 LIB.DICT/
