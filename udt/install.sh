@@ -299,6 +299,12 @@ say "pulling managed deps (json, cmd, ${HTTPPKG#mvx-lang/}) + registering mvpkg 
 # install.sh, the dev tree has it one up — so register records what is actually
 # installed, not whatever the registry currently calls latest.  ONE MANIFEST:
 # PKG used to carry the same fields in line order and drifted from this one.
+#
+# OFF A RELEASE THAT IS 0.0.0-dev (#170), WHICH IS THE POINT.  The in-tree
+# manifest no longer names a release; the release stamps the tag into the copy
+# it ships, so a release install registers the tag and a dev-tree install
+# registers 0.0.0-dev rather than whatever release number the tree happened to
+# be carrying.
 mvpkg_ver() { sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$1" 2>/dev/null | head -1; }
 MVVER="$(mvpkg_ver "$HERE/mvpkg.json")"; [ -n "$MVVER" ] || MVVER="$(mvpkg_ver "$HERE/../mvpkg.json")"
 # ONE MVPKG command per udt session.  Each `MVPKG install` spawns child udt
