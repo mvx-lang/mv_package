@@ -50,8 +50,16 @@ mvpkg_version() {
 # itself 2.0.0-rc5 doing exactly that.  So the manifests take the same source of
 # truth as everything else rather than a second one that has to be remembered.
 #
-# In-tree PKG/mvpkg.json are now only a default for a dev build.  A release
-# stamps over them.
+# In-tree mvpkg.json is now only a default for a dev build.  A release stamps
+# over it.
+#
+# AND THE DEFAULT IS 0.0.0-dev (#170).  A release number committed in the tree
+# can only be stale or coincidentally right, and the stale case is the one
+# printed above -- 1.16.0, registered by a dev-tree install months after 1.17.0
+# shipped.  0.0.0-dev says "this is not the answer, ask the tag": a release
+# stamps the tag over it, and a dev-tree install now registers something that
+# reads as a dev build instead of impersonating a release it is not.  Do not
+# bump it.
 mvpkg_stamp_manifests() {
     _dir="$1"; _ver="$2"
     [ -n "$_dir" ] && [ -n "$_ver" ] || return 0
