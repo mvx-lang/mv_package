@@ -63,6 +63,26 @@ PARSE:
       MAIN = V ; PPRE = ""
    END
    T1 = FIELD(MAIN, ".", 1) ; T2 = FIELD(MAIN, ".", 2) ; T3 = FIELD(MAIN, ".", 3)
+*  A BRANCH DEV VERSION -- Composer's 1.4.x-dev (mvx#364).  It is not a
+*  pre-release of one particular patch; it is every commit on that line that
+*  has not been released, so it sorts ABOVE every release on the branch and
+*  BELOW the next one up.  Composer normalises it to 1.4.9999999.9999999-dev;
+*  with three components the sentinel goes in whatever the `x' covers, and in
+*  every component after it.
+*
+*  THE PRE-RELEASE SUFFIX IS REQUIRED, and that is what keeps CONSTRAINTS out
+*  of this.  A constraint writes the same idea without one -- `1.4.*', `1.4.x'
+*  -- and means "any 1.4 release", the opposite end of the range.  Needing the
+*  dash means no constraint can ever take this path.
+   IF PPRE # "" THEN
+      BR = 0
+      IF OCONV(T1, "MCL") = "x" THEN BR = 1
+      IF BR THEN T1 = 9999999
+      IF OCONV(T2, "MCL") = "x" THEN BR = 1
+      IF BR THEN T2 = 9999999
+      IF OCONV(T3, "MCL") = "x" THEN BR = 1
+      IF BR THEN T3 = 9999999
+   END
    P1 = 0 ; IF T1 # "" AND NUM(T1) THEN P1 = T1 + 0
    P2 = 0 ; IF T2 # "" AND NUM(T2) THEN P2 = T2 + 0
    P3 = 0 ; IF T3 # "" AND NUM(T3) THEN P3 = T3 + 0
