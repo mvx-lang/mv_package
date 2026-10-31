@@ -1,0 +1,62 @@
+* mv_package — MVPKG helper: where is this version's SOURCE artifact?
+* Copyright (C) 2026 Gordon Heydon.  GPL-2.0-only (see LICENSE).
+*
+* MVPKG.SRCURL(NAME, VER, REG, SURL) — SURL = the tarball URL of package NAME's
+* SOURCE artifact at version VER (VER="" for the current one), or "" when the
+* registry does not serve one.  Relative, as the registry publishes it, unless
+* the asset is externally hosted — the caller joins it to REG the same way it
+* does for META<3>.
+*
+* A SEPARATE QUESTION FROM MVPKG.META, which is why it is a separate program
+* rather than a flag on that one.  MVPKG.META asks "what should this machine
+* install?" and sends the platform in the query so the registry can answer with
+* a prebuilt binary.  This asks "where is the source?", which has nothing to do
+* with this machine -- so it sends NO platform, and selectArtifact then leaves
+* the tarball at the package's own, which for a version that published a source
+* asset IS that asset.
+*
+* AND IT CHECKS WHAT CAME BACK.  With no platform the registry reports
+* `selected: source` whether or not a source artifact exists: a binary-only
+* package's `tarball` is its first BINARY asset (indexRelease), reported as
+* source because nothing was selected.  So the caller must already know a
+* source artifact is published -- META<13>, which SRCINC reads -- and this
+* refuses to return a URL that came back under any other selection.
+*
+* HTTP/JSON/MAPFIELD are MVX intrinsics; the other ports reach them as the
+* cataloged seam functions, so the bootstrap wrappers are declared here for the
+* same reason MVPKG.META declares them (#133): installing the first package is
+* this client's job, so it cannot depend on a package being installed already.
+* FLAT GUARDS, one per platform -- an $IFDEF nested inside an $ELSE compiles on
+* UniData and fails on UniVerse.
+   SUBROUTINE MVPKG.SRCURL(NAME, VER, REG, SURL)
+   $INCLUDE MVPKG.INC PLATFORM.H
+$IFDEF JBASE
+   DEFFUN HTTPGET(A)
+   DEFFUN JSONDECODE(A, B)
+   DEFFUN MAPFIELD(A, B, C, D, E)
+$ENDIF
+$IFDEF UDT
+   DEFFUN HTTPGET(A) CALLING "*MVPKG.HTTPGET"
+   DEFFUN JSONDECODE(A, B) CALLING "*MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "*MVPKG.MAPFIELD"
+$ENDIF
+$IFDEF UV
+   DEFFUN HTTPGET(A) CALLING "MVPKG.HTTPGET"
+   DEFFUN JSONDECODE(A, B) CALLING "MVPKG.JSONDECODE"
+   DEFFUN MAPFIELD(A, B, C, D, E) CALLING "MVPKG.MAPFIELD"
+$ENDIF
+   SURL = ""
+   IF TRIM(NAME) = "" THEN RETURN
+   SPEC = ""
+   SPEC<-1> = MAPFIELD("name", 1, "", "", "")
+   SPEC<-1> = MAPFIELD("tarball", 2, "", "", "")
+   SPEC<-1> = MAPFIELD("selected", 3, "", "", "")
+   Q = ""
+   IF TRIM(VER) # "" THEN Q = "?version=" : TRIM(VER)
+   BODY = HTTPGET(REG : "/package/" : NAME : Q)
+   IF BODY = "" THEN RETURN
+   SM = JSONDECODE(BODY, SPEC)
+   IF SM<1> = "" THEN RETURN
+   IF TRIM(SM<3>) # "source" THEN RETURN
+   SURL = TRIM(SM<2>)
+   RETURN

@@ -382,5 +382,65 @@ else
   bad "no seam function is declared outside a platform guard" "bare:$seambare"
 fi
 
+# --- 12. the vendor permit declares every command the seam spawns -----------
+# AN UNGRANTED COMMAND IS A FEATURE THAT SILENTLY DOES NOTHING.  MVPKG runs at
+# the RESTRICTED tier on MVX, where OSEXEC and the native primitives are gated
+# by the `permit prog:MVPKG\' line in .mv-account; a command that is not on it
+# is refused, and the seam's honest answer to "I could not run that" is the same
+# answer it gives for "there was nothing wrong".  So the load check added for
+# #177 would have shipped inert, on every host, and every install would have
+# looked clean.  That is not a hypothetical: the first run of the runtime suite
+# failed on exactly this.
+#
+# MVX's permit, so MVX's seam -- BP/.  The other ports reach the OS through
+# MVPKG.SH and have no permit model to satisfy.
+say "the vendor permit"
+permline=$(sed -n 's/^[[:space:]]*permit[[:space:]][[:space:]]*prog:MVPKG[[:space:]]*=[[:space:]]*//p' \
+             "${1:-.}/.mv-account" 2>/dev/null)
+if [ -z "$permline" ]; then
+  bad "the vendor permit declares every command the seam spawns" \
+      "a 'permit prog:MVPKG =' line in .mv-account" "no such line"
+else
+  # NO `case' INSIDE THIS `$( )'.  bash 3.2 -- which is /bin/sh on macOS, where
+  # this is developed -- finds the end of a command substitution by counting
+  # parentheses, so the first `)' of a case pattern ends it early:
+  #
+  #     source-checks.sh: line 405: syntax error near unexpected token `;;'
+  #
+  # grep does the filtering instead.  (mvx#369 cost a round of this in mkpkg.)
+  needed=$(ls "${1:-.}"/BP/* 2>/dev/null | grep -vE '\.sh$|\.H$|README|/\._' |
+           while IFS= read -r f; do
+             [ -f "$f" ] || continue
+             awk 'BEGIN { q = sprintf("%c", 39) }
+                  /^[[:space:]]*\*/ { next }
+                  {
+                    s = $0
+                    while (match(s, "OSEXEC\\(" q "[^" q "]+" q)) {
+                      t = substr(s, RSTART, RLENGTH)
+                      sub("^OSEXEC\\(" q, "", t); sub(q "$", "", t)
+                      print t
+                      s = substr(s, RSTART + RLENGTH)
+                    }
+                  }
+                  # the native primitives are permit-gated by their OP NAME, in
+                  # the same list, so they belong to the same rule
+                  /[^A-Z_]MKDIR\(/  { print "mkdir" }
+                  /[^A-Z_]RMTREE\(/ { print "rmtree" }
+                  /[^A-Z_]UNTAR\(/  { print "untar" }' "$f"
+           done | sort -u)
+  missing=""
+  for c in $needed; do
+    found=""
+    for g in $permline; do [ "$c" = "$g" ] && found=1; done
+    [ -n "$found" ] || missing="$missing $c"
+  done
+  if [ -z "$missing" ]; then
+    ok "the vendor permit declares every command the seam spawns"
+  else
+    bad "the vendor permit declares every command the seam spawns" \
+        "all of:$(echo " $needed" | tr '\n' ' ')" "not declared:$missing"
+  fi
+fi
+
 printf '\n%s\n' "source-checks: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

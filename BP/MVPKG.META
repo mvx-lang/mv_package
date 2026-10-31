@@ -11,7 +11,9 @@
 * <10>=selected ("binary" or "source" -- which asset the registry picked for
 * this system+machine) <11>=devDependencies (build-only deps, needed when what
 * was selected is source: mv_package#160) <12>=systems (the MV systems the
-* package declares, space-separated; empty when none are declared: #164);
+* package declares, space-separated; empty when none are declared: #164)
+* <13>=sourceIncluded ("1" when this version publishes a source artifact, so a
+* binary that will not load here can be built from source instead: #177);
 * META = "" on a miss.  (Client code uses META<20> for a --source working-copy
 * path override — a high slot the registry never fills.)
 *
@@ -119,6 +121,7 @@ $ENDIF
       * store dir -> it rm's/untars the whole store root and catalogs nothing.
       IF META<1> = "" THEN META = ""
       IF META # "" THEN GOSUB SYSLIST
+      IF META # "" THEN GOSUB SRCINC
    END
    RETURN
 
@@ -166,4 +169,30 @@ SYSLIST:
       END
    REPEAT
    META<12> = SLOUT
+   RETURN
+
+* SRCINC — META<13>, "1" when this version publishes a SOURCE artifact.
+*
+* SCANNED, NOT DECODED, because the registry publishes it as a JSON BOOLEAN and
+* JSONDECODE answers "" for one.  Measured, on the registry's own response
+* shape: "sourceIncluded":true decodes as "" and so does :false -- the same
+* trap `systems` fell into as an array (#164), a field that is present,
+* correct and invisible.
+*
+* WHY THE CLIENT NEEDS IT AT ALL.  "selected" says which artifact the registry
+* picked for this machine; it does not say whether there is a source one to
+* fall back to.  Asking for the package again WITHOUT the platform query does
+* answer `selected: source`, but for a binary-only package the registry has no
+* source asset and hands back the first BINARY as the source tarball -- so
+* re-resolving on faith would download the same unloadable artifact and call it
+* a source build.  This field is what separates the two.
+SRCINC:
+   SIQ = CHAR(34)
+   SIP = INDEX(BODY, SIQ : "sourceIncluded" : SIQ, 1)
+   IF SIP = 0 THEN RETURN
+   SIT = BODY[SIP, LEN(BODY) - SIP + 1]
+   SIC = INDEX(SIT, ":", 1)
+   IF SIC = 0 THEN RETURN
+   SIV = TRIM(SIT[SIC + 1, 5])
+   IF SIV[1, 4] = "true" THEN META<13> = "1"
    RETURN
