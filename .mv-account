@@ -3,4 +3,9 @@ name = mv_package
 version = 1
 openaccount = 1
 hash = lmdb
-permit prog:MVPKG = mkdir rmtree untar mkpkg chown
+# ldd: the load check (MVPKGOS LDCHECK) asks the shipped file which libraries it
+# needs, because the clibs a package DECLARES describe what its source links and
+# not what the prebuilt in the artifact was linked against (#177).  Read-only,
+# argv-style, and the install behaves exactly as it did before this grant if it
+# is absent -- an ungranted check answers "cannot tell", never "missing".
+permit prog:MVPKG = mkdir rmtree untar mkpkg chown ldd

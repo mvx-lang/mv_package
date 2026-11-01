@@ -45,6 +45,12 @@ add '   OUT = 1';                            probe "a jBASE reserved word as a v
 add '   SUBROUTINE X(A, KEY, B)';            probe "a jBASE reserved word as a parameter"
 add '   OPEN "VOC" TO F ELSE STOP';          probe "a hardcoded VOC open"
 add '   LOCATE X IN Y SETTING P ELSE STOP';  probe "LOCATE Format 2"
+# An OSEXEC of a command the vendor permit does not declare.  The thing this
+# catches ships SILENTLY: at the restricted tier the runtime refuses the spawn
+# and the seam's "I could not run it" is the same empty answer as "nothing was
+# wrong" (#177).
+add "   JUNK = OSEXEC('nosuchtool' : @FM : '-x', O)"
+                                             probe "an OSEXEC of an undeclared command"
 printf '\n$IFDEF MVX\n$DEFINE FOO BAR\n$ENDIF\n' >> "$M/BP/MVPKG.INFO"
                                              probe "a valued \$DEFINE inside a guard"
 sed -e '1i\

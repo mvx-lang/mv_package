@@ -149,6 +149,20 @@ $IFDEF JBASE
          RESULT := "is being replaced.  From this account, run:" : CHAR(10) : CHAR(10)
          RESULT := "    " : JBREBUILD : " " : @PATH
 $ENDIF
+      CASE OP = "LDCHECK"
+         * P1 = package dir.  "Does the native code this package SHIPS resolve
+         * on this host?"  Nothing to answer here, and that is a fact about
+         * these ports rather than a gap in them: udt folds a package's C into
+         * libu2callc.so and jBASE links a DEFC library, both AT INSTALL TIME on
+         * this machine (see CALLC above), so no binary artifact arrives
+         * carrying a prebuilt whose DT_NEEDED could name a soname this host
+         * lacks.  Where one does -- MVX installs the shipped library as-is --
+         * the question has to be asked, and BP/MVPKGOS asks it (#177).
+         *
+         * PRESENT RATHER THAN ABSENT because the client calls it unguarded: an
+         * op missing from one seam falls through to "unknown op", which is how
+         * RMRF reached nothing on all three MV ports (#130).  RESULT stays "",
+         * the answer that means "nothing wrong, or nothing I can tell".
       CASE OP = "PLATFORM"
       * CONVERT() TAKES ITS ARGUMENTS IN THE OPPOSITE ORDER ON jBASE.  U2 and
       * MVX read CONVERT(from, to, expr); jBASE reads CONVERT(expr, from, to).

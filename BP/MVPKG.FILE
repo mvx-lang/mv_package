@@ -145,8 +145,14 @@ $IFDEF MVX
       CASE FOP = "WRITE"
          IF OSWRITE(FDATA, FPATH) THEN FOK = 1
       CASE FOP = "DELETE"
-         CALL MVPKG.SH('rm -f "' : FPATH : '"', FO, FS)
-         FOK = 1
+* OSDELETE, NOT `rm' THROUGH A SHELL, because this client is not allowed one.
+* MVPKG runs blessed at the RESTRICTED tier, and MVPKG.SH builds its MVX
+* command line as `!<cmd> ; echo $? > <file>' -- which the runtime refuses
+* outright below the unrestricted tier, shell syntax being the thing it gates
+* on rather than the command.  Measured: SHOUT="" and SHSTAT=-1, every time.
+* So every temp file this client wrote was still there afterwards, and nothing
+* ever said so.  The native primitive needs no grant at all.
+         IF OSDELETE(FPATH) THEN FOK = 1
    END CASE
 $ENDIF
    RETURN

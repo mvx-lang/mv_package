@@ -12,7 +12,8 @@
 * package as installed when it is non-empty (a failed install written to the lock
 * looks done on retry and is silently skipped).
 *
-* The download, the store inventory, --source and the OS-C-library preflight are
+* The download, the store inventory, --source, the OS-C-library preflight and
+* the load check that may swap a prebuilt for its source (LOADCHECK, #177) are
 * shared; only the two deploy STEPS differ by platform and are $IFDEF'd: MVX
 * builds + links the whole package (BUILD-PKG / LINK-PKG through the seam), while
 * UniData compiles+globally-catalogs the code and deploys per-account VOC verb
@@ -67,6 +68,7 @@ $IFDEF UV
    DEFFUN HTTPGETFILE(A, B) CALLING "MVPKG.HTTPGETFILE"
 $ENDIF
    RESULT = ""
+   SRCSWAP = 0
    CALL MVPKGOS("STORE", "", "", STORE)
    * Never act on empty metadata: a blank name would make DEST the store ROOT,
    * so a later rm/untar would target the whole store.  Callers should have
@@ -143,14 +145,22 @@ $ENDIF
       IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
       CALL MVPKGOS("UNTAR", TMP, DEST, ERR)
       IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
-      CALL MVPKG.SH('rm -f "' : TMP : '"', MVSHOUT, MVSHST)
+      CALL MVPKG.FILE("DELETE", TMP, MVFDAT, MVFOK)
       CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
       * A failed native fold must abort BEFORE cataloging — otherwise the
       * package's verbs get cataloged over working ones with no backend behind
       * them.  The store inventory is not written yet, so the package is simply
       * left uninstalled; fix the toolchain and re-run.
       IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
+      * DOES WHAT WAS JUST UNPACKED ACTUALLY LOAD HERE?  This may replace the
+      * tree with the package's SOURCE and leave SRCSWAP set (#177).
+      GOSUB LOADCHECK
+      IF RESULT # "" THEN RETURN
       GOSUB BUILDGLOBAL
+      IF SRCSWAP THEN
+         GOSUB RECHECK
+         IF RESULT # "" THEN RETURN
+      END
       * record it in the system inventory (add, or update its version)
       CALL MVPKGOS("STOREREAD", "installed", "", SREC)
       IF SREC = "" THEN SREC = "MVPKG-STORE"
@@ -280,6 +290,104 @@ SYSCHECK:
    * that fits it -- "not installed", "source build failed", "build dependency
    * ... failed", "rebuild failed" -- so printing as well said it twice.
    SYSERR = "supports " : CHANGE(SCDECL, " ", ", ") : ", not " : SCME
+   RETURN
+
+* --- will the prebuilt run here, and if not, build the source -------------
+* LOADCHECK — the artifact is unpacked in DEST but nothing has been built or
+* cataloged yet, which is the one moment at which this is still cheap to undo.
+* Asks the seam whether the native code the package SHIPS resolves on this
+* host; when it does not and the package publishes source, replaces DEST with
+* that source and sets SRCSWAP so the build below is checked again.  RESULT is
+* set only when neither can be had.
+*
+* A BINARY ARTIFACT ONLY.  A source release is compiled here, against whatever
+* this host has, so there is nothing prebuilt to test -- and the registry
+* having selected source already means this never arises.
+*
+* WHY NOT THE DECLARED C LIBRARIES (CLIBCHECK, below).  Because they cannot
+* answer it: mvx-lang/git declares `libgit2.so:>=1.7,<2.8' and that range is
+* satisfied on a host carrying libgit2 1.9, while the prebuilt in the artifact
+* was linked against 1.7 and libgit2 breaks its ABI at every minor.  The
+* declaration describes what the SOURCE needs; only the shipped file knows what
+* the BINARY needs.  MVPKGOS LDCHECK asks the file.
+*
+* ONLY ON A FRESH DOWNLOAD, deliberately.  A package already in the system
+* store is not re-examined on every deploy: a host whose libraries changed
+* under an installed package is what `MVPKG rebuild' is for, and running ldd
+* over every package on every account deploy would charge every install for it.
+LOADCHECK:
+   IF TRIM(META<10>) # "binary" THEN RETURN
+   CALL MVPKGOS("LDCHECK", DEST, "", LDBAD)
+   IF LDBAD = "" THEN RETURN
+   PRINT META<1> : " " : META<2> : ": the published build does not load here —"
+   FOR LCI = 1 TO DCOUNT(LDBAD, @AM)
+      PRINT "  " : LDBAD<LCI>
+   NEXT LCI
+   IF TRIM(META<13>) # "1" THEN
+      RESULT = "the published build needs libraries this host does not have, and this version publishes no source"
+      PRINT "  and this version publishes no source to build instead."
+      PRINT "  install the OS package(s) providing them, then re-run."
+      RETURN
+   END
+   CALL MVPKG.SRCURL(META<1>, META<2>, REG, SURL)
+   IF SURL = "" THEN
+      RESULT = "the published build will not load here and its source artifact could not be resolved"
+      PRINT "  " : RESULT : "."
+      RETURN
+   END
+   PRINT "  building " : META<1> : " " : META<2> : " from source instead ..."
+   STMP = "/tmp/mvpkg_src_" : PKGKEY : ".tar.gz"
+   STURL = SURL
+   IF STURL[1, 4] # "http" THEN STURL = REG : STURL
+   SST = HTTPGETFILE(STURL, STMP)
+   IF SST < 200 OR SST >= 300 THEN
+      RESULT = "source download failed (status " : SST : ")"
+      PRINT "  " : RESULT
+      RETURN
+   END
+   CALL MVPKGOS("RMRF", DEST, "", ERR)
+   IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
+   CALL MVPKGOS("UNTAR", STMP, DEST, ERR)
+   IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
+   CALL MVPKG.FILE("DELETE", STMP, MVFDAT, MVFOK)
+   * The tree in DEST is now source, and the rest of this run must treat it as
+   * such -- the store inventory records the version, not the kind, so nothing
+   * else carries this.
+   META<10> = "source"
+   SRCSWAP = 1
+   CALL MVPKGOS("CALLC", DEST, META<1>, ERR)
+   IF ERR # "" THEN RESULT = ERR ; PRINT ERR ; RETURN
+   * BUILD DEPENDENCIES ARE NOT PULLED IN HERE, and that is a known gap rather
+   * than an oversight.  A source release normally has them installed first by
+   * MVPKG.INSTALL, which can read them off the registry BEFORE calling here
+   * (#160) -- but this switch is discovered after the download, and the only
+   * route to installing a package from inside this program is to call this
+   * program, which is one re-entry into MVPKG.ONE that none of the four MV
+   * ports has been measured to survive.  So say what is needed and let the
+   * build report the rest: the mkpkg status is no longer discarded (#177), so
+   * a build that fails for want of one of these now says so.
+   IF TRIM(META<11>) # "" THEN
+      PRINT "  it declares build dependencies: " : TRIM(META<11>)
+      PRINT "  if the build below fails, install those first and re-run."
+   END
+   RETURN
+
+* RECHECK — after a swapped-in source build, does what was BUILT load?
+*
+* THE SAME QUESTION, ASKED AGAIN, because a build can succeed and still produce
+* something that will not load, and because the whole point of the swap was to
+* stop installing a library the loader cannot resolve.  Answering it twice is
+* what makes the first answer worth acting on: without this, a source build
+* that went wrong in the same way would be recorded as installed exactly as the
+* prebuilt was.
+RECHECK:
+   CALL MVPKGOS("LDCHECK", DEST, "", LDBAD)
+   IF LDBAD = "" THEN RETURN
+   PRINT META<1> : ": what was built here does not load either —"
+   FOR LCI = 1 TO DCOUNT(LDBAD, @AM)
+      PRINT "  " : LDBAD<LCI>
+   NEXT LCI
+   RESULT = "built from source and it still does not load: " : CHANGE(LDBAD, @AM, "; ")
    RETURN
 
 $IFNDEF MVX

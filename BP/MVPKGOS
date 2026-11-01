@@ -22,6 +22,10 @@
 *                   to mkpkg only for a C-extension package
 *   OP = "LINK"     P1 = pkgdir              -> deploy into this account
 *                   (LINK-PKG: its verbs + LIB + dependency closure)
+*   OP = "LDCHECK"  P1 = pkgdir              -> RESULT = "" when the native
+*                   code this package SHIPS resolves on this host, else one
+*                   "<file>: <soname> not found" line per unresolved
+*                   dependency.  "" also means "cannot tell" -- see LDCHECK.
 *   OP = "PLATFORM"                          -> RESULT =
 *                   "<system>:<os>:<arch>:<endian>", the identity the client
 *                   sends the registry so it can serve the matching prebuilt
@@ -33,8 +37,8 @@
 * RESULT is returned "" on success or an error message.  On MVX these run
 * through the runtime's native primitives (MKDIR/RMTREE/UNTAR/UNAME) and OSEXEC
 * — argv-style, no shell — so MVPKG runs at the RESTRICTED tier with only the
-* vendor permit its .mvx declares (mkdir rmtree untar mkpkg chown), not the
-* whole-shell unrestricted tier; other ports may differ.
+* vendor permit its .mv-account declares (mkdir rmtree untar mkpkg chown ldd),
+* not the whole-shell unrestricted tier; other ports may differ.
    SUBROUTINE MVPKGOS(OP, P1, P2, RESULT)
 $INCLUDE MVPKG.INC PLATFORM.H
    RESULT = ""
@@ -76,12 +80,35 @@ $INCLUDE MVPKG.INC PLATFORM.H
          IF INDEX(BOUT, "BUILD-PKG-NATIVE", 1) THEN
             * C-extension package: BUILD-PKG can't compile it, so fall back to the
             * mkpkg build, argv-style via OSEXEC (it locates BP/ and *.BP source
-            * dirs itself).  Best-effort — a missing build tool is the package's
-            * problem to report, not the seam's.
-            JUNK = OSEXEC('mkpkg' : @FM : P1, MOUT)
+            * dirs itself).
+            *
+            * AND SAY WHETHER IT WORKED (#177).  This was `JUNK = OSEXEC(...)'
+            * with the output and the status both thrown away, on the reasoning
+            * that a missing build tool is the package's problem to report.  It
+            * is not: nothing downstream looks at the tree either, so a build
+            * that never happened reached STOREWRITE, was recorded as installed,
+            * and the account was left with whatever LIB/ already held.  That is
+            * the silence this issue was filed about -- the toolchain shipped
+            * without mkpkg for a whole release and no install ever said so.
+            MOUT = ""
+            MRC = OSEXEC('mkpkg' : @FM : P1, MOUT)
+            IF MRC # 0 THEN
+               RESULT = "mkpkg could not build " : P1 : " (exit " : MRC : ")"
+               * A NEGATIVE STATUS IS NOT THE BUILD FAILING, it is the spawn
+               * being refused, and the two need different remedies: the permit
+               * grant, versus the compiler.
+               IF MRC < 0 THEN RESULT := " — the runtime refused to run it: is mkpkg on PATH, and does this account's permit grant it?"
+               IF TRIM(MOUT) # "" THEN RESULT := CHAR(10) : CHANGE(MOUT, @AM, CHAR(10))
+            END
          END ELSE
             IF INDEX(BOUT, "failed", 1) THEN RESULT = BOUT
          END
+      CASE OP = "LDCHECK"
+         * P1 = package dir.  See LDCHECK at the foot of this file.
+$IFDEF MVX
+         GOSUB LDCHECK
+         RESULT = LDMISS
+$ENDIF
       CASE OP = "LINK"
          * P1 = package dir.  Deploy into THIS account: LINK-PKG joins the
          * package's verbs (its VOC/) and LIB into resolution, pulling the
@@ -208,3 +235,116 @@ STOREOPEN:
    IF MKDIR(SF) < 1 THEN RETURN
    OPEN SF TO STF THEN STFOK = 1
    RETURN
+$IFDEF MVX
+* --- does the native code this package SHIPS resolve here? -----------------
+* LDCHECK — LDMISS names every library the package's own binaries need and this
+* host does not have, one "<file>: <soname>" per attribute; "" when there is
+* nothing wrong OR nothing this port can tell.
+*
+* THE DECLARED C LIBRARIES CANNOT ANSWER THIS, which is why the preflight the
+* other ports run (CLIBCHECK in MVPKG.ONE) is not what MVX needs.  A package
+* declares the libraries its SOURCE links -- mvx-lang/git declares
+* `libgit2.so:>=1.7,<2.8' -- and that range is SATISFIED on a host carrying
+* libgit2 1.9.  The prebuilt in the artifact was linked against 1.7, and
+* libgit2 breaks its ABI at every minor, so the declaration says yes and the
+* library still cannot load.  Measured: SEMVER("SAT", "1.9", ">=1.7 <2.8") = 1.
+*
+* So ask the file, not the manifest.  This is the same question mvx's own
+* installer asks of a bundled package (mvx_native_missing in
+* scripts/pkgdeps.cmake, mvx#370) and for the same reason: a relocatable
+* artifact is built where the host is not present, so nothing before this
+* moment could have known.
+*
+* MVX ONLY, and not for want of generalising.  Every other port RELINKS the
+* package's C on the host at install time -- UniData folds it into
+* libu2callc.so (udt-callc-build, see udt/MVPKGOS CALLC), jBASE links a DEFC
+* library -- so their binary artifacts carry no prebuilt whose DT_NEEDED could
+* name a soname this machine lacks.  MVX installs the shipped library as-is,
+* which is the whole reason this check has to exist.
+*
+* "" IS ALSO "I CANNOT TELL", deliberately: ldd is Linux's, there is none on
+* macOS, and a permit may not grant it.  An install that cannot answer behaves
+* exactly as it did before this check existed rather than refusing a package
+* on an unanswered question.  The grant is in .mv-account; without it this
+* check is inert, which is why the suite asserts it is granted.
+LDCHECK:
+   LDMISS = ""
+   LDOFF = 0
+* LINUX ONLY, which is where ldd and DT_NEEDED mean this.  mvx's own installer
+* draws the same line in the same place and for the same reason
+* (mvx_native_missing returns immediately off Linux); asking elsewhere would
+* spend a spawn per file to learn nothing, and on macOS there is no ldd to ask.
+*
+* $MVPKG_LDCHECK=force LIFTS THE GATE, so the suite can exercise this where the
+* gate would otherwise refuse to -- mvx is developed on macOS, and a check that
+* can only be tested on the platform it ships to is a check nobody runs before
+* shipping it.  With a stub ldd on PATH the parsing and the self-supplied filter
+* below are testable anywhere; only the real reading of a real ELF object needs
+* a real Linux.  It can only make this check look HARDER, never softer: forcing
+* it on cannot hide a missing library, it can only invent one.
+   IF OCONV(UNAME('s'), "MCL") # "linux" THEN
+      IF ENV("MVPKG_LDCHECK") # "force" THEN RETURN
+   END
+* THE PACKAGE'S OWN LIBRARIES FIRST, as a list, because they are the answer to
+* "is this soname really missing?" -- a package whose extension links a sibling
+* library it ships would otherwise report its own file as absent.  ldd is run in
+* a second pass so no SELECT is live while another directory is opened.
+   LDD = P1 : "/LIB" ; GOSUB LDLIST ; LDLIBS = LDIDS
+   LDD = P1 : "/bin" ; GOSUB LDLIST ; LDBINS = LDIDS
+   LDD = P1 : "/LIB"
+   FOR LDI = 1 TO DCOUNT(LDLIBS<1>, @VM)
+      LDID = LDLIBS<1,LDI> ; IF LDID # "" THEN GOSUB LDFILE
+   NEXT LDI
+* bin/ TOO, and it is not belt-and-braces: mvx-lang/git ships the mvx-git CLI
+* beside its extension, and a CLI that cannot load libgit2 is the half of that
+* package a user reaches first.
+   LDD = P1 : "/bin"
+   FOR LDI = 1 TO DCOUNT(LDBINS<1>, @VM)
+      LDID = LDBINS<1,LDI> ; IF LDID # "" THEN GOSUB LDFILE
+   NEXT LDI
+   RETURN
+
+* LDLIST — LDIDS<1> = the @VM list of file names in directory LDD, empty when
+* there is no such directory.  A directory IS a file on MVX (the dir driver), so
+* its contents are read with OPEN and READNEXT and no shell is involved.
+LDLIST:
+   LDIDS = ""
+   OPEN LDD TO LDF ELSE RETURN
+   SELECT LDF
+   LOOP
+      READNEXT LDNM ELSE EXIT
+      IF LDNM # "" THEN LDIDS<1,-1> = LDNM
+   REPEAT
+   RETURN
+
+* LDFILE — add to LDMISS every soname LDD/LDID needs and cannot find.
+*
+* THE TEXT, NOT THE EXIT STATUS.  ldd exits 0 on a binary with missing
+* libraries and non-zero on something that is not an ELF object at all, so the
+* status answers a different question than the one being asked; an empty
+* capture is the only thing that means "no answer" (no ldd here, or no permit
+* for it) and that returns silently.
+LDFILE:
+   IF LDOFF THEN RETURN
+   LDOUT = ""
+   LDRC = OSEXEC('ldd' : @FM : LDD : "/" : LDID, LDOUT)
+* ONE REFUSAL, NOT ONE PER FILE.  A negative status is the runtime declining to
+* spawn ldd at all -- no permit grant for it -- and that answer will not change
+* for the next thirty files in the tree.  It prints its own explanation, which
+* names the grant that is missing, so the install says why the check is off
+* exactly once instead of burying it in a wall of identical lines.
+   IF LDRC < 0 THEN LDOFF = 1 ; RETURN
+   IF TRIM(LDOUT) = "" THEN RETURN
+   FOR LDJ = 1 TO DCOUNT(LDOUT, @AM)
+      LDLN = LDOUT<LDJ>
+      LDP = INDEX(LDLN, "=> not found", 1)
+      IF LDP > 0 THEN
+         * ldd indents with a TAB and TRIM only takes spaces off.
+         LDSO = TRIM(CHANGE(LDLN[1, LDP - 1], CHAR(9), " "))
+         IF LDSO # "" THEN
+            LOCATE(LDSO, LDLIBS, 1; LDPOS) ELSE LDMISS<-1> = LDID : ": " : LDSO
+         END
+      END
+   NEXT LDJ
+   RETURN
+$ENDIF

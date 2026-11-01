@@ -23,6 +23,7 @@
     "wc",
     "tr",
     "ldconfig",
+    "ldd",
     "mkpkg",
     "udt-callc-build",
     "git",
