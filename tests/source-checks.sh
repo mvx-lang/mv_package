@@ -385,7 +385,7 @@ fi
 # --- 12. the vendor permit declares every command the seam spawns -----------
 # AN UNGRANTED COMMAND IS A FEATURE THAT SILENTLY DOES NOTHING.  MVPKG runs at
 # the RESTRICTED tier on MVX, where OSEXEC and the native primitives are gated
-# by the `permit prog:MVPKG\' line in .mv-account; a command that is not on it
+# by the `permit prog:MVPKG\' line in .mvx; a command that is not on it
 # is refused, and the seam's honest answer to "I could not run that" is the same
 # answer it gives for "there was nothing wrong".  So the load check added for
 # #177 would have shipped inert, on every host, and every install would have
@@ -395,11 +395,28 @@ fi
 # MVX's permit, so MVX's seam -- BP/.  The other ports reach the OS through
 # MVPKG.SH and have no permit model to satisfy.
 say "the vendor permit"
+# IN .mvx, WHICH IS THE FILE MVX READS GRANTS FROM (#183).  It lived in
+# .mv-account, where mvx reads nothing -- runtime/src/mvx_perm.c takes grants
+# from <account>/.mvx, <account>/.mvx-private/permissions and the system layer
+# and never looks at .mv-account -- so the permit parsed, read correctly, and
+# bound to nothing.  Checking the wrong file is how that survived being written,
+# so the file named here is the one that decides.
 permline=$(sed -n 's/^[[:space:]]*permit[[:space:]][[:space:]]*prog:MVPKG[[:space:]]*=[[:space:]]*//p' \
-             "${1:-.}/.mv-account" 2>/dev/null)
+             "${1:-.}/.mvx" 2>/dev/null)
+# AND NOWHERE IT WOULD BE IGNORED.  A permit in .mv-account is not policy, it is
+# a comment that looks like policy, and this is the defect #183 was: it fails
+# rather than being tolerated, because the next person to reach for the
+# portable descriptor will put it back there.
+strayperm=$(grep -c '^[[:space:]]*permit[[:space:]]' "${1:-.}/.mv-account" 2>/dev/null || echo 0)
+if [ "$strayperm" -gt 0 ] 2>/dev/null; then
+  bad "the vendor permit is in the file mvx reads" \
+      "$strayperm 'permit' line(s) in .mv-account, which mvx ignores -- move them to .mvx"
+else
+  ok "the vendor permit is in the file mvx reads"
+fi
 if [ -z "$permline" ]; then
   bad "the vendor permit declares every command the seam spawns" \
-      "a 'permit prog:MVPKG =' line in .mv-account" "no such line"
+      "a 'permit prog:MVPKG =' line in .mvx" "no such line"
 else
   # NO `case' INSIDE THIS `$( )'.  bash 3.2 -- which is /bin/sh on macOS, where
   # this is developed -- finds the end of a command substitution by counting

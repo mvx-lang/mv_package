@@ -108,27 +108,57 @@ fi
 
 # Bless the cataloged MVPKG binary in the SYSTEM account so its vendor permit
 # (`permit prog:MVPKG = mkdir rmtree untar mkpkg chown` in .mvx) binds at the
-# RESTRICTED tier: a prog: grant matches only the exact binary the system layer
-# has whitelisted by sha256 — a self-blessing account cannot forge it.  The hash
+# RESTRICTED tier: a prog: grant matches only the one file the system layer has
+# whitelisted by sha256 — a self-blessing account cannot forge it.  The hash
 # changes on every re-catalog, so re-bless here each build.  System-layer writes
 # are an admin act; in a source checkout the build/system account is writable, in
 # a deployment the installer runs this as the admin.  Set $MVXSYSTEM to override.
+#
+# ASK THE RUNTIME WHICH FILE THAT IS (mvx#373); do not hash CATALOG/MVPKG.  A
+# cataloged program is TWO files on Linux, because glibc refuses to dlopen a PIE
+# (mvx#203): CATALOG/MVPKG.so holds the code, and CATALOG/MVPKG is a byte-for-byte
+# copy of mvx-launch -- the same bytes for every cataloged program on the machine.
+# Hashing it blessed nothing in particular, and `mvx --program-hash' is the
+# runtime answering for itself, by the same code that will do the comparing, so
+# the two cannot drift.  On macOS the two files are one and the answers agree,
+# which is why hashing the wrong one went unnoticed in development (#182).
 SYS="${MVXSYSTEM:-${MVX_HOME:+$MVX_HOME/build/system}}"
 BIN="$HERE/CATALOG/MVPKG"
 if [ -n "$SYS" ] && [ -d "$SYS" ] && [ -f "$BIN" ]; then
-  if command -v sha256sum >/dev/null 2>&1; then H="$(sha256sum "$BIN" | cut -d' ' -f1)"
-  else H="$(shasum -a 256 "$BIN" | cut -d' ' -f1)"; fi
+  H="$("$MVX" --program-hash "$BIN" 2>/dev/null || true)"
+  # ACCEPT ONLY AN ANSWER THAT LOOKS LIKE ONE.  An mvx without the flag prints
+  # its usage and fails, and older still may print nothing; either way the
+  # result is not 64 hex characters.  There is deliberately NO sha256sum
+  # fallback: it is the bug above, and on an mvx that old a prog: grant bound to
+  # nothing anyway (mvx#373), so a blessing that looks like it worked would be
+  # worse than saying plainly that it did not.
+  if [ "${#H}" -ne 64 ] || [ -n "$(printf '%s' "$H" | tr -d '0-9a-f')" ]; then
+    echo "NOTE: this mvx cannot say which file holds a program (needs --program-hash," >&2
+    echo "      mvx 0.9.0 or newer) — MVPKG not blessed; it will need the" >&2
+    echo "      unrestricted tier until blessed by a newer mvx." >&2
+    H=""
+  fi
+fi
+if [ -n "${H:-}" ]; then
   mkdir -p "$SYS/.mvx-private"
   PROGS="$SYS/.mvx-private/programs"
   TMP="$PROGS.tmp.$$"
   { [ -f "$PROGS" ] && grep -v '^program MVPKG =' "$PROGS"; echo "program MVPKG = $H"; } \
     > "$TMP" 2>/dev/null && mv "$TMP" "$PROGS"
   echo "blessed MVPKG in $PROGS"
-else
+elif [ -z "$SYS" ] || [ ! -d "$SYS" ] || [ ! -f "$BIN" ]; then
   echo "NOTE: system account not found (set \$MVXSYSTEM) — MVPKG not blessed;" >&2
   echo "      it will need the unrestricted tier until blessed." >&2
 fi
 
-echo "mv_package built and blessed.  MVPKG runs at the RESTRICTED tier:"
+# SAY WHICH OF THE TWO HAPPENED.  Announcing the restricted tier after declining
+# to bless is how a build reports a working permit it has not got: the first
+# thing anyone does about the refusal that follows is reach for the unrestricted
+# tier, and then the gate is decorative.
+if [ -n "${H:-}" ]; then
+  echo "mv_package built and blessed.  MVPKG runs at the RESTRICTED tier:"
+else
+  echo "mv_package built, NOT blessed.  MVPKG needs the UNRESTRICTED tier:"
+fi
 echo "  '$MVX' -a '$HERE' -c 'MVPKG install <name>'"
 echo "(building a SOURCE package still needs the developer tier — BUILD-PKG compiles.)"

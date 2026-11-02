@@ -3,9 +3,8 @@ name = mv_package
 version = 1
 openaccount = 1
 hash = lmdb
-# ldd: the load check (MVPKGOS LDCHECK) asks the shipped file which libraries it
-# needs, because the clibs a package DECLARES describe what its source links and
-# not what the prebuilt in the artifact was linked against (#177).  Read-only,
-# argv-style, and the install behaves exactly as it did before this grant if it
-# is absent -- an ungranted check answers "cannot tell", never "missing".
-permit prog:MVPKG = mkdir rmtree untar mkpkg chown ldd
+# THE VENDOR PERMIT IS NOT HERE, it is in .mvx (#183).  mvx reads grants from
+# <account>/.mvx, <account>/.mvx-private/permissions and the system layer, and
+# never from this file -- so a permit written here is not policy, it is a
+# comment.  `permit' is an mvx concept anyway; no other MV platform has the
+# gate, which is why the MVX descriptor is the right home for it.

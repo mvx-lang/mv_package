@@ -1,3 +1,19 @@
 # MVX account descriptor
 name = mv_package
 version = 1
+
+# THE VENDOR PERMIT.  It binds at the RESTRICTED tier only for the exact program
+# the system layer has blessed (build.sh writes that hash), so an account cannot
+# grant itself these commands by editing this file -- the name has to match a
+# blessing it cannot forge.
+#
+# This lived in .mv-account until #183, which mvx does not read grants from, so
+# it had never bound at all: MVPKG needed the unrestricted tier to do what this
+# line was supposed to allow at the restricted one.
+#
+# ldd: the load check (MVPKGOS LDCHECK) asks the shipped file which libraries it
+# needs, because the clibs a package DECLARES describe what its source links and
+# not what the prebuilt in the artifact was linked against (#177).  Read-only,
+# argv-style, and the install behaves exactly as it did before this grant if it
+# is absent -- an ungranted check answers "cannot tell", never "missing".
+permit prog:MVPKG = mkdir rmtree untar mkpkg chown ldd
